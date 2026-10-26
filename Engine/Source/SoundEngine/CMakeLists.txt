@@ -1,0 +1,173 @@
+get_directory_property(SOUNDENGINE_DEFINITIONS COMPILE_DEFINITIONS)
+list(REMOVE_ITEM SOUNDENGINE_DEFINITIONS WIN32_LEAN_AND_MEAN NOMINMAX)
+set_directory_properties(PROPERTIES COMPILE_DEFINITIONS "${SOUNDENGINE_DEFINITIONS}")
+
+set(FMODEX_DIR ${CMAKE_CURRENT_SOURCE_DIR}/fmodex)
+set(FMODEX_FLAC_DIR ${FMODEX_DIR}/lib/flac-1.1.4)
+
+# Platform-independent FMOD Ex: the mixer, the codecs, the DSP network, and the
+# vendored ogg/vorbis/FLAC/freeverb/foreverb libraries it is built on.
+file(GLOB FMODEX_SOURCES CONFIGURE_DEPENDS
+    "${FMODEX_DIR}/src/*.cpp"
+    "${FMODEX_DIR}/lib/ogg_vorbis/ogg/src/*.c"
+    "${FMODEX_DIR}/lib/ogg_vorbis/vorbis/lib/*.c"
+    "${FMODEX_FLAC_DIR}/src/libFLAC/*.c"
+    "${FMODEX_DIR}/lib/freeverb/*.cpp"
+    "${FMODEX_DIR}/lib/sfx/foreverb/*.cpp"
+)
+
+# The platform layer. FMOD Ex abstracts the OS behind fmod_os_misc.h,
+# fmod_os_net.h and FMOD_OS_Output_Register, and each platform directory
+# supplies one implementation of those plus its output plugins.
+#
+#   win32/src   DirectSound, WASAPI, ASIO, WinMM, EAX, ACM, WMSDK -- 39 .cpp
+#               plus NASM mixer assembly. What ships.
+#   linux/src   ALSA, pthreads, POSIX sockets -- 5 files, 1,186 lines.
+#               Which output backends exist is decided in fmod_settings.h's
+#               PLATFORM_LINUX64 block (ALSA only).
+if (WIN32)
+    file(GLOB FMODEX_PLATFORM_SOURCES CONFIGURE_DEPENDS
+        "${FMODEX_DIR}/win32/src/*.cpp"
+        "${FMODEX_DIR}/win32/src/asio/*.cpp"
+        "${FMODEX_DIR}/lib/openal/utils/*.cpp"
+    )
+    set(FMODEX_PLATFORM_DIR ${FMODEX_DIR}/win32/src)
+else ()
+    file(GLOB FMODEX_PLATFORM_SOURCES CONFIGURE_DEPENDS "${FMODEX_DIR}/linux/src/*.cpp")
+
+    # Two files that live under win32/src but are not Windows code at all --
+    # plain DSP maths with no OS surface. Upstream FMOD Ex filed them there;
+    # the mixer will not link without them.
+    list(APPEND FMODEX_PLATFORM_SOURCES
+        ${FMODEX_DIR}/win32/src/fmod_dsp_distortion.cpp
+        ${FMODEX_DIR}/win32/src/fmod_dsp_resampler_linear.cpp
+    )
+    set(FMODEX_PLATFORM_DIR ${FMODEX_DIR}/linux/src)
+
+    set(THREADS_PREFER_PTHREAD_FLAG ON)
+    find_package(Threads REQUIRED)
+    find_package(ALSA REQUIRED)
+
+    # PulseAudio for the native pulse output (fmod_output_pulse.cpp). ALSA stays
+    # for that output's fallback path. libpulse-simple pulls in libpulse.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(PULSE REQUIRED IMPORTED_TARGET libpulse-simple)
+endif ()
+
+list(APPEND FMODEX_SOURCES ${FMODEX_PLATFORM_SOURCES})
+
+add_library(fmodex STATIC ${FMODEX_SOURCES})
+
+target_include_directories(fmodex
+    PUBLIC
+        ${FMODEX_DIR}/src
+    PRIVATE
+        ${FMODEX_PLATFORM_DIR}
+        ${FMODEX_DIR}/lib/ogg_vorbis/ogg/include
+        ${FMODEX_DIR}/lib/ogg_vorbis/vorbis/include
+        ${FMODEX_DIR}/lib/ogg_vorbis/vorbis/lib
+        ${FMODEX_FLAC_DIR}/include
+        ${FMODEX_FLAC_DIR}/src/libFLAC/include
+        ${FMODEX_DIR}/lib/openal/include
+        ${FMODEX_DIR}/lib/sfx/foreverb
+        ${FMODEX_DIR}/lib/freeverb
+)
+
+if (WIN32)
+    target_include_directories(fmodex PRIVATE ${FMODEX_DIR}/win32/lib/wmsdk/include)
+endif ()
+
+target_compile_definitions(fmodex
+    PRIVATE
+        FLAC__NO_DLL
+        FLAC__HAS_OGG=1
+)
+
+if (WIN32)
+    target_link_libraries(fmodex
+        INTERFACE
+            winmm
+            ws2_32
+            msacm32
+    )
+else ()
+    target_link_libraries(fmodex
+        PUBLIC
+            ALSA::ALSA
+            PkgConfig::PULSE
+            Threads::Threads
+            ${CMAKE_DL_LIBS}
+    )
+endif ()
+
+if (MSVC)
+    target_compile_options(fmodex PRIVATE /MP)
+endif ()
+
+# The IA32 fast paths are hand-written NASM in win32 object format, so they are
+# a Windows-x86 thing specifically, not a 32-bit thing. x86_64 Linux takes the
+# portable C paths.
+if (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+    target_compile_definitions(fmodex
+        PRIVATE
+            FLAC__CPU_IA32
+            FLAC__HAS_NASM
+            FLAC__USE_3DNOW
+    )
+
+    find_program(NASM_EXECUTABLE nasm)
+    if (NOT NASM_EXECUTABLE)
+        message(FATAL_ERROR
+            "NASM not found. The Win32 build assembles FMOD Ex and libFLAC .s/.nasm sources. "
+            "Put nasm on PATH or pass -DNASM_EXECUTABLE=<path to nasm.exe>."
+        )
+    endif ()
+
+    set(FMODEX_ASM_OBJECTS)
+
+    file(GLOB FMODEX_ASM_SOURCES CONFIGURE_DEPENDS "${FMODEX_DIR}/win32/src/*_asm.s")
+    foreach (src ${FMODEX_ASM_SOURCES})
+        get_filename_component(name ${src} NAME_WE)
+        set(obj ${CMAKE_CURRENT_BINARY_DIR}/fmodex_asm/${name}.obj)
+        add_custom_command(
+            OUTPUT ${obj}
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/fmodex_asm
+            COMMAND ${NASM_EXECUTABLE} -f win32 -O0 -I${FMODEX_DIR}/win32/src/ -o ${obj} ${src}
+            DEPENDS ${src} ${FMODEX_DIR}/win32/src/c32.mac
+            VERBATIM
+        )
+        list(APPEND FMODEX_ASM_OBJECTS ${obj})
+    endforeach ()
+
+    foreach (name cpu_asm lpc_asm)
+        set(src ${FMODEX_FLAC_DIR}/src/libFLAC/ia32/${name}.nasm)
+        set(obj ${CMAKE_CURRENT_BINARY_DIR}/fmodex_asm/${name}.obj)
+        add_custom_command(
+            OUTPUT ${obj}
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/fmodex_asm
+            COMMAND ${NASM_EXECUTABLE} -f win32 -O0 -dOBJ_FORMAT_win32 -I${FMODEX_FLAC_DIR}/src/libFLAC/ia32/ -o ${obj} ${src}
+            DEPENDS ${src} ${FMODEX_FLAC_DIR}/src/libFLAC/ia32/nasm.h
+            VERBATIM
+        )
+        list(APPEND FMODEX_ASM_OBJECTS ${obj})
+    endforeach ()
+
+    set_source_files_properties(${FMODEX_ASM_OBJECTS} PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+    target_sources(fmodex PRIVATE ${FMODEX_ASM_OBJECTS})
+endif ()
+
+file(GLOB SOUNDENGINE_SOURCES CONFIGURE_DEPENDS "*.cpp")
+
+add_library(SoundEngine STATIC
+    ${SOUNDENGINE_SOURCES}
+)
+
+target_include_directories(SoundEngine
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}
+)
+
+target_link_libraries(SoundEngine
+    PUBLIC
+        fmodex
+)
