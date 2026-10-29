@@ -39,6 +39,7 @@
 #include "WoW/Source/Ui/RuneInfo.h"
 #include "WoW/Source/Game/Linux/WxlVisualTimeOverride.h"
 #include "WoW/Source/Ui/Linux/WxlControlBridge.h"
+#include "WoW/Source/Ui/Linux/LuaStringCompatibility.h"
 #include "WoW/Source/Ui/Linux/WxlWeatherOverride.h"
 #include "WoW/Source/WorldClient/Linux/WxlSkyboxOverride.h"
 #include "WoW/Source/Ui/RaidInfo.h"
@@ -4643,6 +4644,10 @@ void ScriptEventsRegisterFunctions() {
     }
 
 #if defined(WOWDECOMP_LINUX)
+    // The FTA add-on corpus expects these retail Lua helpers, which the
+    // decompiled client has not reconstructed yet.
+    WxlRegisterLuaStringCompatibility();
+
     // Linux-only: WarcraftXL extension ports register their Lua API here,
     // alongside the client's own native functions.
     WxlRegisterControlBridgeLua();
