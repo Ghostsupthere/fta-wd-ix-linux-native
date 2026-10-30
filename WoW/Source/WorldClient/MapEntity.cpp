@@ -1,5 +1,6 @@
 #include "MapEntity.h"
 #include "WoW/Source/WorldClient/WorldLightingConstants.h"
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "Engine/Source/Tempest/C3Segment.h"
 #include "WoW/Source/DB/DBClient/DBClient.h"
 #include "WoW/Source/DB/Rec/AreaTableRec.h"

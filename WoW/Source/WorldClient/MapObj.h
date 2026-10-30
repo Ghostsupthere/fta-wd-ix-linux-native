@@ -3,6 +3,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/ModernAssets/ModernWmo.h"
+#endif
 #include "Engine/Source/Tempest/C3Vector.h"
 #include "Engine/Source/Tempest/C4Plane.h"
 #include "Engine/Source/Tempest/C4Quaternion.h"
@@ -154,6 +157,10 @@ class CMapObj : public CMapObjIndex, public TSHashObject<CMapObj, HASHKEY_NONE> 
     /* 01E8 */ TSExplicitList<CMapObjGroup, offsetof(CMapObjGroup, m_asyncLoadLink)> m_mapObjGroupList;
     /* 01F4 */ int32_t m_mapObjGroupCount;
     /* 01F8 */ CMapObjGroup* m_mapObjGroupArray [512];
+#if defined(WOWDECOMP_LINUX)
+    bool m_wxlModernWmo;
+    std::shared_ptr<ModernWmoRootVisuals> m_wxlVisuals;
+#endif
 
     CMapObj();
     ~CMapObj();

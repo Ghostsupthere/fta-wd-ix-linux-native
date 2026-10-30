@@ -1837,6 +1837,10 @@ void CMapObj::WaitLoad() {
 // VERIFY: edb456aa manual
 // OFFSET: 0x007AE300
 void CMapObj::Init() {
+#if defined(WOWDECOMP_LINUX)
+    this->m_wxlModernWmo = false;
+    this->m_wxlVisuals.reset();
+#endif
     this->m_flushTimer = 0.0f;
     this->m_refCount = 0;
     this->m_pWmoData = nullptr;
@@ -1856,6 +1860,10 @@ void CMapObj::Init() {
 // VERIFY: b756cecb manual
 // OFFSET: 0x007AE3B0
 void CMapObj::Clear() {
+#if defined(WOWDECOMP_LINUX)
+    this->m_wxlVisuals.reset();
+    this->m_wxlModernWmo = false;
+#endif
     int32_t freeData = 1;
 
     if (this->m_asyncObject) {

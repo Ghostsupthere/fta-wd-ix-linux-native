@@ -1,4 +1,5 @@
 #include "LiquidEnvironment.h"
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "Engine/Source/Model2/M2Light.h"
 #include "Engine/Source/Model2/M2Scene.h"
 #include "Engine/Source/Storm/H/storm.h"

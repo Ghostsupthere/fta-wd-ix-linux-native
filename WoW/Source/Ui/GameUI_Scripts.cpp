@@ -2558,13 +2558,6 @@ static int32_t Script_GetFramerate(lua_State* L) {
     return 1;
 }
 
-// VERIFY: ee32b2a0 auto
-// OFFSET: 0x005165E0
-static int32_t Script_GetNumTitles(lua_State* L) {
-    lua_pushnumber(L, g_charTitlesDB.m_maxID + 1);
-    return 1;
-}
-
 // VERIFY: 289ea831 manual
 // OFFSET: 0x0051B3B0
 static int32_t Script_GetCurrentTitle(lua_State* L) {
@@ -2961,85 +2954,7 @@ static int32_t Script_HasKey(lua_State* L) {
     return 1;
 }
 
-// VERIFY: bd9176fa manual
-// OFFSET: 0x0051B410
-static int32_t Script_IsTitleKnown(lua_State* L) {
-    if (!lua_isnumber(L, 1)) {
-        luaL_error(L, "Usage: IsTitleKnown(titleMaskID)");
-        return 0;
-    }
-
-    CGPlayer_C* player = static_cast<CGPlayer_C*>(ClntObjMgrObjectPtr(ClntObjMgrGetActivePlayer(), TYPE_PLAYER, __FILE__, __LINE__));
-    uint32_t mask = static_cast<uint32_t>(lua_tonumber(L, 1));
-
-    if (player && mask && (player->m_player->m_playerFieldKnownTitles[mask >> 6] & (1ull << (mask & 63)))) {
-        lua_pushnumber(L, 1.0);
-    } else {
-        lua_pushnumber(L, 0.0);
-    }
-
-    return 1;
-}
-
-// VERIFY: a134affc manual
-// OFFSET: 0x0051B4E0
-static int32_t Script_GetTitleName(lua_State* L) {
-    if (!lua_isnumber(L, 1)) {
-        luaL_error(L, "Usage: GetTitleName(titleMaskID)");
-        return 0;
-    }
-
-    int32_t maskId = static_cast<int32_t>(lua_tonumber(L, 1));
-    CGPlayer_C* player = static_cast<CGPlayer_C*>(ClntObjMgrObjectPtr(ClntObjMgrGetActivePlayer(), TYPE_PLAYER, __FILE__, __LINE__));
-    int32_t gender = player ? player->m_player->m_playerBytes3[0] : 0;
-    char title[256];
-    title[0] = 0;
-    CharTitlesRec* rec = nullptr;
-
-    for (int32_t i = 0; i < g_charTitlesDB.m_numRecords; i++) {
-        CharTitlesRec* candidate = g_charTitlesDB.GetRecordByIndex(i);
-
-        if (candidate && candidate->m_maskID == maskId) {
-            rec = candidate;
-            break;
-        }
-    }
-
-    if (!rec) {
-        return 0;
-    }
-
-    if (gender == 1) {
-        strcpy(title, strcmp(rec->m_name1, "") ? rec->m_name1 : rec->m_name);
-    } else {
-        strcpy(title, strcmp(rec->m_name, "") ? rec->m_name : rec->m_name1);
-    }
-
-    char stripped[256];
-    int32_t length = 0;
-    bool skipping = false;
-
-    for (uint32_t i = 0; i < SStrLen(title); i++) {
-        char c = title[i];
-
-        if (!c) {
-            break;
-        }
-
-        if (c == '%') {
-            skipping = true;
-        } else if (!skipping) {
-            stripped[length++] = c;
-        } else if (c == ' ') {
-            skipping = false;
-            stripped[length++] = c;
-        }
-    }
-
-    stripped[length] = 0;
-    lua_pushstring(L, stripped);
-    return 1;
-}
+#include "WoW/Source/Ui/Linux/WxlTitleScripts.inl"
 
 // VERIFY: 56c60ec4 manual
 // OFFSET: 0x0051B1D0

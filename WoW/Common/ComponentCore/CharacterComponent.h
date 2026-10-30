@@ -12,6 +12,12 @@
 #include "WoW/Common/ComponentCore/Types.h"
 #include "WoW/Common/TextureCache.h"
 #include "WoW/Source/Glue/ComponentData.h"
+#if defined(WOWDECOMP_LINUX)
+#include <memory>
+#include <vector>
+#include "WoW/Common/ComponentCore/WxlEquipmentOwner.h"
+struct WxlTexturePending;
+#endif
 
 class CCharacterComponent;
 class CComponentMipBits;
@@ -23,12 +29,20 @@ class CreatureModelDataRec;
 class CTexture;
 struct CVar;
 class ItemDisplayInfoRec;
+#if defined(WOWDECOMP_LINUX)
+struct WxlWaistPending;
+#endif
 struct st_race;
 
 struct CharacterBaseVariation {
     /* 0000 */ HTEXTURECACHE m_texture [3];
 
-    ~CharacterBaseVariation();
+    ~CharacterBaseVariation() {
+        for (HTEXTURECACHE& texture : this->m_texture) {
+            if (texture) TextureCacheDestroyTexture(texture);
+            texture = nullptr;
+        }
+    }
 };
 
 struct CharacterSection {
@@ -158,11 +172,25 @@ class CCharacterComponent {
     /* 0458 */ uint32_t m_handItemDisplayID [3];
     /* 0464 */ int32_t m_itemSlotForAttachSlot [50];
     /* 052C */ CComponentRequest* m_request;
+#if defined(WOWDECOMP_LINUX)
+    WxlWaistPending* m_wxlWaistPending;
+    WxlEquipmentOwnerWatch m_wxlEquipmentOwner;
+    std::vector<std::unique_ptr<WxlTexturePending>> m_wxlTextures;
+    int32_t m_wxlItemVisual[NUM_ITEM_SLOTS];
+    void RefreshWxlEquipment();
+    void CancelWxlWaist();
+    void QueueWxlWaist(const ItemDisplayInfoRec* displayRec, int32_t itemVisual);
+    void UpdateWxlWaist();
+    void QueueWxlTexture(CM2Model* model, ITEM_SLOT slot, uint32_t display, uint32_t type, const char* path);
+    void CancelWxlTextures(uint32_t slot = NUM_ITEM_SLOTS);
+    void UpdateWxlTextures();
+#endif
 
     CCharacterComponent();
     ~CCharacterComponent();
     void AddCape();
     void AddHelm(int32_t itemVisual);
+    void ApplyHelmetGeosetVisibility(const ItemDisplayInfoRec* displayRec);
     void AddItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* displayRec, int32_t itemVisual);
     void AddItem(ITEM_SLOT itemSlot, int32_t displayID, int32_t itemVisual);
     void AddItemBySlot(INVENTORY_SLOTS invSlot, int32_t displayID, int32_t itemVisual);
@@ -204,6 +232,7 @@ class CCharacterComponent {
     void PrepSections();
     void ProcessFinishedRequest();
     void RemoveItem(ITEM_SLOT itemSlot);
+    bool RemoveCollectionItem(ITEM_SLOT itemSlot);
     void RemoveItemBySlot(INVENTORY_SLOTS invSlot);
     void RemoveItemByType(INVENTORY_TYPES invType);
     bool RenderPrep(int32_t wait);
@@ -221,6 +250,7 @@ class CCharacterComponent {
     void RenderPrepTU();
     void ReplaceExtraSkinTexture(const char* debug);
     void ReplaceHairTexture(int32_t hairStyleID, const char* debug);
+    bool TryAddCollectionItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* displayRec);
     void SetBeardStyle(int32_t facialHairID, bool loadVariation, const char* debug);
     void SetDirtySections(uint32_t mask);
     void SetFace(int32_t faceID, bool loadHair, const char* debug);

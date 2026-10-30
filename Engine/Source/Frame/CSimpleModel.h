@@ -10,6 +10,9 @@
 #include "Engine/Source/Tempest/C3Vector.h"
 #include "Engine/Source/Tempest/CAaBox.h"
 #include "Engine/Source/Tempest/CImVector.h"
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/ModernAssets/NativeModelPresentation.h"
+#endif
 
 class CCamera;
 class CM2Lighting;
@@ -56,6 +59,12 @@ class CSimpleModel : public CSimpleFrame {
     /* 0340 */ CAaBox m_bounds;
     /* 0358 */ FrameScript_Object::ScriptIx m_onUpdateModel;
     /* 0360 */ FrameScript_Object::ScriptIx m_onAnimFinished;
+#if defined(WOWDECOMP_LINUX)
+    NativePreviewView m_wxlPreviewView{};
+    uint64_t m_wxlPreviewGeneration = 0;
+    uint64_t m_wxlEquipmentGeneration = 0;
+    bool m_wxlEquipmentPreview = false;
+#endif
 
     virtual ~CSimpleModel();
     virtual int32_t GetScriptMetaTable();

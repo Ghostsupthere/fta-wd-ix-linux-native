@@ -1,5 +1,6 @@
 #include "MapDoodadDef.h"
 #include "WoW/Source/WorldClient/WorldLightingConstants.h"
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "Engine/Source/Model2/M2Data.h"
 #include "Engine/Source/Model2/M2Light.h"
 #include "Engine/Source/Model2/M2Model.h"

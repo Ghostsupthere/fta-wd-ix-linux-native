@@ -5,6 +5,7 @@
 #include "Engine/Source/Storm/H/stpl.h"
 #include "WoW/Source/Game/NameGen.h"
 #include "WoW/Source/Glue/Types.h"
+#include "WoW/Source/Glue/WxlCharacterCreationCache.h"
 
 class CCharacterComponent;
 class ChrClassesRec;
@@ -14,7 +15,14 @@ struct CharacterPreferences;
 
 class CCharacterCreation {
     public:
-    static CharacterPreferences* m_charPreferences[22][2];
+#if defined(WOWDECOMP_LINUX)
+    static constexpr uint32_t RaceCapacity = WxlCharacterRaceCapacity;
+    static constexpr uint32_t SexCapacity = WxlCharacterSexCapacity;
+#else
+    static constexpr uint32_t RaceCapacity = 22;
+    static constexpr uint32_t SexCapacity = 2;
+#endif
+    static CharacterPreferences* m_charPreferences[RaceCapacity][SexCapacity];
     static CCharacterComponent* m_character;
     static CNameGen m_nameGen;
     static CSimpleModelFFX* m_charCustomizeFrame;

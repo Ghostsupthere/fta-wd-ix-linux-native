@@ -562,8 +562,18 @@ static int32_t Script_PaidChange_GetPreviousRaceIndex(lua_State* L) {
     return 1;
 }
 
+#if defined(WOWDECOMP_LINUX)
+static int32_t Script_WXL_CharacterCreateRaceCapacity(lua_State* L) {
+    lua_pushnumber(L, CCharacterCreation::RaceCapacity);
+    return 1;
+}
+#endif
+
 // STATIC: 0x00AC4228
 static FrameScript_Method s_scriptFunctions[] = {
+#if defined(WOWDECOMP_LINUX)
+    { "WXL_CharacterCreateRaceCapacity", &Script_WXL_CharacterCreateRaceCapacity },
+#endif
     { "SetCharCustomizeFrame", &Script_SetCharCustomizeFrame },
     { "SetCharCustomizeBackground", &Script_SetCharCustomizeBackground },
     { "ResetCharCustomize", &Script_ResetCharCustomize },

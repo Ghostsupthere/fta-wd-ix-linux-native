@@ -1,4 +1,5 @@
 #include "MapChunk.h"
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "WoW/Source/WorldClient/WorldConstants.h"
 #include "WoW/Source/WorldClient/DetailDoodad.h"
 #include "WoW/Source/WorldClient/CDetailDoodadData.h"

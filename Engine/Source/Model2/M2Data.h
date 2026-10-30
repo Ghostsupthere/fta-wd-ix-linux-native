@@ -298,7 +298,9 @@ class M2Batch {
     /* 0016 */ uint16_t m_textureTransformComboIndex;
 };
 
-class M2SkinSection {
+// On-disk SKIN record. Extended skins use the high ID word as the high
+// word of indexStart, separate from the geoset identifier.
+class M2SkinSectionFile {
     public:
     /* 0000 */ uint32_t m_skinSectionId;
     /* 0004 */ uint16_t m_vertexStart;
@@ -313,6 +315,29 @@ class M2SkinSection {
     /* 0020 */ C3Vector m_sortCenterPosition;
     /* 002C */ float m_sortRadius;
 };
+static_assert(sizeof(M2SkinSectionFile) == 48);
+
+#if defined(WOWDECOMP_LINUX)
+// Runtime sections retain full draw offsets/counts. Eight-byte alignment also
+// keeps pointer arrays following section arrays aligned on native 64-bit builds.
+class alignas(8) M2SkinSection {
+    public:
+    uint32_t m_skinSectionId;
+    uint16_t m_vertexStart;
+    uint16_t m_vertexCount;
+    uint32_t m_indexStart;
+    uint32_t m_indexCount;
+    uint16_t m_boneCount;
+    uint16_t m_boneComboIndex;
+    uint16_t m_boneInfluences;
+    uint16_t m_centerBoneIndex;
+    C3Vector m_centerPosition;
+    C3Vector m_sortCenterPosition;
+    float m_sortRadius;
+};
+#else
+class M2SkinSection : public M2SkinSectionFile {};
+#endif
 
 class M2Data {
     public:

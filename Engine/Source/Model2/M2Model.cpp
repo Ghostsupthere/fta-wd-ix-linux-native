@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <new>
 #include <xmmintrin.h>
@@ -12,6 +13,13 @@
 #include <alloca.h>
 #endif
 #include "Engine/Source/Model2/M2Model.h"
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/Model2/WxlAttachmentId.h"
+#include "Engine/Source/Model2/WxlBoneRemap.h"
+#include "Engine/Source/Model2/WxlGeometryBudget.h"
+#include "Engine/Source/ModernAssets/NativeItemPhysics.h"
+#include "Engine/Source/ModernAssets/NativeModelPresentation.h"
+#endif
 #include "Engine/Source/Base/Handle.h"
 #include "Engine/Source/Base/ObjectAlloc.h"
 #include "Engine/Source/Base/SIMD.h"
@@ -37,6 +45,10 @@
 #include "Engine/Source/Tempest/CMath.h"
 #include "WoW/Source/DB/DBClient/DBClient.h"
 #include "WoW/Source/Object/ObjectClient/Types.h"
+
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/Model2/WxlCollectionPalette.inl"
+#endif
 
 // STATIC: 0x00A45570
 static const uint32_t s_ribbonBlendModes[] = { 0, 1, 2, 10, 3, 4, 5 };
@@ -183,7 +195,11 @@ unlink:
 // VERIFY: 716d467d auto
 // OFFSET: 0x00823F90
 static int32_t BatchesMatch(const M2Batch* a, const M2Batch* b, const M2SkinSection* sectionA, const M2SkinSection* sectionB) {
+#if defined(WOWDECOMP_LINUX)
+    return WxlBatchesMatch(*a, *b, *sectionA, *sectionB);
+#else
     return a->m_colorIndex == b->m_colorIndex && a->m_materialIndex == b->m_materialIndex && a->m_textureComboIndex == b->m_textureComboIndex && a->m_textureWeightComboIndex == b->m_textureWeightComboIndex && a->m_textureTransformComboIndex == b->m_textureTransformComboIndex && sectionA->m_boneComboIndex == sectionB->m_boneComboIndex;
+#endif
 }
 
 // VERIFY: bf4ba22e auto
@@ -1936,6 +1952,9 @@ C3Vector CM2Model::GetAttachmentPivot(uint32_t id) {
 // VERIFY: dca38176 manual
 // OFFSET: 0x008274F0
 void CM2Model::DetachFromParent() {
+#if defined(WOWDECOMP_LINUX)
+    RetireNativeItemPhysics(this);
+#endif
     if (this->m_attachPrev) {
         *this->m_attachPrev = this->m_attachNext;
     }
@@ -3804,6 +3823,10 @@ M2BatchRange::M2BatchRange() {
 // VERIFY: 2ddf06e6 manual
 // OFFSET: 0x0082BE60
 CM2Model::CM2Model() {
+#if defined(WOWDECOMP_LINUX)
+    this->m_wxlItemPhysics = nullptr;
+    this->m_wxlBoneRemap = nullptr;
+#endif
     this->m_scaleSq = 0.0f;
     this->m_refCount = 1;
     this->m_fFlags = (this->m_fFlags & 0xFF800000) | 0x340;
@@ -4206,6 +4229,9 @@ void CM2Model::OptimizeVisibleGeometry() {
     uint32_t sectionCount = 0;
     uint32_t visibleCount = 0;
     int32_t keepVertices = (cacheFlags & 8) || (shared->m_data->m_bones.m_count == 1 && (cacheFlags & 0x40));
+#if defined(WOWDECOMP_LINUX)
+    uint32_t optimizedIndices = 0;
+#endif
 
     for (uint32_t i = 0; i < skin->m_batches.m_count; i++) {
         M2Batch* batch = &skin->m_batches[i];
@@ -4214,6 +4240,11 @@ void CM2Model::OptimizeVisibleGeometry() {
         if (this->m_skinSections[sectionIndex]) {
             visibleCount++;
             M2SkinSection* section = &skin->m_skinSections[sectionIndex];
+#if defined(WOWDECOMP_LINUX)
+            // Keep original draws if repeated material windows cannot fit the
+            // optimized uint16 offsets/counts. The source skin remains valid.
+            if (!WxlAccumulateOptimizedIndices(optimizedIndices, section->m_indexCount)) return;
+#endif
 
             if (!prevBatch || !BatchesMatch(batch, prevBatch, section, prevSection)) {
                 batchCount++;
@@ -4816,6 +4847,9 @@ void CM2Model::AnimateMTSimple(const C44Matrix* view, const C3Vector& diffuse, c
     }
 
     this->m_matrixF4 = this->m_worldTransform * *view;
+#if defined(WOWDECOMP_LINUX)
+    ApplyNativeEquipmentScale(this);
+#endif
 
     CM2Model* attachParent = this->m_attachParent;
 
@@ -4942,8 +4976,14 @@ void CM2Model::AnimateAttachmentsMT() {
         } else {
             child->AnimateMT(&matrix, this->m_diffuseColor, this->m_emissiveColor, this->m_effectiveAlpha, this->m_alpha);
         }
+
+#if defined(WOWDECOMP_LINUX)
+        child->RefreshWxlCollectionPalette();
+#endif
     }
 }
+
+
 
 // VERIFY: a16ddee7 auto
 // OFFSET: 0x0082E720
@@ -5171,6 +5211,9 @@ void CM2Model::AnimateMT(const C44Matrix* view, const C3Vector& diffuse, const C
     }
 
     this->m_matrixF4 = this->m_worldTransform * *view;
+#if defined(WOWDECOMP_LINUX)
+    ApplyNativeEquipmentScale(this);
+#endif
 
     CM2Model* attachParent = this->m_attachParent;
 
@@ -6140,6 +6183,11 @@ float CM2Model::GetAttachmentWorldScale(uint32_t id) {
 // VERIFY: dcb378e1 manual
 // OFFSET: 0x00831630
 void CM2Model::AttachToParent(CM2Model* parent, uint32_t id, const C3Vector* position, int32_t attachToRoot) {
+#if defined(WOWDECOMP_LINUX)
+    RetireNativeItemPhysics(this);
+    delete this->m_wxlBoneRemap;
+    this->m_wxlBoneRemap = nullptr;
+#endif
     if (this->m_attachParent) {
         this->DetachFromParent();
     }
@@ -6159,7 +6207,12 @@ void CM2Model::AttachToParent(CM2Model* parent, uint32_t id, const C3Vector* pos
 
     if (parent->m_fFlags & 1) {
         M2Data* data = parent->m_shared->m_data;
-        index = id < data->m_attachmentIndicesById.m_count ? data->m_attachmentIndicesById[id] : 0xFFFF;
+#if defined(WOWDECOMP_LINUX)
+        const uint32_t point = WxlAttachmentPoint(id);
+#else
+        const uint32_t point = id;
+#endif
+        index = point < data->m_attachmentIndicesById.m_count ? data->m_attachmentIndicesById[point] : 0xFFFF;
 
         if (index == 0xFFFF && !attachToRoot) {
             return;
@@ -6648,6 +6701,11 @@ void CM2Model::ProcessCallbacksRecursive() {
 // VERIFY: d96ccadd manual
 // OFFSET: 0x00832640
 CM2Model::~CM2Model() {
+#if defined(WOWDECOMP_LINUX)
+    RetireNativeItemPhysics(this);
+    delete this->m_wxlBoneRemap;
+    this->m_wxlBoneRemap = nullptr;
+#endif
     CM2Model* model30 = this->m_model30;
 
     if (model30 && model30->m_refCount-- == 1) {
@@ -7602,6 +7660,9 @@ int32_t CM2Model::InitializeLoaded() {
     while (*link) {
         CM2Model* child = *link;
         uint32_t id = child->m_attachmentId;
+#if defined(WOWDECOMP_LINUX)
+        id = WxlAttachmentPoint(id);
+#endif
         M2Data* current = this->m_shared->m_data;
         uint16_t index = id < current->m_attachmentIndicesById.m_count ? current->m_attachmentIndicesById[id] : 0xFFFF;
 
@@ -7834,6 +7895,9 @@ void CM2Model::GatherModelBatchesShadowMap(CModelBatchList& untextured, CModelBa
 // VERIFY: ad015f89 manual
 // OFFSET: 0x00834810
 int32_t CM2Model::Initialize(CM2Scene* scene, CM2Shared* shared, CM2Model* source, uint32_t flags) {
+#if defined(WOWDECOMP_LINUX)
+    this->m_wxlEquipmentPreviewOwner = false;
+#endif
     this->AttachToScene(scene);
     this->m_lastEmitterTime = this->m_scene->m_time;
     this->m_shared = shared;
@@ -7853,7 +7917,12 @@ int32_t CM2Model::Initialize(CM2Scene* scene, CM2Shared* shared, CM2Model* sourc
             CM2Model* copy = this->m_scene->DuplicateModel(child, 0);
 
             if (copy) {
+#if defined(WOWDECOMP_LINUX)
+                copy->AttachToParent(this, child->m_attachmentId, nullptr,
+                                     (child->m_fFlags & 0x40000) != 0);
+#else
                 copy->AttachToParent(this, child->m_attachmentId, nullptr, 0);
+#endif
 
                 if (copy->m_refCount-- == 1) {
                     g_modelPool->Delete(copy);

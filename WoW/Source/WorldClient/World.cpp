@@ -1,4 +1,8 @@
 #include "World.h"
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Common/ComponentCore/WxlEquipmentOwner.h"
+#endif
 #include <cfloat>
 #include "WoW/Source/WorldClient/WorldConstants.h"
 #include <cstdlib>
@@ -1324,6 +1328,16 @@ void World::SetDetailDoodadDist(float dist) {
 // VERIFY: 5f5281b3 auto
 // OFFSET: 0x00780770
 float World::ValidateFarClip(float farClip, int32_t mapID) {
+#if defined(WOWDECOMP_LINUX)
+    // WarcraftXLVisuals selected this target independently of the user's
+    // stock farclip value.  The native implementation uses the same map-load
+    // validation path, avoiding the Windows D3D9 hook and leaving Config.wtf
+    // untouched.  1583.33 is the companion's documented conservative ceiling.
+    if (WxlProfileEnabled("WXL_VISUAL_ENVIRONMENT", true) &&
+        WxlProfileEnabled("WXL_EXTENDED_VIEW_DISTANCE", true)) {
+        return 4750.0f / 3.0f;
+    }
+#endif
     float maxFarClip = 4750.0f / 3.0f;
 
     if (mapID < 530 || mapID == 575 || mapID == 543) {
@@ -1477,6 +1491,9 @@ void CWorldScene::ClearObjectFadeoutList() {
 // VERIFY: ca15b88d auto
 // OFFSET: 0x00783180
 void World::UnloadMap() {
+#if defined(WOWDECOMP_LINUX)
+    WxlInvalidateWorldEquipment();
+#endif
     CWorldScene::ClearObjectFadeoutList();
 
     if (CMap::bActive) {

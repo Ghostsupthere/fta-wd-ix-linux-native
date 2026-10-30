@@ -5,6 +5,11 @@
 #include <new>
 #include <xmmintrin.h>
 #include "Engine/Source/Model2/M2Scene.h"
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/ModernAssets/NativeItemPhysics.h"
+#include "Engine/Source/ModernAssets/NativeModelPresentation.h"
+#include "Engine/Source/Model2/WxlSceneModels.h"
+#endif
 #include "Engine/Source/Base/ObjectAlloc.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
 #include "Engine/Source/Model2/M2Cache.h"
@@ -1710,6 +1715,10 @@ M2Element* CM2Scene::AddParticleElement(CParticleEmitter2* emitter, CM2Model* mo
 // VERIFY: d0feeb6c manual
 // OFFSET: 0x00821A20
 int32_t CM2Scene::Animate(const C3Vector& cameraPos) {
+#if defined(WOWDECOMP_LINUX)
+    RefreshNativeEquipmentOwner();
+    RestoreNativeItemPhysics(this);
+#endif
     this->m_frameStamp++;
 
     uint32_t optFlags = this->m_cache->m_flags & 0xE000;
@@ -1760,6 +1769,13 @@ int32_t CM2Scene::Animate(const C3Vector& cameraPos) {
         }
     }
 
+#if defined(WOWDECOMP_LINUX)
+    // All native animation workers have joined; collection palette copies are
+    // refreshed from current parents, including cached attachment graphs.
+    WxlVisitSceneModels(this, [](CM2Model* model) { model->RefreshWxlCollectionPalette(); });
+    // Physics writes precede particles, lights and draw preparation.
+    ApplyNativeItemPhysics(this);
+#endif
     for (CM2Model* model = this->m_animateList; model; model = model->m_animateNext) {
         if (!model->m_attachParent) {
             model->AnimateST();

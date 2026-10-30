@@ -105,6 +105,9 @@ int32_t CSimpleModel::AdvanceTime() {
 // VERIFY: d4b291b5 auto
 // OFFSET: [0x0095F3A0, 0x0095F670, 0x0095F7D0]
 CSimpleModel::~CSimpleModel() {
+#if defined(WOWDECOMP_LINUX)
+    if (this->m_model) this->m_model->m_wxlEquipmentPreviewOwner = false;
+#endif
     if (this->m_camera) {
         HandleClose(reinterpret_cast<HOBJECT>(this->m_camera));
     }
@@ -445,6 +448,13 @@ void CSimpleModel::RenderModel(void* arg) {
         DataMgrGetCoord(camera, 7, &cameraPos);
         DataMgrGetCoord(camera, 8, &cameraTarget);
         CameraSetupWorldProjection(camera, rect, 0);
+#if defined(WOWDECOMP_LINUX)
+        if (simpleModel->m_wxlPreviewGeneration == NativePreviewGeneration()) {
+            C44Matrix preview = device->m_projection;
+            ApplyNativePreview(preview, simpleModel->m_wxlPreviewView);
+            device->XformSetProjection(preview);
+        }
+#endif
     } else {
         C2Vector offset;
         offset.x = rect.minX;
@@ -478,6 +488,13 @@ void CSimpleModel::RenderModel(void* arg) {
 
     CShaderEffect::UpdateProjMatrix();
     simpleModel->UpdateModel();
+#if defined(WOWDECOMP_LINUX)
+    if (simpleModel->m_model) {
+        simpleModel->m_model->m_wxlEquipmentPreviewOwner = simpleModel->m_wxlEquipmentPreview &&
+            simpleModel->m_wxlEquipmentGeneration == NativeEquipmentPreviewGeneration();
+        simpleModel->m_model->m_wxlEquipmentPreviewGeneration = simpleModel->m_wxlEquipmentGeneration;
+    }
+#endif
 
     if (simpleModel->m_pendingCameraIndex == 0xFFFFFFFF) {
         simpleModel->GetScene()->Animate(cameraPos);

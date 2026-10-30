@@ -5,6 +5,9 @@
 #include <new>
 #include <typeinfo>
 #include "Engine/Source/Model2/M2Shared.h"
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/Model2/WxlBoneBudget.h"
+#endif
 #include "Engine/Source/Base/Handle.h"
 #include "Engine/Source/Base/SIMD.h"
 #include "Engine/Source/Base/Status.h"
@@ -16,6 +19,9 @@
 #include "Engine/Source/Gx/Gx.h"
 #include "Engine/Source/Model2/M2Cache.h"
 #include "Engine/Source/Model2/M2Model.h"
+#include "Engine/Source/ModernAssets/ModernM2.h"
+#include "Engine/Source/ModernAssets/NativeDiagnostic.h"
+#include "Engine/Source/ModernAssets/ModernM2Skin.h"
 #include "Engine/Source/Os/TimeManager.h"
 #include "Engine/Source/Services/AsyncFile.h"
 #include "Engine/Source/Services/Texture.h"
@@ -24,6 +30,12 @@
 #include "Engine/Source/Storm/H/storm.h"
 #include "Engine/Source/Tempest/CImVector.h"
 #include "Engine/Source/Os/OsMemory.h"
+
+#if defined(WOWDECOMP_LINUX)
+namespace {
+bool ReadModernM2Sidecar(const char* path, std::vector<uint8_t>& output);
+}
+#endif
 
 // STATIC: 0x00A45644
 static const uint32_t s_skinProfileBoneCounts[4] = { 256, 64, 53, 21 };
@@ -333,55 +345,7 @@ static void ConvertTextureComboEntry(TextureComboList* list, int32_t adjust, uin
     list->m_data[index + 1] = second;
 }
 
-// VERIFY: 59c9e83f manual
-// OFFSET: 0x008360A0
-int32_t CM2Shared::SetIndices() {
-    if (!this->m_indexPool) {
-        this->m_indexPool = g_theGxDevicePtr->PoolCreate(GxPoolTarget_Index, GxPoolUsage_Dynamic, sizeof(uint16_t) * this->m_instances * this->m_skinData->m_indices.m_count, GxPoolHintBit_Unk1, this->m_fileNameWithoutPath);
-        this->m_indexBuf = g_theGxDevicePtr->BufCreate(this->m_indexPool, sizeof(uint16_t), this->m_instances * this->m_skinData->m_indices.m_count, 0);
-
-        if (!this->m_indexPool || !this->m_indexBuf) {
-            return 0;
-        }
-    }
-
-    if (!this->m_indexBuf->m_hasData || !this->m_indexBuf->m_valid) {
-        uint16_t* indices = reinterpret_cast<uint16_t*>(g_theGxDevicePtr->BufLock(this->m_indexBuf));
-
-        if (!indices) {
-            return 0;
-        }
-
-        int32_t sharedVertices = (this->m_cache->m_flags & 8) || (this->m_data->m_bones.m_count == 1 && (this->m_cache->m_flags & 0x40));
-        uint32_t indexStart = 0;
-
-        for (uint32_t i = 0; i < this->m_skinData->m_skinSections.m_count; i++) {
-            M2SkinSection* section = &this->m_skinSections[i];
-            uint32_t start = this->m_skinData->m_skinSections[i].m_indexStart;
-            uint16_t offset = sharedVertices ? 0 : static_cast<uint16_t>(-section->m_vertexStart);
-
-            for (uint32_t instance = 0; instance < this->m_instances; instance++) {
-                for (uint32_t j = 0; j < section->m_indexCount; j++) {
-                    indices[j] = offset + this->m_skinData->m_indices[start + j];
-                }
-
-                indices += section->m_indexCount;
-                offset += sharedVertices ? static_cast<uint16_t>(this->m_skinData->m_vertices.m_count) : section->m_vertexCount;
-            }
-
-            section->m_indexStart = static_cast<uint16_t>(indexStart);
-            indexStart += this->m_instances * section->m_indexCount;
-        }
-
-        CGxBuf* buf = this->m_indexBuf;
-        g_theGxDevicePtr->BufUnlock(buf, 0);
-        buf->m_hasData = 1;
-    }
-
-    g_theGxDevicePtr->PrimIndexPtr(this->m_indexBuf);
-
-    return 1;
-}
+#include "Engine/Source/Model2/WxlSkinIndexUpload.inl"
 
 // VERIFY: fe5131e0 manual
 // OFFSET: 0x008362B0
@@ -1137,6 +1101,10 @@ int32_t CM2Shared::InitializeSkinProfile() {
 
     for (uint32_t i = 0; i < skinData->m_skinSections.m_count; i++) {
         uint32_t instances = skinData->m_boneCountMax / skinData->m_skinSections[i].m_boneCount;
+#if defined(WOWDECOMP_LINUX)
+        const uint32_t shaderInstances = WxlBoneInstances(skinData->m_skinSections[i].m_boneCount);
+        if (instances > shaderInstances) instances = shaderInstances;
+#endif
 
         if (this->m_maxInstances > instances) {
             this->m_maxInstances = instances;
@@ -1310,10 +1278,20 @@ int32_t CM2Shared::FinishLoadingSkinProfile(uint32_t size) {
     M2SkinProfile* skinData = this->m_skinData;
     uint8_t* base = reinterpret_cast<uint8_t*>(skinData);
 
-    if (!M2Init(base, size, *data, skinData->m_vertices) || !M2Init(base, size, *data, skinData->m_indices) || !M2Init(base, size, *data, skinData->m_bones) || !M2Init(base, size, *data, skinData->m_skinSections) || !M2Init(base, size, *data, skinData->m_batches)) {
+    if (!M2Init(base, size, *data, skinData->m_vertices) || !M2Init(base, size, *data, skinData->m_indices) || !M2Init(base, size, *data, skinData->m_bones) ||
+#if defined(WOWDECOMP_LINUX)
+        !RelocateNativeM2SkinSections(data, skinData, size) ||
+#else
+        !M2Init(base, size, *data, skinData->m_skinSections) ||
+#endif
+        !M2Init(base, size, *data, skinData->m_batches)) {
         DebugLog("Corrupt skin profile data: %s", this->m_fileName);
         return 0;
     }
+
+#if defined(WOWDECOMP_LINUX)
+    if (!RebuildModernM2Skin(data, skinData, this->m_fileName)) return 0;
+#endif
 
     if (!this->InitializeSkinProfile()) {
         DebugLog("Failed to initialize model skin profile: %s", this->m_fileName);
@@ -1795,6 +1773,34 @@ void CM2Shared::LoadSucceededCallback(void* param) {
     CM2Shared* shared = static_cast<CM2Shared*>(param);
     AsyncFileReadDestroyObject(shared->m_asyncObject);
     shared->m_asyncObject = nullptr;
+
+#if defined(WOWDECOMP_LINUX)
+    std::vector<uint8_t> converted;
+    ModernM2TransformResult conversion =
+        TransformModernM2(shared->m_fileName, shared->m_data, shared->m_fileSize, converted,
+                          &ReadModernM2Sidecar);
+
+    if (conversion == ModernM2TransformResult::Transformed ||
+        conversion == ModernM2TransformResult::RepairedNative) {
+        M2Data* data = static_cast<M2Data*>(SIMD::AllocA16(converted.size(), __FILE__, __LINE__));
+
+        if (!data) {
+            WxlNativeDiagnostic("modern-m2: failed to allocate transformed model: %s", shared->m_fileName);
+            return;
+        }
+
+        memcpy(data, converted.data(), converted.size());
+        SIMD::FreeA16(shared->m_data);
+        shared->m_data = data;
+        shared->m_fileSize = static_cast<uint32_t>(converted.size());
+        if (conversion == ModernM2TransformResult::Transformed) RegisterModernM2Data(data);
+        WxlNativeDiagnostic("modern-m2: %s %s",
+            conversion == ModernM2TransformResult::RepairedNative ? "repaired native model" : "transformed", shared->m_fileName);
+    } else if (conversion == ModernM2TransformResult::Rejected) {
+        WxlNativeDiagnostic("modern-m2: rejected source model: %s", shared->m_fileName);
+    }
+#endif
+
     shared->FinishLoading();
 }
 
@@ -1958,6 +1964,9 @@ CM2Shared::~CM2Shared() {
 #endif
 
     if (!pending) {
+#if defined(WOWDECOMP_LINUX)
+        ReleaseModernM2Data(this->m_data);
+#endif
         SIMD::FreeA16(this->m_data);
     }
 }
@@ -1968,6 +1977,17 @@ void CM2Shared::LowPrioritySequenceLoadedCallback(void* param) {
     CM2SequenceLoad* load = static_cast<CM2SequenceLoad*>(param);
     CM2Shared* shared = load->m_shared;
 
+#if defined(WOWDECOMP_LINUX)
+    const auto animationResult = TransformModernExternalAnimation(load->m_asyncObject->m_buffer, load->m_asyncObject->m_size);
+    if (animationResult == ModernAnimationTransformResult::Rejected) {
+        WxlNativeDiagnostic("modern-anim: rejected unsupported or malformed sequence %u for %s",
+            load->m_sequenceIndex, shared->m_fileName);
+        CM2Shared::LowPrioritySequenceFailedCallback(param);
+        return;
+    }
+    if (animationResult == ModernAnimationTransformResult::Unwrapped)
+        WxlNativeDiagnostic("modern-anim: unwrapped sequence %u for %s", load->m_sequenceIndex, shared->m_fileName);
+#endif
     shared->m_flags |= 0x10;
     shared->FinishLoadingLowPrioritySequence(load->m_sequenceIndex, load->m_asyncObject);
 
@@ -2177,3 +2197,27 @@ void M2HeapSort(int32_t (*compare)(uint32_t, uint32_t, const void*), uint32_t* a
         array[parent] = value;
     }
 }
+#if defined(WOWDECOMP_LINUX)
+namespace {
+bool ReadModernM2Sidecar(const char* path, std::vector<uint8_t>& output) {
+    output.clear();
+    SFileImpl* file = nullptr;
+    if (!path || !SFile::OpenEx(nullptr, path, 0, &file) || !file) {
+        return false;
+    }
+
+    const uint32_t size = SFileGetFileSize(file, nullptr);
+    if (!size || size > 64u * 1024u * 1024u) {
+        SFileCloseFile(file);
+        return false;
+    }
+    output.resize(size);
+    const bool loaded = SFileReadFile(file, output.data(), size, nullptr, nullptr, 0) != 0;
+    SFileCloseFile(file);
+    if (!loaded) {
+        output.clear();
+    }
+    return loaded;
+}
+} // namespace
+#endif

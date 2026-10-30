@@ -8,3 +8,5 @@ target_include_directories(WorldClient
     PUBLIC
         ${CMAKE_SOURCE_DIR}
 )
+
+target_link_libraries(WorldClient PRIVATE ModernAssets)

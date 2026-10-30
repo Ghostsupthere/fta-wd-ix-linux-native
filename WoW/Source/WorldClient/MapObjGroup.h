@@ -3,6 +3,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/ModernAssets/ModernWmo.h"
+#endif
 #include "Engine/Source/Gx/Types.h"
 #include "Engine/Source/Tempest/C2Vector.h"
 #include "Engine/Source/Tempest/C3Ray.h"
@@ -225,6 +228,9 @@ class CMapObjGroup {
     /* 01A8 */ TSExplicitList<CMapObjOccluder, offsetof(CMapObjOccluder, m_link)> m_occluderList;
     /* 01B4 */ TSLink<CMapObjGroup> m_asyncLoadLink;
 
+#if defined(WOWDECOMP_LINUX)
+    std::shared_ptr<ModernWmoGroupVisuals> m_wxlVisuals;
+#endif
     CMapObjGroup();
     ~CMapObjGroup();
     void Init();

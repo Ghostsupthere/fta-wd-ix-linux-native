@@ -9,9 +9,50 @@
 #include "WoW/Source/WorldClient/DayNight.h"
 #include "Engine/Source/Services/AsyncFile.h"
 #include "Engine/Source/BlizzardCore/SFile2-Core.h"
+#include "Engine/Source/ModernAssets/ModernWmo.h"
+#include "Engine/Source/ModernAssets/NativeDiagnostic.h"
 #include "WoW/Source/WorldClient/Map.h"
 #include "WoW/Source/WorldClient/MapObj.h"
 #include "WoW/Source/WorldClient/MapObjGroup.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
+#endif
+#include <vector>
+
+#if defined(WOWDECOMP_LINUX)
+namespace {
+bool TransformWmoBuffer(void*& data, int32_t& size, bool root,
+    std::shared_ptr<ModernWmoRootVisuals>* rootVisuals = nullptr,
+    std::shared_ptr<ModernWmoGroupVisuals>* groupVisuals = nullptr) {
+    if (rootVisuals) rootVisuals->reset();
+    if (groupVisuals) groupVisuals->reset();
+    if (!data || size <= 0) {
+        return false;
+    }
+
+    std::vector<uint8_t> converted;
+    const ModernWmoTransformResult result = root
+        ? TransformModernWmoRoot(data, static_cast<uint32_t>(size), converted, rootVisuals)
+        : TransformModernWmoGroup(data, static_cast<uint32_t>(size), converted, groupVisuals);
+    if (result != ModernWmoTransformResult::Transformed) {
+        return false;
+    }
+
+    void* replacement = SMemAlloc(converted.size(), __FILE__, __LINE__, 0);
+    if (!replacement) {
+        if (rootVisuals) rootVisuals->reset();
+        if (groupVisuals) groupVisuals->reset();
+        return false;
+    }
+    memcpy(replacement, converted.data(), converted.size());
+    SMemFree(data, __FILE__, __LINE__, 0);
+    data = replacement;
+    size = static_cast<int32_t>(converted.size());
+    WxlNativeDiagnostic("modern-wmo: converted %s buffer (%d bytes)", root ? "root" : "group", size);
+    return true;
+}
+} // namespace
+#endif
 
 // STATIC: 0x00ADFC4C
 TSList<CMapObj, TSGetExplicitLink<CMapObj> > CMapObj::s_asyncLoadQueue = TSExplicitList<CMapObj, offsetof(CMapObj, m_asyncLoadLink)>();
@@ -416,6 +457,9 @@ void CMapObj::PostloadCallback(void* arg) {
     AsyncFileReadDestroyObject(mapObj->m_asyncObject);
     mapObj->m_asyncObject = nullptr;
     mapObj->m_asyncLoadLink.Unlink();
+#if defined(WOWDECOMP_LINUX)
+    mapObj->m_wxlModernWmo = TransformWmoBuffer(mapObj->m_pWmoData, mapObj->m_wmoFileSize, true, &mapObj->m_wxlVisuals);
+#endif
     mapObj->Load();
     mapObj->CreateMaterials();
     mapObj->m_argbColor = *reinterpret_cast<CImVector*>(&mapObj->m_header->m_ambColor);
@@ -463,6 +507,18 @@ bool CMapObj::Read(char* fileName) {
 // VERIFY: a3a005c2 manual
 // OFFSET: 0x007D81C0
 void CMapObjGroup::HandleAntiportal() {
+#if defined(WOWDECOMP_LINUX)
+    // WarcraftXL skips modern-WMO antiportals: their geometry can occlude
+    // visible areas after conversion. Keep this scoped to converted roots.
+    if (this->m_parent && this->m_parent->m_wxlModernWmo &&
+        WxlProfileEnabled("WXL_MODERN_ASSETS", true) &&
+        WxlProfileEnabled("WXL_MODERN_WMO_VISIBILITY", true)) {
+        this->m_extBatchCount = 0;
+        this->m_intBatchCount = 0;
+        WxlNativeDiagnostic("modern-wmo: skipped converted antiportal in %s", this->m_parent->m_wmoName);
+        return;
+    }
+#endif
     for (uint32_t i = 0; i < static_cast<uint32_t>(this->m_polyListSize); i++) {
         C3Vector* verts[3];
         verts[0] = &this->m_vertexList[this->m_indices[3 * i]];
@@ -599,6 +655,10 @@ void CMapObjGroup::AsyncPostloadCallback(void* arg) {
     AsyncFileReadDestroyObject(group->m_asyncObjPtr);
     group->m_asyncObjPtr = nullptr;
     group->m_asyncLoadLink.Unlink();
+#if defined(WOWDECOMP_LINUX)
+    TransformWmoBuffer(group->m_filePtr, group->m_fileSize, false, nullptr,
+        group->m_parent && group->m_parent->m_wxlModernWmo ? &group->m_wxlVisuals : nullptr);
+#endif
     group->Create();
 }
 
@@ -621,6 +681,10 @@ void CMapObj::ReadGroup(uint32_t index, bool preLoad) {
 
     if (preLoad) {
         CMap::SafeRead(fileName, file, group->m_filePtr, group->m_fileSize);
+#if defined(WOWDECOMP_LINUX)
+        TransformWmoBuffer(group->m_filePtr, group->m_fileSize, false, nullptr,
+            this->m_wxlModernWmo ? &group->m_wxlVisuals : nullptr);
+#endif
         group->Create();
         SFileCloseFile(file);
         return;

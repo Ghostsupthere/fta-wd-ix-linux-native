@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 #include "Engine/Source/BlizzardCore/SFile2-Core.h"
 #include "Engine/Source/BLPFile/blp.h"
 #include "Engine/Source/Event/Event.h"
@@ -9,6 +10,8 @@
 #include "Engine/Source/Gxu/Gxu.h"
 #include "Engine/Source/Images/MippedImg.h"
 #include "Engine/Source/Images/tga.h"
+#include "Engine/Source/ModernAssets/ModernBlp.h"
+#include "Engine/Source/ModernAssets/NativeDiagnostic.h"
 #include "Engine/Source/Os/System.h"
 #include "Engine/Source/Os/TimeManager.h"
 #include "Engine/Source/Services/AsyncFile.h"
@@ -1922,6 +1925,25 @@ int32_t PumpBlpTextureAsync(CTexture* texture, void* data) {
 // VERIFY: 85a7ce70 manual
 // OFFSET: 0x004B7E80
 void AsyncTextureSuccessCallback(CTexture* texture) {
+#if defined(WOWDECOMP_LINUX)
+    std::vector<uint8_t> converted;
+    ModernBlpTransformResult conversion = TransformModernBlp(
+        texture->m_filename, texture->m_asyncObject->m_buffer, texture->m_asyncObject->m_size, converted);
+    if (conversion == ModernBlpTransformResult::Transformed) {
+        void* replacement = SMemAlloc(converted.size(), __FILE__, __LINE__, 0);
+        if (replacement) {
+            memcpy(replacement, converted.data(), converted.size());
+            s_asyncLoadBufferUsed -= texture->m_asyncObject->m_size;
+            SMemFree(texture->m_asyncObject->m_buffer, __FILE__, __LINE__, 0);
+            texture->m_asyncObject->m_buffer = replacement;
+            texture->m_asyncObject->m_size = static_cast<uint32_t>(converted.size());
+            s_asyncLoadBufferUsed += texture->m_asyncObject->m_size;
+            WxlNativeDiagnostic("modern-blp: transformed %s", texture->m_filename);
+        }
+    } else if (conversion == ModernBlpTransformResult::Rejected) {
+        WxlNativeDiagnostic("modern-blp: rejected source texture: %s", texture->m_filename);
+    }
+#endif
     if (!PumpBlpTextureAsync(texture, texture->m_asyncObject->m_buffer)) {
         if (!texture->m_status.IsEmpty()) {
             SysMsgAdd(&texture->m_status);
@@ -1957,7 +1979,13 @@ int32_t AsyncTextureStatus() {
 // VERIFY: f4a9a3e6 manual
 // OFFSET: 0x004B7F80
 void TextureInitialize() {
-    s_mipBitsCapacity = MippedImgCalcSize(PIXEL_ARGB8888, 1024, 1024);
+    s_mipBitsCapacity = MippedImgCalcSize(PIXEL_ARGB8888,
+#if defined(WOWDECOMP_LINUX)
+        2048, 2048
+#else
+        1024, 1024
+#endif
+    );
     s_mipBits = static_cast<MipBits*>(SMemAlloc(s_mipBitsCapacity, __FILE__, __LINE__, 0));
     AsyncFileReadAddPollHandler(AsyncTextureHandler);
     AsyncFileReadAddStatusHandler(AsyncTextureStatus);
@@ -2234,6 +2262,22 @@ CTexture* CreateBlpSync(const char* fileName, char* extension, uint32_t flags, C
     if (!SFileReadFile(file, data, size, nullptr, nullptr, 0)) {
         DebugLog("CreateBlpTexture() failed read: %s.\n", fileName);
     }
+
+#if defined(WOWDECOMP_LINUX)
+    std::vector<uint8_t> converted;
+    ModernBlpTransformResult conversion = TransformModernBlp(fileName, data, size, converted);
+    if (conversion == ModernBlpTransformResult::Transformed) {
+        void* replacement = SMemAlloc(converted.size(), __FILE__, __LINE__, 0);
+        if (replacement) {
+            memcpy(replacement, converted.data(), converted.size());
+            SMemFree(data, __FILE__, __LINE__, 0);
+            data = replacement;
+            WxlNativeDiagnostic("modern-blp: transformed %s", fileName);
+        }
+    } else if (conversion == ModernBlpTransformResult::Rejected) {
+        WxlNativeDiagnostic("modern-blp: rejected source texture: %s", fileName);
+    }
+#endif
 
     if (!PumpBlpTextureAsync(texture, data)) {
         FillInSolidTexture(*reinterpret_cast<const CImVector*>(&s_defaultColor), texture);

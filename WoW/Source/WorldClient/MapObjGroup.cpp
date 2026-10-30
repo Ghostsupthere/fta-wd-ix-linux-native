@@ -956,6 +956,9 @@ int32_t CMapObjGroup::FindLiquidType() {
 // VERIFY: f0e93fe5 auto
 // OFFSET: 0x007C9BC0
 void CMapObjGroup::Init() {
+#if defined(WOWDECOMP_LINUX)
+    this->m_wxlVisuals.reset();
+#endif
     this->m_unkLoadedFlag &= ~0xF;
     this->unused_0190 = 0.0f;
     this->m_flags = 0;
@@ -1521,6 +1524,9 @@ void CMapObjGroup::FreeLiquidVB() {
 // VERIFY: 200c714f manual
 // OFFSET: 0x007CBE80
 void CMapObjGroup::Clear() {
+#if defined(WOWDECOMP_LINUX)
+    this->m_wxlVisuals.reset();
+#endif
     int32_t freeFile = 1;
 
     if (this->m_asyncObjPtr) {

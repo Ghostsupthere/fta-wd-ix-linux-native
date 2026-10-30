@@ -1,6 +1,9 @@
 #include <cmath>
 #include <cstdint>
 #include "Engine/Source/Model2/CM2SceneRender.h"
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/Model2/WxlBoneBudget.h"
+#endif
 #include "Engine/Source/Gx/CGxBuf.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
 #include "Engine/Source/Gx/Gx.h"
@@ -30,13 +33,18 @@ static C44Matrix s_identity;
 // (CGxDevice::s_shadowConstants, see CGxDevice.cpp/.h) has a fixed 256
 // registers; bone matrices here start at register 31 and use 3 registers
 // each, leaving room for at most (256 - 31) / 3 = 75 bones per batch.
-// A well-formed M2 skin section never comes close to that -- but at least
-// one real model in this project's content does, with a corrupt-looking
+// Customized native/modern skins can legitimately exceed that limit and now
+// receive palette subdivision before draw setup. At least
+// one model in this project's content also had a corrupt-looking
 // m_boneCount in the many hundreds, confirmed via AddressSanitizer:
 // global-buffer-overflow writing straight through s_shadowConstants and
 // into the next global (CGxDevice::s_uiVertexShader) while hovering an
 // NPC. Clamp instead of trusting the model's own count.
+#if defined(WOWDECOMP_LINUX)
+static constexpr uint32_t kMaxBonesPerBatch = WxlShaderBoneBudget;
+#else
 static constexpr uint32_t kMaxBonesPerBatch = (256 - 31) / 3;
+#endif
 
 // FIX (2026-10-26): model->m_boneMatrices is allocated in
 // CM2Model::InitializeLoaded() sized to that model's OWN bone count
@@ -463,7 +471,11 @@ void CM2SceneRender::DrawBatch() {
     this->SetupMaterial();
     this->SetupTextures();
 
-    if (CShaderEffect::s_enableShaders && (this->m_curType != this->m_prevType || this->m_curModel != this->m_prevModel || this->m_curSkinSection->m_boneComboIndex != this->m_prevSkinSection->m_boneComboIndex)) {
+    if (CShaderEffect::s_enableShaders && (this->m_curType != this->m_prevType || this->m_curModel != this->m_prevModel ||
+#if defined(WOWDECOMP_LINUX)
+        !this->m_prevSkinSection || this->m_curSkinSection->m_boneCount != this->m_prevSkinSection->m_boneCount ||
+#endif
+        this->m_curSkinSection->m_boneComboIndex != this->m_prevSkinSection->m_boneComboIndex)) {
         float* constants = g_theGxDevicePtr->ShaderConstantsLock(GxSh_Vertex) + 31 * 4;
         uint32_t boneCount = this->m_curSkinSection->m_boneCount;
 
@@ -642,6 +654,13 @@ void CM2SceneRender::DrawBatchDoodad(M2Element* elements, uint32_t* indices) {
 
     uint32_t total = this->m_curElement->m_count;
     uint32_t instances = this->m_curShared->AllocInstances(total);
+#if defined(WOWDECOMP_LINUX)
+    if (CShaderEffect::s_enableShaders) {
+        const uint32_t limit = WxlBoneInstances(this->m_curSkinSection->m_boneCount);
+        if (!limit) return;
+        if (instances > limit) instances = limit;
+    }
+#endif
 
     if (instances > total) {
         instances = total;

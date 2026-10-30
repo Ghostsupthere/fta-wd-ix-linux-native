@@ -32,6 +32,9 @@
 #include "WoW/Source/WorldClient/AreaList.h"
 #include "WoW/Source/WorldClient/Map.h"
 #include "WoW/Source/WorldClient/World.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
+#endif
 
 // STATIC: 0x00B24180
 static const char* s_raceFileNames[] = { nullptr, "Human", "Orc", "Dwarf", "NightElf", "Scourge", "Tauren", "Gnome", "Troll", "Goblin", "BloodElf", "Draenei" };
@@ -666,6 +669,20 @@ void SI2::RegisterDeviceChangeHandler() {
 // VERIFY: 5c43095a manual
 // OFFSET: 0x004C6A40
 int32_t SI2::PlaySoundKit(int32_t soundKitId, const C3Vector* position, SE2SoundKitObject* object, SE2SoundKitProperties* properties, uint32_t advancedId, uint32_t* soundId, int32_t checkDistance, int32_t keepPlaying) {
+#if defined(WOWDECOMP_LINUX)
+    // WarcraftXL filters the five 3.3.5 spell-fizzle kits at this same
+    // entry point, leaving error speech and other SFX untouched.
+    if (soundKitId >= 1424 && soundKitId <= 1428 &&
+        WxlProfileEnabled("WXL_MUTE_CAST_FAILURE_SOUNDS", false)) {
+        if (soundId) *soundId = 0;
+        static bool logged = false;
+        if (!logged) {
+            logged = true;
+            std::fprintf(stderr, "WarcraftXL: cast-failure sound filter active (kits 1424-1428)\n");
+        }
+        return 0;
+    }
+#endif
     if (soundKitId <= 0) {
         return 5;
     }

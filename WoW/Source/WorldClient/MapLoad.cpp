@@ -1,4 +1,5 @@
 #include "MapLoad.h"
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "Engine/Source/Tempest/CMath.h"
 #include "Engine/Source/Tempest/NTempest.h"
 #include "Engine/Source/Model2/M2Model.h"

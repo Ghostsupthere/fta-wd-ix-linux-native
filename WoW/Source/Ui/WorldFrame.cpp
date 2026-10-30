@@ -1,4 +1,5 @@
 #include "WorldFrame.h"
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "Engine/Source/Base/ConvertUTF.h"
 #include <cstring>
 #include <typeinfo>
@@ -1731,6 +1732,12 @@ void CGWorldFrame::OnWorldRender() {
     }
 
     CShaderEffect::UpdateProjMatrix();
+#if defined(WOWDECOMP_LINUX)
+    // Fog selection needs this frame's camera-liquid state. The world update
+    // has already located the viewer; do the regular liquid refresh here.
+    CWorldScene::UpdateViewerLiquid();
+#endif
+    WxlWorldFogScope wxlFogScope(World::SceneCamLiquidStatus(nullptr) != 0);
     CWorld::Render(this->m_camera->m_position, this->m_elapsedSec);
     CMap::RenderFootprints();
     ClntObjMgrEnumVisibleObjects(UnitPostAnimateProc, this);

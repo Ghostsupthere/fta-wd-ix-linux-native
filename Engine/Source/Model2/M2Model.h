@@ -36,6 +36,9 @@ class M2VertexPNT2;
 class CM2ModelCall;
 class CM2Scene;
 class CM2Shared;
+#if defined(WOWDECOMP_LINUX)
+struct WxlModelBoneCache;
+#endif
 class CTexture;
 class M2ModelBone;
 template <class T>
@@ -221,6 +224,13 @@ class CM2Model {
     /* 02E4 */ uint32_t m_hitTestGroup;
     /* 02E8 */ uint32_t m_handle;
     /* 02EC */ uint32_t unused_02EC;
+#if defined(WOWDECOMP_LINUX)
+    WxlModelBoneCache* m_wxlBoneRemap;
+    struct WxlItemPhysicsState* m_wxlItemPhysics;
+    bool m_wxlEquipmentPreviewOwner = false;
+    uint64_t m_wxlEquipmentPreviewGeneration = 0;
+    void RefreshWxlCollectionPalette();
+#endif
 
     static void (*s_transformVertices[5])(CM2Model*, M2SkinSection*, uint8_t*, int32_t);
     static TSGrowableArray<M2ModelCallback> s_sequenceCallbacks;

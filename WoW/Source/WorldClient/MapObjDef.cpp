@@ -3,6 +3,7 @@
 #include "WoW/Source/WorldClient/Map.h"
 #include "WoW/Source/WorldClient/MapLight.h"
 #include "WoW/Source/WorldClient/World.h"
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "WoW/Source/WorldClient/CWorldMath.h"
 #include "WoW/Source/WorldClient/DayNight__DNInfo.h"
 #include "WoW/Source/WorldClient/MapObj.h"

@@ -1,4 +1,5 @@
 #include "WorldParam.h"
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include <cstdio>
 #include <new>
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
@@ -389,6 +390,12 @@ bool CWorldParam::GroundEffectDistCallback(CVar* var, const char* oldValue, cons
         return false;
     }
 
+#if defined(WOWDECOMP_LINUX)
+    // Keep the native setter responsible for pool invalidation and squared
+    // culling. WarcraftXL scaled the input to that same setter, so the
+    // profile multiplier is applied once here rather than to cached globals.
+    dist *= WxlProfileNumber("WXL_GRASS_DISTANCE_SCALE", 1.0f, 1.0f, 2.5f);
+#endif
     World::SetDetailDoodadDist(dist);
 
     return true;
@@ -445,6 +452,12 @@ bool CWorldParam::EnvironmentDetailCallback(CVar* var, const char* oldValue, con
         detail = 1.5f;
     }
 
+#if defined(WOWDECOMP_LINUX)
+    // Match WarcraftXL's post-validation object-distance hook. Scaling the
+    // value before ScaleFadeDist keeps every native object class and its fade
+    // range in one coherent coordinate system.
+    detail *= WxlProfileNumber("WXL_OBJECT_DISTANCE_SCALE", 1.0f, 1.0f, 2.5f);
+#endif
     CWorldScene::ScaleFadeDist(detail);
 
     return true;

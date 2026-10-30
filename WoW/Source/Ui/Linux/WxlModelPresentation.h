@@ -1,0 +1,5 @@
+#ifndef WOW_SOURCE_UI_LINUX_WXLMODELPRESENTATION_H
+#define WOW_SOURCE_UI_LINUX_WXLMODELPRESENTATION_H
+void WxlRegisterModelPresentationLua();
+void WxlUnregisterModelPresentationLua();
+#endif

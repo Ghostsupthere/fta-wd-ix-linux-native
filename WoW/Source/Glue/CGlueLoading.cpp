@@ -41,6 +41,12 @@ float CGlueLoading::ComputeLoadProgress(CCharacterComponent* component, int64_t&
 // VERIFY: 18ba530c auto
 // OFFSET: 0x004E6940
 int32_t CGlueLoading::Idle(CCharacterComponent* component) {
+#if defined(WOWDECOMP_LINUX)
+    // Selection/creation may keep an already-loaded component without another
+    // customization event. Poll equipment recovery and async overrides there.
+    if (component && component->m_data.m_model && (component->m_data.m_model->m_fFlags & 1))
+        component->RenderPrep(0);
+#endif
     uint32_t time = OsGetAsyncTimeMs();
     float elapsed = (time - CGlueLoading::m_loadStartTime) * 0.001f;
     CGlueLoading::m_loadStartTime = time;

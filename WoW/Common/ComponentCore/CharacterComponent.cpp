@@ -1,10 +1,17 @@
 #include <cstddef>
+#include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cmath>
 #include <cstring>
+#include <cctype>
+#include <iterator>
 #include <emmintrin.h>
 #include <new>
 #include <typeinfo>
+#if defined(WOWDECOMP_LINUX)
+#include <strings.h>
+#endif
 #if defined(_MSC_VER)
 #include <malloc.h>
 #else
@@ -22,7 +29,11 @@
 #include "Engine/Source/Gx/CGxTexFlags.h"
 #include "Engine/Source/Gx/Gx.h"
 #include "Engine/Source/Model2/M2Model.h"
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/Model2/WxlAttachmentId.h"
+#endif
 #include "Engine/Source/Model2/M2Scene.h"
+#include "Engine/Source/ModernAssets/NativeDiagnostic.h"
 #include "Engine/Source/Os/Path.h"
 #include "Engine/Source/Os/Processor.h"
 #include "Engine/Source/Os/System.h"
@@ -34,6 +45,11 @@
 #include "Engine/Source/Tempest/CImVector.h"
 #include "Engine/Source/Tempest/CRandom.h"
 #include "WoW/Common/ComponentCore/ComponentUtils.h"
+#include "WoW/Common/ComponentCore/WxlCollectionSidecar.h"
+#include "WoW/Common/ComponentCore/WxlWaistModel.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
+#endif
 #include "WoW/Common/TextureCache.h"
 #include "WoW/Source/DB/DBClient/DBClient.h"
 #include "WoW/Source/DB/Rec/CharHairGeosetsRec.h"
@@ -48,6 +64,24 @@
 #include "WoW/Source/DB/Rec/ItemVisualsRec.h"
 #include "WoW/Source/DB/Rec/ParticleColorRec.h"
 #include "WoW/Source/Object/ObjectClient/Player_C.h"
+
+#if defined(WOWDECOMP_LINUX)
+struct WxlWaistPending {
+    CM2Model* parent;
+    CM2Shared* shared;
+    CM2Scene* scene;
+    CTexture* texture;
+    uint32_t display;
+    uint32_t race;
+    uint32_t sex;
+    uint64_t generation;
+    WxlWaistModel::RetryGate retry;
+    std::string modelPath;
+    std::string texturePath;
+};
+
+#include "WoW/Common/ComponentCore/WxlCollectionTexture.inl"
+#endif
 
 // STATIC: 0x009F6A00
 static int32_t s_itemPriority[NUM_ITEM_SLOTS][NUM_COMPONENT_SECTIONS] = {
@@ -186,6 +220,156 @@ static SThread s_thread;
 
 // STATIC: 0x00B6B9CC
 static SEvent s_threadBeginEvent(0, 0);
+
+#if defined(WOWDECOMP_LINUX)
+namespace {
+constexpr uint32_t kCollectionAttachmentBase = 0xF000;
+
+bool StartsWithCollection(const char* value) {
+    constexpr char prefix[] = "collections_";
+    if (!value) return false;
+    for (size_t i = 0; i < sizeof(prefix) - 1; ++i) {
+        if (!value[i] || std::tolower(static_cast<unsigned char>(value[i])) != prefix[i]) return false;
+    }
+    return true;
+}
+
+void StripCollectionSourceVariant(char* stem) {
+    char* dot = std::strrchr(stem, '.');
+    if (dot) *dot = '\0';
+    char* gender = std::strrchr(stem, '_');
+    if (!gender || gender[2] || (gender[1] != 'm' && gender[1] != 'M' && gender[1] != 'f' && gender[1] != 'F')) return;
+    *gender = '\0';
+    char* race = std::strrchr(stem, '_');
+    if (!race) {
+        *gender = '_';
+        return;
+    }
+    const size_t length = std::strlen(race + 1);
+    if (length < 2 || length > 3) {
+        *gender = '_';
+        return;
+    }
+    for (size_t i = 0; i < length; ++i) {
+        if (!std::isalpha(static_cast<unsigned char>(race[1 + i]))) {
+            *gender = '_';
+            return;
+        }
+    }
+    *race = '\0';
+}
+
+void FilterCollectionSlot(CM2Model* model, ITEM_SLOT slot, const uint16_t* explicitIds, size_t explicitCount) {
+    static const uint16_t kHead[] = {24, 25, 27, 37, 41, 42, 43};
+    static const uint16_t kShoulder[] = {26};
+    static const uint16_t kShirt[] = {6};
+    static const uint16_t kChest[] = {10, 22, 29};
+    static const uint16_t kBelt[] = {18};
+    static const uint16_t kPants[] = {9, 11, 13, 14, 30};
+    static const uint16_t kBoots[] = {5, 20, 31};
+    static const uint16_t kBracers[] = {8};
+    static const uint16_t kGloves[] = {4, 23};
+    static const uint16_t kCape[] = {15};
+    static const uint16_t kTabard[] = {12};
+    const uint16_t* sections = nullptr;
+    size_t count = 0;
+    switch (slot) {
+        case ITEMSLOT_HEAD: sections = kHead; count = std::size(kHead); break;
+        case ITEMSLOT_SHOULDER: sections = kShoulder; count = std::size(kShoulder); break;
+        case ITEMSLOT_SHIRT: sections = kShirt; count = std::size(kShirt); break;
+        case ITEMSLOT_CHEST: sections = kChest; count = std::size(kChest); break;
+        case ITEMSLOT_BELT: sections = kBelt; count = std::size(kBelt); break;
+        case ITEMSLOT_PANTS: sections = kPants; count = std::size(kPants); break;
+        case ITEMSLOT_BOOTS: sections = kBoots; count = std::size(kBoots); break;
+        case ITEMSLOT_BRACERS: sections = kBracers; count = std::size(kBracers); break;
+        case ITEMSLOT_GLOVES: sections = kGloves; count = std::size(kGloves); break;
+        case ITEMSLOT_CAPE: sections = kCape; count = std::size(kCape); break;
+        case ITEMSLOT_TABARD: sections = kTabard; count = std::size(kTabard); break;
+        default: return;
+    }
+    model->SetGeometryVisible(0, 0xFFFF, 0);
+    if (explicitCount) {
+        for (size_t i = 0; i < explicitCount; ++i)
+            model->SetGeometryVisible(explicitIds[i], explicitIds[i], 1);
+    } else {
+        for (size_t i = 0; i < count; ++i)
+            model->SetGeometryVisible(sections[i] * 100u, sections[i] * 100u + 99u, 1);
+    }
+}
+
+void ApplyCollectionTexture(CCharacterComponent* component, ITEM_SLOT slot, CM2Model* model,
+                            const ItemDisplayInfoRec* display, uint32_t column, uint32_t part,
+                            const char* stem, const char* race, const char* gender,
+                            uint32_t flags, const std::string& folder) {
+    if (!model || !display || column >= 2 || !display->m_modelTexture[column] ||
+        !*display->m_modelTexture[column]) return;
+    // ModelName and ModelTexture may both contain semicolon-separated lists.
+    // WarcraftXL uses the corresponding texture, falling back to the first.
+    const char* list = display->m_modelTexture[column];
+    const char* entry = list;
+    for (uint32_t i = 0; i < part; ++i) {
+        const char* next = std::strchr(entry, ';');
+        if (!next) { entry = list; break; }
+        entry = next + 1;
+    }
+    const char* end = std::strchr(entry, ';');
+    const size_t length = end ? static_cast<size_t>(end - entry) : std::strlen(entry);
+    if (!length || length >= 200) return;
+    char textureName[200] = {};
+    std::memcpy(textureName, entry, length);
+    WxlCollectionSidecar::Model textureEntry;
+    textureEntry.texture = textureName;
+    textureEntry.texturePolicy = "dbc";
+    textureEntry.folder = folder;
+    std::string path;
+    if (!WxlCollectionSidecar::BuildTexturePath(textureEntry, stem, race, gender, path, flags)) return;
+    if (!SFile::FileExists(path.c_str())) {
+        WxlNativeDiagnostic("collection-armor: missing texture %s", path.c_str());
+        return;
+    }
+    component->QueueWxlTexture(model, slot, display->m_id, M2TEX_OBJECT_SKIN, path.c_str());
+}
+
+void ApplyCollectionMaterials(CCharacterComponent* component, ITEM_SLOT slot, CM2Model* model,
+                              uint32_t display, int column, uint32_t part,
+                              const char* stem, const char* folder, const char* race, const char* gender) {
+    if (!model || !stem) return;
+    auto normalized = [](std::string text) {
+        const size_t slash = text.find_last_of("/\\");
+        if (slash != std::string::npos) text.erase(0, slash + 1);
+        const size_t end = text.find_first_of(":.");
+        if (end != std::string::npos) text.resize(end);
+        std::string key;
+        for (unsigned char c : text) {
+            c = static_cast<unsigned char>(std::tolower(c));
+            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_') key += static_cast<char>(c);
+        }
+        return key;
+    };
+    const std::string modelKey = normalized(stem);
+    for (const auto& material : WxlCollectionSidecar::Materials()) {
+        if (material.display != display) continue;
+        if (!material.model.empty()) {
+            const std::string key = normalized(material.model);
+            if (key.empty() || key != modelKey) continue;
+        }
+        if (material.modelColumn >= 0 && column >= 0 && material.modelColumn != column) continue;
+        if (material.model.empty() && material.modelColumn >= 0 && column < 0) continue;
+        if (material.model.empty() && material.modelColumn < 0 && material.modelIndex != UINT32_MAX &&
+            material.modelIndex != part && material.modelIndex != part + 1 &&
+            (column < 0 || (material.modelIndex != static_cast<uint32_t>(column) &&
+                            material.modelIndex != static_cast<uint32_t>(column + 1)))) continue;
+        WxlCollectionSidecar::Model pathEntry;
+        pathEntry.texture = material.texture;
+        pathEntry.folder = material.folder.empty() ? (folder ? folder : "") : material.folder;
+        std::string path;
+        if (!WxlCollectionSidecar::BuildTexturePath(pathEntry, stem, race, gender, path) ||
+            !SFile::FileExists(path.c_str())) continue;
+        component->QueueWxlTexture(model, slot, display, material.textureType, path.c_str());
+    }
+}
+}  // namespace
+#endif
 
 // STATIC: 0x00B6B9D0
 static SCritSect s_requestListCritSect;
@@ -3695,11 +3879,19 @@ inline ITEM_SLOT CCharacterComponent::GetItemSlotForInvSlot(INVENTORY_SLOTS invS
 // VERIFY: d14b01cc manual
 // OFFSET: 0x004EE460
 void CCharacterComponent::RemoveItem(ITEM_SLOT itemSlot) {
+#if defined(WOWDECOMP_LINUX)
+    this->m_wxlItemVisual[itemSlot] = 0;
+    if (itemSlot == ITEMSLOT_BELT) this->CancelWxlWaist();
+#endif
     if (!this->m_itemDisplayID[itemSlot]) {
         return;
     }
 
     this->m_flags |= 0x4;
+
+    // A sidecar may add a collection mesh to an otherwise ordinary item.
+    // Remove the extra attachment, then perform the normal item cleanup too.
+    this->RemoveCollectionItem(itemSlot);
 
     switch (itemSlot) {
         case ITEMSLOT_HEAD: {
@@ -3855,13 +4047,18 @@ void CCharacterComponent::AddHelm(int32_t itemVisual) {
 
     CCharacterComponent::AddLink(this->m_data.m_model, ATTACH_HELM, s_path, s_path2, itemVisual, displayRec);
 
+    this->ApplyHelmetGeosetVisibility(displayRec);
+}
+
+void CCharacterComponent::ApplyHelmetGeosetVisibility(const ItemDisplayInfoRec* displayRec) {
     HelmetGeosetVisDataRec* visRec = g_helmetGeosetVisDataDB.GetRecord(displayRec->m_helmetGeosetVisID[this->m_data.m_preferences.m_sexID]);
 
     if (!visRec) {
         return;
     }
 
-    uint32_t raceMask = 1 << this->m_data.m_preferences.m_raceID;
+    if (this->m_data.m_preferences.m_raceID >= 32) return;
+    uint32_t raceMask = 1u << this->m_data.m_preferences.m_raceID;
 
     if (raceMask & visRec->m_hideGeoset[0]) {
         this->m_data.m_geosets[CHARGEOSET_HAIR] = 1;
@@ -4178,22 +4375,13 @@ inline CharacterSection::~CharacterSection() {
     }
 }
 
-// INLINED
-inline CharacterBaseVariation::~CharacterBaseVariation() {
-    HTEXTURECACHE* texture = this->m_texture;
-
-    for (int32_t i = 0; i < 7; i++) {
-        if (texture[i]) {
-            TextureCacheDestroyTexture(texture[i]);
-        }
-
-        texture[i] = nullptr;
-    }
-}
-
 // VERIFY: 1d57f8e3 manual
 // OFFSET: 0x004EFBE0
 CCharacterComponent::CCharacterComponent() {
+#if defined(WOWDECOMP_LINUX)
+    this->m_wxlWaistPending = nullptr;
+    std::fill_n(this->m_wxlItemVisual, NUM_ITEM_SLOTS, 0);
+#endif
     memset(this->m_baseVariation, 0, sizeof(this->m_baseVariation));
     this->m_flags |= 0x7;
     this->m_dirtySections = 0xFFFFFFFF;
@@ -4209,6 +4397,10 @@ CCharacterComponent::CCharacterComponent() {
 // VERIFY: 4f3c1a66 manual
 // OFFSET: 0x004EFCA0
 CCharacterComponent::~CCharacterComponent() {
+#if defined(WOWDECOMP_LINUX)
+    this->CancelWxlTextures();
+    this->CancelWxlWaist();
+#endif
     if (this->m_request) {
         this->m_request->m_flags &= ~0x1;
         this->m_request = nullptr;
@@ -5106,6 +5298,11 @@ void CCharacterComponent::RenderPrepSections() {
 // VERIFY: e78118c6 manual
 // OFFSET: 0x004F1520
 bool CCharacterComponent::RenderPrep(int32_t wait) {
+#if defined(WOWDECOMP_LINUX)
+    this->RefreshWxlEquipment();
+    this->UpdateWxlWaist();
+    this->UpdateWxlTextures();
+#endif
     if (this->m_data.m_flags & 0x1) {
         if (this->m_flags & 0x4) {
             this->GeosRenderPrep();
@@ -5549,6 +5746,11 @@ bool CCharacterComponent::Destroy() {
 // VERIFY: 0acf5d15 manual
 // OFFSET: 0x004F24D0
 bool CCharacterComponent::Init(ComponentData* data, const char* debug) {
+#if defined(WOWDECOMP_LINUX)
+    this->CancelWxlTextures();
+    this->CancelWxlWaist();
+    this->m_wxlEquipmentOwner.Reset();
+#endif
     if (this->m_data.m_model) {
         this->m_data.m_model->Release();
     }
@@ -5595,12 +5797,360 @@ bool CCharacterComponent::Init(ComponentData* data, const char* debug) {
 
 // VERIFY: 474cb696 manual
 // OFFSET: 0x004F2640
+bool CCharacterComponent::TryAddCollectionItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* displayRec) {
+#if !defined(WOWDECOMP_LINUX)
+    (void)itemSlot;
+    (void)displayRec;
+    return false;
+#else
+    if (!displayRec || !this->m_data.m_model || itemSlot >= NUM_ITEM_SLOTS) return false;
+    this->RemoveCollectionItem(itemSlot);
+    if (!WxlProfileEnabled("WXL_COLLECTION_ARMOR", false)) return false;
+    if (!WxlCollectionSidecar::SupportedRace(this->m_data.m_preferences.m_raceID)) return false;
+
+    const ChrRacesRec* race = g_chrRacesDB.GetRecord(this->m_data.m_preferences.m_raceID);
+    const char* raceCode = race ? race->m_clientPrefix : nullptr;
+    if (!raceCode || !*raceCode) return false;
+    // The collection source does not contain Tauren foot geometry.  Keep the
+    // original feature's fail-closed behavior for that explicitly unsupported
+    // combination instead of attaching a mismatched model.
+    const bool allowCollection = !(this->m_data.m_preferences.m_raceID == 6 && itemSlot == ITEMSLOT_BOOTS);
+
+    const char* gender = this->m_data.m_preferences.m_sexID ? "F" : "M";
+    const auto iconSettings = WxlCollectionSidecar::ParseIconSettings(
+        displayRec->m_inventoryIcon[1] ? displayRec->m_inventoryIcon[1] : "");
+    uint32_t pathFlags = iconSettings.flags;
+    const std::string& customFolder = iconSettings.folder;
+    const uint32_t iconFlags = pathFlags;
+    if (!(pathFlags & 0x40) && !(pathFlags & 0x4) && !(pathFlags & 0x2)) pathFlags |= 0x40;
+    const uint32_t attachment = kCollectionAttachmentBase + static_cast<uint32_t>(itemSlot);
+    bool attachedCollectionDbc = false;
+    bool hasCollectionSource = false;
+    bool hasNormalSource = false;
+    for (const char* source : displayRec->m_modelName) {
+        if (source) WxlCollectionSidecar::AnalyzeModelList(source, hasCollectionSource, hasNormalSource);
+    }
+    const bool mixedRow = hasCollectionSource && hasNormalSource;
+
+    for (uint32_t column = 0; column < 2; ++column) {
+        const char* source = displayRec->m_modelName[column];
+        if (!source || !*source) continue;
+
+        // A few DBC rows carry a semicolon-separated source list.  Resolve
+        // each source stem independently, preserving the model's own texture
+        // records and refusing a missing race/sex variant.
+        const char* cursor = source;
+        uint32_t part = 0;
+        while (*cursor && part < 16) {
+            const char* end = std::strchr(cursor, ';');
+            const size_t length = end ? static_cast<size_t>(end - cursor) : std::strlen(cursor);
+            if (length && length < 200) {
+                char stem[200] = {};
+                std::memcpy(stem, cursor, length);
+                uint16_t explicitIds[16] = {};
+                size_t explicitCount = 0;
+                bool invalidFilter = false;
+                if (char* colon = std::strchr(stem, ':')) {
+                    *colon++ = '\0';
+                    while (*colon) {
+                        if (explicitCount == std::size(explicitIds) || !std::isdigit(static_cast<unsigned char>(*colon))) {
+                            invalidFilter = true;
+                            break;
+                        }
+                        uint32_t id = 0;
+                        while (std::isdigit(static_cast<unsigned char>(*colon))) {
+                            id = id * 10 + static_cast<unsigned>(*colon++ - '0');
+                            if (id > 0xFFFF) { invalidFilter = true; break; }
+                        }
+                        if (invalidFilter || (*colon && *colon != ',')) { invalidFilter = true; break; }
+                        explicitIds[explicitCount++] = static_cast<uint16_t>(id);
+                        if (*colon == ',') {
+                            ++colon;
+                            if (!*colon) invalidFilter = true;
+                        }
+                    }
+                    if (!explicitCount) invalidFilter = true;
+                }
+                StripCollectionSourceVariant(stem);
+                const bool collectionSource = StartsWithCollection(stem) || explicitCount != 0;
+                if (*stem && !collectionSource) hasNormalSource = true;
+                if (allowCollection && !invalidFilter && collectionSource) {
+                    hasCollectionSource = true;
+                    const bool gloveBody = itemSlot == ITEMSLOT_GLOVES &&
+                        WxlWaistModel::Normalize(stem).find("_glove") != std::string::npos;
+                    const uint32_t point = WxlCollectionSidecar::CollectionAttachment(iconSettings, column, mixedRow, gloveBody);
+                    if (point == UINT32_MAX) {
+                        if (!end) break;
+                        cursor = end + 1; ++part;
+                        continue;
+                    }
+                    const char* folder = customFolder.empty() ? "Collections" : customFolder.c_str();
+                    std::string path;
+                    if (WxlCollectionSidecar::BuildModelPath(stem, raceCode, gender, pathFlags, folder, path) &&
+                        SFile::FileExists(path.c_str())) {
+                        CM2Model* model = this->m_data.m_model->m_scene->CreateModel(path.c_str(), 0);
+                        if (model) {
+                            FilterCollectionSlot(model, itemSlot, explicitIds, explicitCount);
+                            ApplyCollectionTexture(this, itemSlot, model, displayRec, column, part, stem, raceCode, gender,
+                                                   pathFlags, customFolder);
+                            ApplyCollectionMaterials(this, itemSlot, model, displayRec->m_id, column, part, stem,
+                                                     folder, raceCode, gender);
+                            const bool root = point == 19;
+                            model->AttachToParent(this->m_data.m_model,
+                                root ? attachment : WxlCustomAttachment(itemSlot, point), nullptr, root ? 1 : 0);
+                            const bool linked = model->m_attachParent == this->m_data.m_model;
+                            model->Release();
+                            attachedCollectionDbc |= linked;
+                            WxlNativeDiagnostic("collection-armor: %s %s for display %d slot %u point=%u",
+                                linked ? "attached" : "unavailable attachment for", path.c_str(),
+                                displayRec->m_id, static_cast<uint32_t>(itemSlot), point);
+                        }
+                    } else {
+                        WxlNativeDiagnostic("collection-armor: missing variant %s", path.c_str());
+                    }
+                }
+            }
+            if (!end) break;
+            cursor = end + 1;
+            ++part;
+        }
+    }
+    // Sidecar entries add exceptional collection models in addition to DBC entries.
+    uint32_t sidecarIndex = 0;
+    for (const auto& entry : WxlCollectionSidecar::Models()) {
+        if (entry.display != static_cast<uint32_t>(displayRec->m_id) ||
+            (entry.slot >= 0 && entry.slot != static_cast<int>(itemSlot))) continue;
+        const uint32_t modelIndex = sidecarIndex++;
+        const bool collection = StartsWithCollection(entry.model.c_str()) || !entry.geosets.empty() ||
+                                strncasecmp(entry.folder.c_str(), "Collections", 11) == 0;
+        if (collection && !allowCollection) continue;
+        if (entry.model.size() >= 180 || entry.folder.size() >= 32 ||
+            entry.model.find_first_of("/\\") != std::string::npos ||
+            entry.folder.find_first_of("/\\.") != std::string::npos) continue;
+        char stem[200] = {};
+        std::memcpy(stem, entry.model.c_str(), entry.model.size() + 1);
+        if (collection) StripCollectionSourceVariant(stem);
+        else if (char* dot = std::strrchr(stem, '.')) *dot = '\0';
+        std::string policy = entry.suffixPolicy;
+        for (char& c : policy) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        uint32_t flags = entry.flags;
+        if (policy.empty() || policy == "exact" || policy == "none") flags |= 0x6;
+        else if (policy == "dbc" || policy == "slot") {
+            flags = collection ? pathFlags : iconFlags;
+            if (!collection && itemSlot != ITEMSLOT_HEAD && !(flags & (0x40 | 0x80))) flags |= 0x6;
+        }
+        else if (policy == "retail" || policy == "new") flags |= 0x40;
+        else if (policy != "legacy" && policy != "race") continue;
+        static const char* const slotFolders[NUM_ITEM_SLOTS] = {
+            "Head", "Shoulder", "Shirt", "Chest", "Waist", "Leg", "Foot", "Bracer", "Glove", "Tabard", "Cape", "Ranged"
+        };
+        const std::string folder = WxlCollectionSidecar::ComponentFolder(stem, collection,
+            entry.folder.empty() ? customFolder : entry.folder, slotFolders[itemSlot]);
+        std::string path;
+        if (!WxlCollectionSidecar::BuildModelPath(stem, raceCode, gender, flags, folder, path)) continue;
+        if (!collection && !SFile::FileExists(path.c_str())) path.replace(path.size() - 3, 3, ".mdx");
+        if (!SFile::FileExists(path.c_str())) {
+            WxlNativeDiagnostic("collection-armor: missing sidecar model %s", path.c_str());
+            continue;
+        }
+        CM2Model* model = this->m_data.m_model->m_scene->CreateModel(path.c_str(), 0);
+        if (!model) continue;
+        if (collection) FilterCollectionSlot(model, itemSlot, entry.geosets.data(), entry.geosets.size());
+        std::string texturePath;
+        auto textureEntry = entry;
+        if (textureEntry.folder.empty()) textureEntry.folder = folder;
+        uint32_t textureFlags = collection ? pathFlags : iconFlags;
+        if (!collection && itemSlot != ITEMSLOT_HEAD && !(textureFlags & (0x40 | 0x80))) textureFlags |= 0x6;
+        if (WxlCollectionSidecar::BuildTexturePath(textureEntry, stem, raceCode, gender, texturePath, textureFlags)) {
+            if (SFile::FileExists(texturePath.c_str())) {
+                this->QueueWxlTexture(model, itemSlot, displayRec->m_id, M2TEX_OBJECT_SKIN, texturePath.c_str());
+            }
+        }
+        ApplyCollectionMaterials(this, itemSlot, model, displayRec->m_id, -1, modelIndex, stem, folder.c_str(), raceCode, gender);
+        const uint32_t point = WxlCollectionSidecar::ComponentAttachment(entry, itemSlot, collection);
+        const bool root = collection && point == 19;
+        const uint32_t sidecarAttachment = root ? attachment :
+            (collection ? WxlCustomAttachment(itemSlot, point) : WxlComponentAttachment(itemSlot, point));
+        model->AttachToParent(this->m_data.m_model, sidecarAttachment, nullptr, root ? 1 : 0);
+        const bool linked = model->m_attachParent == this->m_data.m_model;
+        model->Release();
+        if (!linked) {
+            WxlNativeDiagnostic("collection-armor: unavailable attachment %d for %s", entry.attach, path.c_str());
+            continue;
+        }
+        WxlNativeDiagnostic("collection-armor: attached sidecar %s for display %d slot %u", path.c_str(),
+                 displayRec->m_id, static_cast<uint32_t>(itemSlot));
+    }
+    // Sidecar additions must not suppress the ordinary display's armor layers
+    // or attachments. Only replace the stock path for a collection DBC row.
+    return attachedCollectionDbc && hasCollectionSource && !hasNormalSource;
+#endif
+}
+
+bool CCharacterComponent::RemoveCollectionItem(ITEM_SLOT itemSlot) {
+#if !defined(WOWDECOMP_LINUX)
+    (void)itemSlot;
+    return false;
+#else
+    this->CancelWxlTextures(itemSlot);
+    if (!this->m_data.m_model || itemSlot >= NUM_ITEM_SLOTS) return false;
+    const uint32_t attachment = kCollectionAttachmentBase + static_cast<uint32_t>(itemSlot);
+    bool found = false;
+    for (CM2Model* child = this->m_data.m_model->m_attachList; child;) {
+        CM2Model* next = child->m_attachNext;
+        if (child->m_attachmentId == attachment ||
+            (WxlIsCustomAttachment(child->m_attachmentId) && WxlAttachmentSlot(child->m_attachmentId) == itemSlot)) {
+            found = true;
+            child->DetachFromParent();
+        }
+        child = next;
+    }
+    return found;
+#endif
+}
+
+#if defined(WOWDECOMP_LINUX)
+void CCharacterComponent::RefreshWxlEquipment() {
+    CM2Model* parent = this->m_data.m_model;
+    if (!parent) {
+        this->m_wxlEquipmentOwner.Reset();
+        this->CancelWxlWaist();
+        return;
+    }
+    if (!(parent->m_fFlags & 1) || !parent->m_shared || !parent->m_shared->m_data || !parent->m_scene) {
+        this->m_wxlEquipmentOwner.Reset();
+        return;
+    }
+    const WxlEquipmentOwner owner = SnapshotWxlEquipmentOwner(this);
+    const bool appearanceChanged = this->m_wxlEquipmentOwner.AppearanceChanged(owner);
+    if (!this->m_wxlEquipmentOwner.Observe(owner)) return;
+    this->CancelWxlWaist();
+    if (appearanceChanged) {
+        // ItemDisplayInfo texture names can stay unchanged across race/sex
+        // changes, but their resolved component textures must be reloaded.
+        this->SetDirtySections(0xFFFFFFFF);
+        for (uint32_t section = 0; section < NUM_COMPONENT_SECTIONS; ++section) {
+            for (int32_t layer = 0; layer < 7; ++layer) {
+                if (this->m_section[section].m_layerItemDisplayId[layer])
+                    this->FreeSectionTexture(static_cast<COMPONENT_SECTIONS>(section), layer);
+            }
+        }
+    }
+    uint32_t replayed = 0;
+    for (uint32_t index = 0; index < NUM_ITEM_SLOTS; ++index) {
+        const ITEM_SLOT slot = static_cast<ITEM_SLOT>(index);
+        ItemDisplayInfoRec display;
+        if (!this->m_itemDisplayID[index] || !g_itemDisplayInfoDB.GetRecord(this->m_itemDisplayID[index], &display)) continue;
+        this->AddItem(slot, &display, this->m_wxlItemVisual[index]);
+        ++replayed;
+    }
+    WxlNativeDiagnostic("equipment: replayed %u equipped slots for race=%u sex=%u", replayed, owner.race, owner.sex);
+}
+
+void CCharacterComponent::CancelWxlWaist() {
+    if (!this->m_wxlWaistPending) return;
+    if (this->m_wxlWaistPending->texture)
+        HandleClose(reinterpret_cast<HOBJECT>(this->m_wxlWaistPending->texture));
+    delete this->m_wxlWaistPending;
+    this->m_wxlWaistPending = nullptr;
+}
+
+void CCharacterComponent::QueueWxlWaist(const ItemDisplayInfoRec* displayRec, int32_t itemVisual) {
+    this->CancelWxlWaist();
+    if (!displayRec || !this->m_data.m_model || !this->m_data.m_model->m_scene || !displayRec->m_modelName[0] ||
+        !displayRec->m_modelTexture[0] || !*displayRec->m_modelName[0] || !*displayRec->m_modelTexture[0] ||
+        StartsWithCollection(displayRec->m_modelName[0])) return;
+    (void)itemVisual; // Waist models carry no item/spell visual in WarcraftXL.
+    std::string modelPath;
+    if (!WxlWaistModel::BuildPath(displayRec->m_modelName[0], true, modelPath)) return;
+    if (!SFile::FileExists(modelPath.c_str())) {
+        const size_t dot = modelPath.find_last_of('.');
+        modelPath.replace(dot, std::string::npos,
+            WxlWaistModel::Normalize(std::string_view(modelPath).substr(dot)) == ".m2" ? ".mdx" : ".m2");
+    }
+    if (!SFile::FileExists(modelPath.c_str())) return;
+    std::string texturePath;
+    if (!WxlWaistModel::BuildPath(displayRec->m_modelTexture[0], false, texturePath) ||
+        !SFile::FileExists(texturePath.c_str())) return;
+    CM2Model* parent = this->m_data.m_model;
+    const uint32_t now = OsGetAsyncTimeMs();
+    this->m_wxlWaistPending = new WxlWaistPending{parent, parent->m_shared, parent->m_scene, nullptr,
+        static_cast<uint32_t>(displayRec->m_id), static_cast<uint32_t>(this->m_data.m_preferences.m_raceID),
+        static_cast<uint32_t>(this->m_data.m_preferences.m_sexID), WxlEquipmentGeneration(), {now, now, 0}, modelPath, texturePath};
+    this->UpdateWxlWaist();
+}
+
+void CCharacterComponent::UpdateWxlWaist() {
+    WxlWaistPending* pending = this->m_wxlWaistPending;
+    if (!pending) return;
+    const uint32_t now = OsGetAsyncTimeMs();
+    if (pending->generation != WxlEquipmentGeneration() || this->m_data.m_model != pending->parent ||
+        this->m_itemDisplayID[ITEMSLOT_BELT] != pending->display ||
+        this->m_data.m_preferences.m_raceID != pending->race || this->m_data.m_preferences.m_sexID != pending->sex ||
+        pending->parent->m_shared != pending->shared || pending->parent->m_scene != pending->scene || !pending->scene) {
+        this->CancelWxlWaist();
+        return;
+    }
+    if (pending->retry.Expired(now)) {
+        std::fprintf(stderr, "WarcraftXL: waist model skipped after texture/parent timeout (display=%u)\n", pending->display);
+        this->CancelWxlWaist();
+        return;
+    }
+    if (!pending->texture) {
+        if (!pending->retry.Due(now)) return;
+        CStatus status;
+        pending->texture = CreateTexture(pending->texturePath.c_str(), &status);
+        if (!pending->texture) {
+            pending->retry.Failed(now);
+            return;
+        }
+    }
+    if (!WxlWaistModel::TextureMatches(pending->texture->m_filename, pending->texturePath)) {
+        HandleClose(reinterpret_cast<HOBJECT>(pending->texture));
+        pending->texture = nullptr;
+        pending->retry.Failed(now);
+        return;
+    }
+    if (!TextureGetGxTex(pending->texture, 0, nullptr) || pending->texture->m_asyncObject) return;
+    if (!(pending->parent->m_fFlags & 1)) return;
+    ItemDisplayInfoRec display;
+    if (!g_itemDisplayInfoDB.GetRecord(pending->display, &display)) {
+        this->CancelWxlWaist();
+        return;
+    }
+    CM2Model* model = pending->parent->m_scene->CreateModel(pending->modelPath.c_str(), 0);
+    if (model) {
+        model->ReplaceTexture(M2TEX_OBJECT_SKIN, pending->texture);
+        ReplaceParticleColor(display.m_particleColorID, model);
+        model->AttachToParent(pending->parent, WxlComponentAttachment(ITEMSLOT_BELT, 53), nullptr, 0);
+        if (model->m_attachParent == pending->parent)
+            std::fprintf(stderr, "WarcraftXL: waist model attached %s (display=%u point=53)\n",
+                         pending->modelPath.c_str(), pending->display);
+        model->Release();
+    }
+    this->CancelWxlWaist();
+}
+#endif
+
 void CCharacterComponent::AddItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* displayRec, int32_t itemVisual) {
+#if defined(WOWDECOMP_LINUX)
+    this->m_wxlItemVisual[itemSlot] = itemVisual;
+#endif
     this->m_flags |= 0x4;
     this->m_itemDisplayID[itemSlot] = displayRec->m_id;
 
+    const bool collectionReplacesModel = this->TryAddCollectionItem(itemSlot, displayRec);
+#if defined(WOWDECOMP_LINUX)
+    if (itemSlot == ITEMSLOT_BELT) this->QueueWxlWaist(displayRec, itemVisual);
+#endif
+
     switch (itemSlot) {
         case ITEMSLOT_HEAD:
+            if (collectionReplacesModel) {
+                CCharacterComponent::RemoveLinkpt(this->m_data.m_model, ATTACH_HELM);
+                this->ApplyHelmetGeosetVisibility(displayRec);
+                break;
+            }
             if (!this->IsHelmModelCorrect()) {
                 if (this->m_itemDisplayID[ITEMSLOT_HEAD]) {
                     CCharacterComponent::RemoveLinkpt(this->m_data.m_model, ATTACH_HELM);
@@ -5612,6 +6162,11 @@ void CCharacterComponent::AddItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* 
             break;
 
         case ITEMSLOT_SHOULDER:
+            if (collectionReplacesModel) {
+                CCharacterComponent::RemoveLinkpt(this->m_data.m_model, static_cast<GEOCOMPONENTLINKS>(6));
+                CCharacterComponent::RemoveLinkpt(this->m_data.m_model, static_cast<GEOCOMPONENTLINKS>(5));
+                break;
+            }
             if (!this->AreShoulderModelsCorrect()) {
                 if (this->m_itemDisplayID[ITEMSLOT_SHOULDER]) {
                     CCharacterComponent::RemoveLinkpt(this->m_data.m_model, static_cast<GEOCOMPONENTLINKS>(6));

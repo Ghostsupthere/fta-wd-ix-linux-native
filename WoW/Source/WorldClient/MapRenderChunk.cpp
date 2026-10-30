@@ -1,4 +1,5 @@
 #include "MapRenderChunk.h"
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "WoW/Source/WorldClient/WorldConstants.h"
 #include <cmath>
 #include <cstring>

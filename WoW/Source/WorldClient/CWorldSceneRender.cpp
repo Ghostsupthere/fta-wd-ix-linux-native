@@ -1,4 +1,5 @@
 #include <cfloat>
+#include "Engine/Source/ModernAssets/NativeDiagnostic.h"
 #include "CWorldSceneRender.h"
 #include "WoW/Source/WorldClient/Map.h"
 #include "WoW/Source/WorldClient/World.h"
@@ -21,6 +22,11 @@
 #include "WoW/Source/WorldClient/MapEntity.h"
 #include "WoW/Source/WorldClient/MapObj.h"
 #include "WoW/Source/WorldClient/MapObjDef.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/WorldClient/MapObjGroup.h"
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
+#include "WoW/Source/WorldClient/Linux/WxlWmoVisibility.h"
+#endif
 #include "WoW/Source/WorldClient/MapRenderChunk.h"
 #include "WoW/Source/WorldClient/MapWeather.h"
 #include "WoW/Source/WorldClient/ShadowQuery.h"
@@ -73,7 +79,9 @@ void CWorldScene::Render(const C3Vector& cameraPos, float time) {
         CWorldScene::ComputeExteriorSortDistances();
     }
 
+#if !defined(WOWDECOMP_LINUX)
     CWorldScene::UpdateViewerLiquid();
+#endif
     g_theGxDevicePtr->RsPush();
     g_theGxDevicePtr->XformPush(GxXform_World);
 
@@ -126,11 +134,43 @@ void CWorldScene::Render(const C3Vector& cameraPos, float time) {
 
         CWorldScene::s_viewerMapObjDef->RenderWithCallback(&CWorldScene::s_viewerMapObjGroups);
 
+#if defined(WOWDECOMP_LINUX)
+        bool reopenedModernExterior = false;
+        CMapObj* viewerRoot = CWorldScene::s_viewerMapObjDef->m_owner;
+        if (viewerRoot && viewerRoot->m_wxlModernWmo &&
+            CWorldScene::frustumPortalView.m_maxViewDepth < 0.0f &&
+            CWorldScene::s_viewerMapObjGroups.Count() &&
+            WxlProfileEnabled("WXL_MODERN_ASSETS", true) &&
+            WxlProfileEnabled("WXL_MODERN_WMO_VISIBILITY", true)) {
+            const uint32_t index = CWorldScene::s_viewerMapObjGroups[0];
+            if (index < static_cast<uint32_t>(viewerRoot->m_mapObjGroupCount) && index < 512) {
+                const CMapObjGroup* group = viewerRoot->m_mapObjGroupArray[index];
+                if (group && (group->m_unkLoadedFlag & 0x4) &&
+                    WxlWmoReopensExterior(group->m_flags, group->m_transparencyBatchesCount)) {
+                    CWorldScene::frustumPortalView.m_rect = {0.0f, 0.0f, 1.0f, 1.0f};
+                    CWorldScene::frustumPortalView.m_maxViewDepth = 0.0f;
+                    reopenedModernExterior = true;
+                    static bool logged = false;
+                    if (!logged) {
+                        logged = true;
+                        WxlNativeDiagnostic("modern-wmo: reopened exterior visibility");
+                    }
+                }
+            }
+        }
+#endif
         if (CWorldScene::frustumPortalView.m_maxViewDepth < 0.0f) {
             CWorldScene::sortTable.Clear();
         } else {
             CWorldScene::s_occlusionNearDepth = CWorldScene::frustumPortalView.m_maxViewDepth + 33.333332f;
+#if defined(WOWDECOMP_LINUX)
+            const float previousNearDepth = CWorldScene::s_occlusionNearDepth;
+            if (reopenedModernExterior) CWorldScene::s_occlusionNearDepth = -10000.0f;
+#endif
             CWorldScene::CullSortTable(&CWorldScene::frustumPortalView.m_rect);
+#if defined(WOWDECOMP_LINUX)
+            if (reopenedModernExterior) CWorldScene::s_occlusionNearDepth = previousNearDepth;
+#endif
         }
 
         CRect fullRect = { 0.0f, 0.0f, 1.0f, 1.0f };
