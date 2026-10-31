@@ -663,7 +663,8 @@ and creation; broader renderer and transition acceptance remains open.
 | Item-physics belts | enabled | Native companion/PFDC/PFID loading, skeleton binding and post-worker simulation implemented; core/adapter sanitizer fixtures and native build pass. Rendered motion, private-source association and performance/lifecycle acceptance remain open. |
 | Cast-failure mute | enabled | Native sound-kit filter implemented and build-verified; diagnostic and in-game verification pending |
 | Shadow-distance scale 1.0 | enabled but native value | Native behavior already equivalent |
-| Unit overlays, quest rendering, tree wind, density variation, distance fog/haze, ground mist, transparent fog | disabled | Excluded from the parity build unless explicitly enabled later |
+| Unit overlays, quest rendering, tree wind, density variation, distance haze, ground mist | disabled | Excluded from the parity build unless explicitly enabled later |
+| Distance fog, transparent fog | enabled (2026-10-31, user request) | Native distance fog and the transparent-fog hook are implemented and look right in game; both stay opt-in in code (`WXL_DISTANCE_FOG`, `WXL_TRANSPARENT_FOG`) |
 
 The Windows DXVK proxy is not copied into the Linux build. The native executable
 uses its own native-DXVK path; the proxy's backend-selection/config behavior must
