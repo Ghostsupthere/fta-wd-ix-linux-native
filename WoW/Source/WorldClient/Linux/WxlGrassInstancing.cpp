@@ -323,11 +323,12 @@ void WxlGrassInstancingFrame() {
     if (frame % kSweepEvery) return;
     for (auto it = entries.begin(); it != entries.end();)
         it = frame - it->second->lastUse > kExpireFrames ? entries.erase(it) : std::next(it);
-    if (frame % 600 == 0)
+    if (frame % 1024 == 0) {
         Log("instanced grass: %zu batches cached, %zu models; last interval: planned %llu drawn %llu instances %llu builds %llu fallbacks %llu failures %llu",
             entries.size(), geometry.size(), (unsigned long long)planned, (unsigned long long)drawn, (unsigned long long)instancesDrawn,
             (unsigned long long)builds, (unsigned long long)fallbacks, (unsigned long long)failures);
-    if (frame % 600 == 0) planned = drawn = instancesDrawn = builds = fallbacks = failures = 0;
+        planned = drawn = instancesDrawn = builds = fallbacks = failures = 0;
+    }
 }
 
 void WxlGrassInstancingRelease() {

@@ -68,7 +68,7 @@ draws and restores them. Any missing piece (pack, shader, model, device error) t
 fallbacks; stderr announces `instanced grass active`. The plant math is shared with the bake
 (`BakeColor`, `BuildInstanceMatrix`); the GPU probe renders baked and instanced blades with all three
 live permutations, with and without motion, repulsion and rigid alphas, and the pixels are identical
-(rotated, scaled and moved plants: 0 of 200 lit pixels differ). **Not seen in game**; no FPS gain is
+(rotated, scaled and moved plants: 0 of 200 lit pixels differ). The user reports the grass looks fine in game (2026-10-31); the log showed 186 cached batches, no device failures, one fallback. No FPS gain is
 established (the original's reported gains are not measurements of this client).
 
 **Verification.** `tests/wxl_grass_rigid_test.cpp` (ASan/UBSan: classification, including
@@ -248,7 +248,7 @@ WMO fog are not re-fitted, as in the supplied hooks. The probe adds an early-com
 scenario on the real GPU (fit usable, rewrites exponent and lighting colour, composite
 and fitted transmittance both fall with distance and agree within 0.2: 0.59/0.28/0.16
 composite vs 0.74/0.41/0.12 fitted at 20/60/95 yd in the thick synthetic fog, which is the
-limit of one straight line); the whole-frame pass leaves no fit. The user reports it appears to work in game (2026-10-31) but with a noticeable performance cost: `fog gpu` median 6.48 ms at 3432x1362, 4x MSAA with the distance fog on, against 1.87 ms in an earlier session without it. A synthetic benchmark at that size shows the early composite costs the same as the whole-frame pass and did not reproduce 6.5 ms, so the cost was not attributed. A later A/B showed the FPS gap (about 170 against 250) gone, probably first-run shader cache warm-up (unproven); the live CPU cost is about 0.1 ms per frame, logged as `native fog cpu` in `VisualEnvironment.log`. Transparent fog appears to work in game and stays opt-in.
+limit of one straight line); the whole-frame pass leaves no fit. The user reports it appears to work in game (2026-10-31) but with a noticeable performance cost: `fog gpu` median 6.48 ms at 3432x1362, 4x MSAA with the distance fog on, against 1.87 ms in an earlier session without it. A synthetic benchmark at that size shows the early composite costs the same as the whole-frame pass and did not reproduce 6.5 ms, so the cost was not attributed. A later A/B showed the FPS gap (about 170 against 250) gone, probably first-run shader cache warm-up (unproven); the live CPU cost is about 0.1 ms per frame, logged as `native fog cpu` in `VisualEnvironment.log`. Transparent fog appears to work in game; the FTA `WarcraftXL.cfg` now enables it with the distance fog (user request, 2026-10-31), and the code default stays opt-in.
 
 **Not done / unverified.** Nothing else here has been seen in game: appearance, shoreline/waterline transitions,
 interior blending, local-light placement, god-ray occlusion, frame cost and
