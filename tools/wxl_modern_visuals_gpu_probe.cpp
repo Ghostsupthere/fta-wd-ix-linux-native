@@ -4,11 +4,13 @@
 #include <dlfcn.h>
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
 #include <cmath>
 #include <vector>
 #include "Engine/Source/ModernAssets/WxlVisuals/water_renderer.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/renderer.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/selection_policy.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/transparent_fog.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/log.h"
 static void Check(HRESULT result,const char* action) {
     if(FAILED(result)){std::fprintf(stderr,"%s: %08x\n",action,unsigned(result));std::exit(1);}
@@ -183,6 +185,62 @@ int main(int argc,char** argv) {
             Check(dev->EndScene(),"end god rays");
             unsigned rayPixels=0;for(auto pixel:Pixels(dev,width,height))if(pixel!=0x304050)++rayPixels;
             Require(rayPixels>0,"god rays produce pixels");std::printf("godRayPixels=%u\n",rayPixels);
+            {
+                // Transparent fog: the composite before the see-through models, then the
+                // linear stock fog fitted to it must reproduce the composite's own
+                // transmittance in front of a surface.
+                VisualSelection early;early.transparentFog=true;early.godRays=true;config=Config();ApplyVisualSelection(config,early);
+                config.quality=config.waterQuality=2;config.temporal=0;frame.localLights={};
+                {
+                    // Look level along the world's +X axis, the way the client does.
+                    float* v=frame.cameraRelativeView;for(int i=0;i<16;++i)v[i]=0;v[15]=1;
+                    v[2]=1;v[4]=1;v[9]=1;
+                }
+                Require(config.transparentFog&&config.stockFog==1,"transparent fog selected with the distance fog");
+                const auto depthAt=[](float viewDepth){return (1.002f-2.002f/viewDepth+1.0f)*0.5f;};
+                const auto composite=[&](float viewDepth,DWORD colour,FogPass pass,StockFogFit* fit)->DWORD {
+                    Check(dev->BeginScene(),"transparent fog scene");
+                    Check(dev->Clear(0,nullptr,D3DCLEAR_TARGET|D3DCLEAR_ZBUFFER|D3DCLEAR_STENCIL,colour,1.0f,0),"transparent fog clear");
+                    dev->SetRenderState(D3DRS_ZENABLE,TRUE);dev->SetRenderState(D3DRS_ZWRITEENABLE,TRUE);dev->SetRenderState(D3DRS_ZFUNC,D3DCMP_ALWAYS);
+                    dev->SetViewport(&frame.viewport);dev->SetVertexShader(nullptr);dev->SetPixelShader(nullptr);dev->SetTexture(0,nullptr);
+                    dev->SetFVF(D3DFVF_XYZRHW|D3DFVF_DIFFUSE);dev->SetRenderState(D3DRS_LIGHTING,FALSE);dev->SetRenderState(D3DRS_CULLMODE,D3DCULL_NONE);
+                    dev->SetTextureStageState(0,D3DTSS_COLOROP,D3DTOP_SELECTARG1);dev->SetTextureStageState(0,D3DTSS_COLORARG1,D3DTA_DIFFUSE);
+                    const float z=depthAt(viewDepth);
+                    const Vertex quad[]={{-.5f,-.5f,z,1,colour},{float(width)-.5f,-.5f,z,1,colour},{-.5f,float(height)-.5f,z,1,colour},{float(width)-.5f,float(height)-.5f,z,1,colour}};
+                    Check(dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP,2,quad,sizeof(Vertex)),"surface behind the effect");
+                    dev->SetRenderState(D3DRS_ZFUNC,D3DCMP_LESSEQUAL);
+                    Require(atmosphere.Render(dev,depth,frame,config,pass),atmosphere.LastSkipReason());
+                    if(fit)*fit=atmosphere.LastStockFogFit();
+                    Check(dev->EndScene(),"end transparent fog scene");
+                    const auto image=Pixels(dev,width,height);return image[(height/2)*width+width/2];
+                };
+                const auto mean=[](DWORD c){return ((c>>16&255)+(c>>8&255)+(c&255))/3.0f;};
+                float worst=0,firstComposite=0,lastComposite=0,firstFit=0,lastFit=0;
+                for(float viewDepth:{20.0f,60.0f,95.0f}) {
+                    StockFogFit fit;
+                    const DWORD onBlack=composite(viewDepth,0xff000000,FogPass::BeforeTransparents,&fit);
+                    const DWORD onWhite=composite(viewDepth,0xffffffff,FogPass::BeforeTransparents,nullptr);
+                    const float transmittance=(mean(onWhite)-mean(onBlack))/255.0f;
+                    M2BatchFogArgs args={5000.0f,9000.0f,0.6f,&fit.colour};
+                    ApplyStockFogFit(fit,args);
+                    const float linear=std::clamp((args.end-viewDepth)/(args.end-args.start),0.0f,1.0f);
+                    std::printf("transparent fog @%.0f yd: fits=%d start=%.1f end=%.1f colour=%08x composite T=%.3f fitted T=%.3f\n",viewDepth,fit.fogs,fit.start,fit.end,fit.colour,transmittance,linear);
+                    Require(fit.fogs&&fit.end>fit.start&&UsesLightingFogColour(fit.colour),"transparent fog fit is a usable linear fog");
+                    Require(args.exponent==kLinearStockFogExponent&&args.colour==&fit.colour,"fit rewrites exponent and lighting colour");
+                    worst=std::max(worst,std::fabs(transmittance-linear));
+                    if(viewDepth==20.0f){firstComposite=transmittance;firstFit=linear;}
+                    if(viewDepth==95.0f){lastComposite=transmittance;lastFit=linear;}
+                }
+                std::printf("transparent fog worst transmittance error=%.3f\n",worst);
+                // One straight line cannot follow a thick exponential exactly; it must still
+                // fog more with distance, as the composite does, and stay within a fifth.
+                Require(firstComposite>lastComposite&&firstFit>lastFit,"composite and fitted fog both thicken with distance");
+                Require(worst<0.2f,"fitted stock fog follows the composite transmittance");
+                StockFogFit whole;composite(60.0f,0xff000000,FogPass::WholeFrame,&whole);
+                Require(!whole.fogs,"whole-frame pass leaves the stock fog alone");
+                composite(60.0f,0xff000000,FogPass::BeforeTransparents,nullptr);
+                Check(dev->BeginScene(),"late rays scene");Require(atmosphere.RenderGodRaysAfterWorld(dev,depth),"late god rays after the early composite");Check(dev->EndScene(),"end late rays");
+            }
             water.ReleaseAll();atmosphere.ReleaseAll();
         }
         texture->Release();bound->Release();

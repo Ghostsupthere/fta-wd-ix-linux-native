@@ -17,6 +17,8 @@
 #include "Engine/Source/ModernAssets/NativeVisualHooks.h"
 #include "WxlWmoMaterials.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/renderer.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/transparent_fog.h"
+#include "WoW/Source/WorldClient/DayNight.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/water_renderer.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/water_classify.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/native_config.h"
@@ -30,6 +32,7 @@
 #include "WoW/Source/ObjectMgrClient/ObjectMgrClient.h"
 #include "WoW/Source/Object/ObjectClient/Unit_C.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -49,6 +52,15 @@ uint64_t frameNumber=0;
 FrameInputs cameraFrame={};
 bool cameraCaptured=false,atmosphereFailed=false,targetValid=false;
 float cameraTarget[3]={};
+// Transparent fog: the fog is composited once the liquid pass ends and the see-through
+// M2 batches that follow use a linear stock fog fitted to it.
+bool fogComposited=false,glareDrawnEarly=false;
+StockFogFit stockFit;
+unsigned transparentBatches=0;
+// CPU time (ms) spent in the fog submit paths, reported with the periodic fog line so the
+// early composite and the whole-frame pass can be compared on the same machine.
+double earlyMs=0,finishMs=0,batchMs=0;unsigned earlyFrames=0,finishFrames=0;
+double NowMs(){return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();}
 WaterContactFrame contactFrame={};bool contactsCaptured=false;unsigned contactsVisited=0,contactsInLiquid=0;
 SceneDepth Depth() { return {readableDepth,boundDepth,&depthCopy}; }
 CGxDeviceD3d9Ex* Backend() {
@@ -79,8 +91,8 @@ void Configure() {
     ApplyVisualSelection(config,selection);
     // The FTA profile keeps the client's own splash and wake sprites (the selection
     // policy forces WaterClientSplashes on); modern ripples are added to them.
-    // Per-transparent-draw fog fitting has no native hook yet.
-    config.transparentFog=false;
+    // TransparentFog stays opt-in (WXL_TRANSPARENT_FOG) and needs the distance fog
+    // to replace the stock fog (WXL_DISTANCE_FOG); the selection policy enforces both.
     LogSetLevel(config.logLevel);
     const bool data=GlobalWaterData().Load((assets/"waterdata.bin").string());
     VF_LOG_INFO("native visuals: enabled=%d water=%d data=%d quality=%d atmosphere=%d",config.enable,config.water,data,config.waterQuality,VisualFogEnabled(config));
@@ -217,6 +229,18 @@ void CaptureNativePointLights(FrameInputs& frame) {
         }
     }
 }
+void FitM2BatchFog(float* start,float* end,float* exponent,uint32_t* colour) {
+    const double began=NowMs();
+    M2BatchFogArgs args={*start,*end,*exponent,colour};
+    ApplyStockFogFit(stockFit,args);
+    *start=args.start;*end=args.end;*exponent=args.exponent;
+    if(args.colour!=colour)*colour=*args.colour;
+    ++transparentBatches;batchMs+=NowMs()-began;
+}
+void DisarmTransparentFog() {
+    NativeVisualHooks::m2BatchFog=nullptr;
+    fogComposited=false;glareDrawnEarly=false;stockFit={};
+}
 void RestoreWaterDepthWrite() {
     NativeVisualHooks::waterDepthWriteOverride=false;
     if(auto* gx=Backend();gx&&device)device->SetRenderState(D3DRS_ZWRITEENABLE,gx->m_deviceStates[CGxDeviceD3d9Ex::Ds_ZWriteEnable]);
@@ -225,6 +249,7 @@ void RestoreWaterDepthWrite() {
 void WxlReleaseModernVisuals() {
     WxlWmoRelease();
     if(device){NativeVisualHooks::waterDepthWriteOverride=false;water.Abort(device);}
+    DisarmTransparentFog();
     water.ReleaseAll();atmosphere.ReleaseAll();depthCopy.Detach();
     if(readableDepth)readableDepth->Release();if(boundDepth)boundDepth->Release();
     readableDepth=nullptr;boundDepth=nullptr;device=nullptr;
@@ -232,6 +257,7 @@ void WxlReleaseModernVisuals() {
 }
 bool WxlBeginVisualWorld(bool underwater,const float* target) {
     Configure();worldActive=false;replacingFog=false;cameraCaptured=false;++frameNumber;
+    DisarmTransparentFog();
     targetValid=target!=nullptr;contactsCaptured=false;
     for(unsigned i=0;targetValid&&i<3;++i){cameraTarget[i]=target[i];if(!std::isfinite(target[i]))targetValid=false;}
     if(!config.enable||!config.hooks||underwater||!ClntObjMgrGetActivePlayerObj())return false;
@@ -277,14 +303,50 @@ void WxlEndModernWater() {
 void WxlCaptureVisualCamera() {
     if(worldActive){cameraCaptured=CaptureFrame(cameraFrame,false);if(cameraCaptured)CaptureNativePointLights(cameraFrame);}
 }
+bool WxlGlareDrawn() { return glareDrawnEarly; }
+void WxlBeginTransparentFog() {
+    if(!worldActive||!replacingFog||!config.transparentFog||atmosphereFailed||fogComposited)return;
+    const double began=NowMs();
+    struct Timed{double began;~Timed(){earlyMs+=NowMs()-began;++earlyFrames;}} timed{began};
+    const auto idle=[&](const char* why){if(frameNumber%300==1)VF_LOG_INFO("native transparent fog: drawn after the world because %s",why);};
+    if(!cameraCaptured){idle("the camera was not captured");return;}
+    FrameInputs frame={};
+    if(!CaptureFrame(frame)||frame.inLiquid){idle("the camera frame is unavailable or under water");return;}
+    D3DVIEWPORT9 viewport={};device->GetViewport(&viewport);
+    if(!atmosphere.ReadyToRender(device,Depth(),viewport)){idle(atmosphere.LastSkipReason());return;}
+    // The glare is drawn first so its occlusion query reads the finished depth; the
+    // frame then skips its own glare call.
+    DayNight::RenderGlares();glareDrawnEarly=true;
+    if(!atmosphere.Render(device,Depth(),frame,config,FogPass::BeforeTransparents)){
+        // The whole-frame pass at the end of the world gets the next chance.
+        idle(atmosphere.LastSkipReason());return;
+    }
+    fogComposited=true;stockFit=atmosphere.LastStockFogFit();
+    if(frameNumber%300==1){
+        VF_LOG_INFO("native transparent fog: composited early, fit=%d start=%.1f end=%.1f colour=%08X batches last frame=%u",stockFit.fogs,stockFit.start,stockFit.end,stockFit.colour,transparentBatches);
+        VF_LOG_INFO("native fog cpu (per frame, last 300): early submit %.3f ms, late god rays %.3f ms, batch hook %.3f ms (%u frames)",earlyFrames?earlyMs/earlyFrames:0.0,finishFrames?finishMs/finishFrames:0.0,earlyFrames?batchMs/earlyFrames:0.0,earlyFrames);
+        earlyMs=finishMs=batchMs=0;earlyFrames=finishFrames=0;
+    }
+    transparentBatches=0;
+    NativeVisualHooks::m2BatchFog=&FitM2BatchFog;
+}
 void WxlFinishVisualWorld() {
     if(!worldActive)return;
+    const double began=NowMs();
+    struct Timed{double began;~Timed(){finishMs+=NowMs()-began;++finishFrames;}} timed{began};
     FrameInputs frame={};
-    if(!atmosphereFailed&&VisualFogEnabled(config)&&CaptureFrame(frame)){
+    if(fogComposited){
+        NativeVisualHooks::m2BatchFog=nullptr;
+        if(!atmosphere.RenderGodRaysAfterWorld(device,Depth()))VF_LOG_ERROR("native god rays after the world skipped: %s",atmosphere.LastSkipReason());
+    } else if(!atmosphereFailed&&VisualFogEnabled(config)&&CaptureFrame(frame)){
         const bool rendered=atmosphere.Render(device,Depth(),frame,config);
         if(rendered)atmosphere.RenderGodRaysAfterWorld(device,Depth());
         else {atmosphereFailed=true;VF_LOG_ERROR("native atmosphere disabled until device rebuild: %s",atmosphere.LastSkipReason());}
-        if(frameNumber%300==1)VF_LOG_INFO("native atmosphere: rendered=%d replacing=%d skip=%s",rendered,replacingFog,atmosphere.LastSkipReason());
+        if(frameNumber%300==1){
+            VF_LOG_INFO("native atmosphere: rendered=%d replacing=%d skip=%s",rendered,replacingFog,atmosphere.LastSkipReason());
+            VF_LOG_INFO("native fog cpu (per frame, last 300): whole-frame submit %.3f ms (%u frames)",finishFrames?finishMs/finishFrames:0.0,finishFrames);
+            finishMs=0;finishFrames=0;
+        }
     }
     worldActive=false;
 }
@@ -292,6 +354,8 @@ void WxlFinishVisualWorld() {
 bool WxlBeginVisualWorld(bool,const float*){return false;}
 void WxlCaptureVisualCamera(){}
 void WxlFinishVisualWorld(){}
+void WxlBeginTransparentFog(){}
+bool WxlGlareDrawn(){return false;}
 void WxlBeginModernWater(){}
 void WxlTagModernWater(const Liquid::CMaterialSettings*){}
 void WxlEndModernWater(){}

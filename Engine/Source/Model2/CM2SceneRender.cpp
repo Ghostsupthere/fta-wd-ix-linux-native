@@ -2,6 +2,9 @@
 #include <cstdint>
 #include "Engine/Source/Model2/CM2SceneRender.h"
 #if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/ModernAssets/NativeVisualHooks.h"
+#endif
+#if defined(WOWDECOMP_LINUX)
 #include "Engine/Source/Model2/WxlBoneBudget.h"
 #endif
 #include "Engine/Source/Gx/CGxBuf.h"
@@ -287,7 +290,17 @@ void CM2SceneRender::SetupLighting() {
                 break;
         }
 
+#if defined(WOWDECOMP_LINUX)
+        float fogStart = this->m_curLighting->m_fogStart;
+        float fogEnd = this->m_curLighting->m_fogEnd;
+        float fogDensity = this->m_curLighting->m_fogDensity;
+        if (NativeVisualHooks::m2BatchFog) {
+            NativeVisualHooks::m2BatchFog(&fogStart, &fogEnd, &fogDensity, &color);
+        }
+        CShaderEffect::SetFogParams(fogStart, fogEnd, fogDensity, *reinterpret_cast<CImVector*>(&color));
+#else
         CShaderEffect::SetFogParams(this->m_curLighting->m_fogStart, this->m_curLighting->m_fogEnd, this->m_curLighting->m_fogDensity, *reinterpret_cast<CImVector*>(&color));
+#endif
         CShaderEffect::SetFogEnabled(1);
     } else {
         CShaderEffect::SetFogEnabled(0);

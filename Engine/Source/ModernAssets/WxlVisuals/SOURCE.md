@@ -62,7 +62,9 @@ imports the supplied contact selection (plausibility, 48-yard range, nearest-fir
 ordering) and the native client feeds it typed visible units whose bodies cross a
 liquid surface, using the world position for transported units.
 
-## Not enabled
+## Opt-in
 
-Per-transparent-draw fog fitting needs a separate native hook; `transparentFog` is
-forced off.
+Nothing is forced off any more. Transparent-draw fog fitting (`transparent_fog.cpp`) is
+driven by `WxlBeginTransparentFog` and `NativeVisualHooks::m2BatchFog` (see
+`WXL-NATIVE-PORT.md`); it stays opt-in through `WXL_TRANSPARENT_FOG` together with
+`WXL_DISTANCE_FOG`.

@@ -20,7 +20,7 @@ different completion gates.
 | Collection armor and waist models | Slot filtering/ownership, Icon2 and sidecar policies, texture-readiness queues, attachment-53 buckles, owner/world replay, cached and post-worker palette copying | Remaining source-policy/weapon-side contracts, remaining missing armor and full transition/retry acceptance; reported wisps/Human Female deformation are resolved |
 | Item physics | PHYS companions and PFDC/PFID associations, skeleton binding, native-pose restoration, post-worker simulation and model lifecycle cleanup | Private virtual-source associations, rendered motion, live lifecycle and frame-cost acceptance |
 | WMO assets and materials | Conversion, scoped visibility handling, immutable layered texture/UV/weight snapshots, and GPU layered-material draws (two-layer overlays, four-layer height blends) through offline-patched native shaders | In-game acceptance on a layered WMO, frame cost; WMO modern emissive/parallax and the unified-render lighting extras are not implemented |
-| Native environment/renderer | Distance/profile controls and scoped fog-range handling; imported water (FFT, ripples, contacts), atmosphere, god-ray and local-light renderers drawing through the native D3D9Ex device with vendor-independent depth copy and 56 verified precompiled shaders | In-game acceptance and frame cost; transparent-draw fog fitting hook; grading/postprocess modules are not imported |
+| Native environment/renderer | Distance/profile controls and scoped fog-range handling; imported water (FFT, ripples, contacts), atmosphere, god-ray and local-light renderers drawing through the native D3D9Ex device with vendor-independent depth copy and 56 verified precompiled shaders | In-game acceptance and frame cost; transparent fog is implemented but unseen in game (opt-in); grading/postprocess modules are not imported |
 | Other extensions | Sound filtering, skybox/time/weather/control bridges, native local/preview/remote weapon rotation/reverse grip and loot-beam world draws | Weapon orientation and loot-beam rendered/transition acceptance; grass motion, editor features and remaining modules audited below |
 
 The latest complete native build passed. ASan/UBSan fixtures cover skin rebuilding
@@ -207,8 +207,26 @@ work in game (2026-10-31); the live log shows contacts=1 with 4 of about 67 scan
 units in liquid. `Logs/VisualEnvironment.log` reports contacts, units scanned and
 units in liquid.
 
-**Not done / unverified.** Per-transparent-draw fog fitting has no native hook and is
-forced off. Nothing here has been seen in game: appearance, shoreline/waterline transitions,
+**Transparent fog (2026-10-31).** Native hook for the supplied `TransparentFog` mode, off
+unless the profile sets `WXL_TRANSPARENT_FOG=1` **and** `WXL_DISTANCE_FOG=1` (the policy
+needs the stock fog replaced; the FTA `WarcraftXL.cfg` currently has both at 0, so test with
+`WXL_DISTANCE_FOG=1 WXL_TRANSPARENT_FOG=1 ./launch-native.sh`). Above water only,
+`CGWorldFrame::OnWorldRender` calls `WxlBeginTransparentFog()` right after
+`RenderLiquidPass()`: it draws the glare first (`WxlGlareDrawn()` then skips the frame's own
+glare call), composites the fog with `FogPass::BeforeTransparents`, and fits a linear stock
+fog (`FitStockFog`). From then on `CM2SceneRender::SetupLighting` hands each batch's fog
+range, exponent and colour to `NativeVisualHooks::m2BatchFog` (set only while armed), which
+applies `ApplyStockFogFit` (additive, modulate and modulate-2x batches keep black, white and
+grey). `WxlFinishVisualWorld()` then draws only the late god rays. Under water, with the
+stock fog not replaced, with a failed readiness check or a failed early pass, the frame
+falls back to the whole-frame fog. M2 pass 2 (drawn before the liquid when above water) and
+WMO fog are not re-fitted, as in the supplied hooks. The probe adds an early-composite
+scenario on the real GPU (fit usable, rewrites exponent and lighting colour, composite
+and fitted transmittance both fall with distance and agree within 0.2: 0.59/0.28/0.16
+composite vs 0.74/0.41/0.12 fitted at 20/60/95 yd in the thick synthetic fog, which is the
+limit of one straight line); the whole-frame pass leaves no fit. The user reports it appears to work in game (2026-10-31) but with a noticeable performance cost: `fog gpu` median 6.48 ms at 3432x1362, 4x MSAA with the distance fog on, against 1.87 ms in an earlier session without it. A synthetic benchmark at that size shows the early composite costs the same as the whole-frame pass and did not reproduce 6.5 ms, so the cost was not attributed. A later A/B showed the FPS gap (about 170 against 250) gone, probably first-run shader cache warm-up (unproven); the live CPU cost is about 0.1 ms per frame, logged as `native fog cpu` in `VisualEnvironment.log`. Transparent fog appears to work in game and stays opt-in.
+
+**Not done / unverified.** Nothing else here has been seen in game: appearance, shoreline/waterline transitions,
 interior blending, local-light placement, god-ray occlusion, frame cost and
 teleport/logout cleanup are open. `Logs/VisualEnvironment.log` records the depth
 readiness result and periodic water/atmosphere state for the first live run.
@@ -390,7 +408,7 @@ complete native Release build passes; rendered acceptance remains open.
    handling, contact ripples, atmosphere, local lights, interior transitions,
    scattering, god rays and glow compensation are integrated and pass synthetic
    GPU checks (see the section above). Remaining: live appearance, waterline and
-   interior transitions, frame cost, and the transparent-fog hook.
+   interior transitions, frame cost, and the opt-in transparent-fog hook (implemented, unseen).
 5. **Port the remaining enabled equipment/presentation modules.** Grass motion
    and game-object editor behavior remain open. Native weapon orientation and
    loot beams are build/fixture verified; rendered/server acceptance remains open.
@@ -412,6 +430,14 @@ complete native Release build passes; rendered acceptance remains open.
 - The supplied animation provider also rejects split AFSA/AFSB streams. Complete
   split-animation support requires additional rebasing work beyond copying its
   existing behavior.
+- Installed-content survey (2026-10-31, every `.anim` and `.skel` entry in the 21
+  client MPQs read through StormLib): 16,317 `.anim` files, 16,261 legacy
+  (no wrapper) and 56 single-chunk AFM2 wrappers whose payload length equals
+  file size minus 8. **No AFSA or AFSB chunk and no `.skel` file exists in this
+  client.** Split-animation rebasing therefore has no sample to specify or
+  test it against, and `.skel` merging (the only source of such files) is
+  opt-in. It stays rejected-before-parse; implement only when a real
+  split-animation model is supplied.
 - No loose M3/M3A/M3CFG/DDS inputs or matching loose collection-sidecar tables were
   found in this client. Their absence limits content-based acceptance; it does
   not mark those provider/features complete.

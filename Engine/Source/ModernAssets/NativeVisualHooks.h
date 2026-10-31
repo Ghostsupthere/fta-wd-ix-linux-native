@@ -13,5 +13,8 @@ inline void (*wmoBind)(CGxShader* vertex,CGxShader* pixel)=nullptr;
 // when the callee issued the draw itself.
 inline bool (*wmoDraw)(void* device,int type,int base,unsigned minimum,unsigned count,unsigned start,unsigned primitives)=nullptr;
 // Called as the engine loads a shader: may substitute offline-patched bytecode (grass motion).
+// Set only while transparent fog is armed: called for every M2 batch fog setup and may
+// rewrite the fog range, exponent and colour in place (colour is the packed ARGB value).
+inline void (*m2BatchFog)(float* start,float* end,float* exponent,uint32_t* colour)=nullptr;
 inline bool (*replaceShaderCode)(const uint8_t* code,size_t size,const uint32_t** out,size_t* outBytes)=nullptr;
 }

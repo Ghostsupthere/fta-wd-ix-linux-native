@@ -1783,6 +1783,9 @@ void CGWorldFrame::OnWorldRender() {
     } else {
         scene->Draw(M2PASS_2);
         CWorldScene::RenderLiquidPass();
+#if defined(WOWDECOMP_LINUX)
+        WxlBeginTransparentFog();
+#endif
         CWorldScene::RenderWeather();
         CWorldScene::RenderBarriers(this->m_elapsedSec);
         scene->Draw(M2PASS_1);
@@ -1804,6 +1807,9 @@ void CGWorldFrame::OnWorldRender() {
     WxlDrawLootBeams();
     WxlWmoFrame();
     WxlGrassFrame();
+#endif
+#if defined(WOWDECOMP_LINUX)
+    if (!WxlGlareDrawn())
 #endif
     DayNight::RenderGlares();
     PlayerNameUpdateLate();
