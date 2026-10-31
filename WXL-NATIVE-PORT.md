@@ -97,8 +97,11 @@ Saves go through a temporary file and a rename.
 - **Live:** `grass.instanced` (`WxlGrassInstancingSetEnabled`; off drops the cached buffers and draws stock),
   `grass.windStrength` / `windSpeed` / `interaction` (`WxlGrassSetMotion`, the supplied `compat::SetMotion`
   scaling: amplitudes by strength, zero strength turns wind off, speed by speed, interaction on/off).
-- **Saved but not wired:** `grass.memoryMB` / `buildMs` (the native instancing has no pool or build budget) and
-  every `lights.*` option (the surface-light renderer is not ported). The page's status text says so.
+- **Saved but not wired:** `grass.memoryMB` / `buildMs` (the native instancing has no pool or build budget). The
+  `lights.*` options drive the surface lights below (off by default, see that section); with the profile gate off
+  they are saved and change nothing, and the page's status text says so.
+- **Native default differs from Windows:** `lights.enabled` and `lights.models` default to 0 here (Windows: 1), so
+  "Restore environment defaults" cannot switch surface lights on.
 - **Performance sample:** the "Start 30-second performance sample" button records frame times and reports
   median / 95th / 99th / worst. "Check grass placement" does not compare anything natively: the status says it
   was not run, because instanced and stock grass share the engine's placement math.
@@ -108,6 +111,65 @@ Saves go through a temporary file and a rename.
 
 Verified: the ASan/UBSan test (table, clamping, hostile input, round trip, percentiles) passes and `Wow` builds.
 **Not seen in game.**
+
+### Surface lights, Living Azeroth (2026-10-31)
+
+Port of the lighting half of the supplied `wxl-living-azeroth` (Morfium's Living Azeroth, GPL-3.0-or-later): the
+client's own torches, braziers and lamps light the terrain, models and buildings around them. **It is off by
+default and inert unless you turn it on.**
+
+**Switches (all must be on):**
+1. `WXL_SURFACE_LIGHTS=1` in `WarcraftXL.cfg` or the environment (default **0**). With it off nothing about the
+   client's shaders or lighting changes at all.
+2. `Utils/WarcraftXL/visuals/light_shaders.pack`, built per install by `tools/build-light-shader-pack.py`
+   (Wine and the pinned compiler, offline; the client never loads either). Derived from game assets, never committed.
+3. The Environment page's "Dynamic lights" (`lights.enabled`, default **0** natively). "Light characters and
+   buildings" (`lights.models`) adds M2s and WMOs; without it only the terrain is lit.
+
+With 1 and 2 on but 3 off, the patched shaders load and stay inert (the header texture is all zero, the terrain
+loop ends at once and the stock terrain point lights stay on).
+
+**How it works.** The supplied module patches the client's terrain, M2 and WMO shaders at run time with the
+Microsoft assembler, which the native client cannot do, so the supplied text patches
+(`WxlSurfaceLights/ModelLightShaderText.hpp`, `TerrainLightShaderText.hpp`: assembly and edit rules imported
+unchanged, only the wrapper differs) run offline, like the WMO and grass packs. On this install the builder
+patched **all 128 terrain vertex and 292 terrain pixel permutations, 315 lit M2 vertex shaders and 99 WMO vertex
+shaders (834 in all), with 0 conflicts**; the 315 M2 shaders it skipped have no sun term. The runtime
+(`WxlSurfaceLights.cpp`) swaps them in by hash of the engine's own bytecode as `CGxShader::Load` creates them,
+through the new `NativeShaderReplace` chain (grass motion now registers there too). Per frame, at the top of
+`CWorldScene::RenderChunks`, it scans the M2 scene, builds the light list and the cell grid, fills one
+A32B32G32R32F texture (vertex sampler 0 for models, pixel sampler 13 for the terrain) and sets VS c250 / PS
+c206 / c212. The light list is the supplied one: merged torch groups, flicker, range fade, up to 512 lights, a
+grid of cells listing the lights that reach each, and baked occlusion rays (`World::Intersect`, terrain and
+WMO faces only) under a per-frame ray budget. `DoodadLightProperties/Assignment.cdbc` (7 lights, 24 assignments
+here, 0 rejected) add lights to models by path. Model pointers kept between 4 Hz scans are guarded by a new
+`NativeVisualHooks::modelDestroyed` call in `~CM2Model`.
+
+**WMO lights and the layered-material pack.** The WMO layered module finds its shaders by hashing the engine's
+current bytecode, which light-patching would change. So WMO lights are **off by default whenever
+`wmo_shaders.pack` is installed (it is here)**; `WXL_SURFACE_LIGHTS_WMO=1` overrides. Terrain and M2 lights are
+unaffected.
+
+**In use on this install (2026-10-31):** the user ran it, turned on "Dynamic lights" and "Light characters and
+buildings", saw the lighting change and judged it good, and chose to keep it enabled. `WarcraftXL.cfg` now has
+`WXL_SURFACE_LIGHTS=1` and `WTF/WXL/Environment.ini` has `lights.enabled=1`, `lights.models=1`. The code defaults
+stay off. WMO (building) lights are still off here because `wmo_shaders.pack` is installed, so "buildings"
+means M2 doodads such as torches and lamp posts, not WMO walls.
+
+**Not ported:** the supplied in-game table editor, the debug views' panel and the runtime-assembler
+shader patcher (replaced by the offline pack); WMO lights alongside layered materials; `grass.memoryMB/buildMs`.
+
+**Verification (no in-game test yet).**
+- `tests/wxl_surface_lights_test.cpp` (ASan/UBSan): WDBC parsing and every rejection path, the real client's
+  tables, flicker, merging, pool selection, the cell grid, baked occlusion against a synthetic wall, the
+  shader pack format, and the texture layout (entries point at their lights, tiles, header, constants).
+- Offline build on this install: 834 shaders patched, 0 failures (above).
+- `tools/wxl_surface_lights_gpu_probe.cpp` on the real dxvk-native backend: **all 834 patched shaders are
+  accepted** (terrain 128 vertex / 292 pixel, M2 315, WMO 99) and the A32B32G32R32F managed texture is created.
+- `Wow` builds and links; `launch-native.sh --check` passes.
+- **Not verified:** that the patched shaders render the same as stock when inert, and how the lights look. Both
+  need a run: `WXL_SURFACE_LIGHTS=1 ./launch-native.sh` (add `WXL_NATIVE_DIAGNOSTICS=1` for the load lines), look
+  at the terrain with "Dynamic lights" off (should be unchanged), then on near torches or lamps.
 
 ### Native WMO layered materials (2026-10-31)
 
@@ -446,9 +508,8 @@ seen in game**. Each has a `WXL_<NAME>=0` profile switch.
 **Not ported:** `wxl-db2` publishes the `wxl.db2` v1 C API for out-of-core extension DLLs and decodes
 WDC tables through the x64 asset host; nothing in the supplied tree consumes it and the native client
 has neither the host nor an extension loader, so there is nothing to attach it to. `wxl-living-azeroth`'s
-grass instancing and Environment page backend are ported; its clustered surface lights (terrain/model/WMO
-shader patching, doodad light tables, obstruction rays) are a separate renderer-sized project and are not
-started.
+grass instancing, Environment page backend and surface lights are ported (the lights off by default; see
+"Surface lights").
 
 ### Game-object editor: native implementation (2026-10-31)
 
@@ -978,7 +1039,7 @@ new native implementation and acceptance test.
 | `wxl-selcircle-poc`, `wxl-quest-marker`, `wxl-unit-outline` | Not ported, deliberately: disabled in the checked profile (`WXL_QUEST_RENDERING=0`, `WXL_UNIT_OVERLAYS=0`; `SelCirclePoc::InstallModule` returns immediately without `WXL_QUEST_RENDERING`). |
 | `wxl-underwear` | Ported natively (2026-10-31); see "Underwear and gossip" below. In-game acceptance pending. |
 | `wxl-required-addons`, `wxl-npcbot-targets` (+ resurrection), `wxl-npcbot-enchant`, `wxl-lone-wolf`, `wxl-goblin-glider` | Ported natively (2026-10-31); see "Required add-ons, NPCBot targeting, ..." above. In-game acceptance pending. |
-| `wxl-living-azeroth` | Grass instancing and the Environment page backend (grass options live, light options saved only) ported 2026-10-31. Clustered surface lights and doodad light tables are not ported (renderer-sized: terrain/M2/WMO shader patching through the offline pack, light grid texture, baked occlusion). Surface lights are off in this install's saved `Environment.ini`. |
+| `wxl-living-azeroth` | Ported natively 2026-10-31: grass instancing, the Environment page backend and the surface lights (terrain, M2, optional WMO; offline shader pack, light grid, baked occlusion, doodad light tables). **Surface lights are off by default** (`WXL_SURFACE_LIGHTS=0`, `lights.enabled=0`). Build, tests and a real-backend shader probe pass; rendering is not yet seen. See "Surface lights" above. |
 | `wxl-db2` | Not ported: an extension-DLL service with no consumer in this tree and no host/extension loader on the native client. |
 | `wxl-skybox-control` | Native Lua API and DayNight application already exist (`WxlSkyboxOverride`). It needs scenario verification. |
 | `wxl-visual-time` | Native Lua API and time application already exist (`WxlVisualTimeOverride`). It needs scenario verification. |

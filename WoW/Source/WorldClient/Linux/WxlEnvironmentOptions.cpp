@@ -2,6 +2,7 @@
 #include "WxlEnvironmentOptions.h"
 #include "WxlGrassInstancing.h"
 #include "WxlGrassMotion.h"
+#include "WxlSurfaceLights.h"
 #include "Engine/Source/FrameScript/FrameScript.h"
 #include "Engine/Source/ModernAssets/NativeDiagnostic.h"
 #include "Engine/Source/ModernAssets/WxlGrass/EnvironmentOptions.hpp"
@@ -43,6 +44,7 @@ void Apply() {
     const env::Motion motion = env::MotionOf(values);
     WxlGrassSetMotion(motion.strength, motion.speed, motion.interaction);
     WxlGrassInstancingSetEnabled(values.v[env::kGrassInstanced] != 0.0);
+    WxlSurfaceLightsApply(values.v, env::kCount);
 }
 
 bool Save() {
@@ -153,10 +155,8 @@ std::string GrassStatus() {
 int32_t Script_Status(lua_State* L) {
     const std::string grass = GrassStatus();
     lua_pushlstring(L, grass.data(), grass.size());
-    static const char lights[] =
-        "Lighting: the clustered surface-light renderer is not part of this client yet. The light settings are saved "
-        "(and shared with the Windows client) but change nothing here.";
-    lua_pushlstring(L, lights, sizeof(lights) - 1);
+    const std::string lights = WxlSurfaceLightsStatus();
+    lua_pushlstring(L, lights.data(), lights.size());
     static const char placement[] =
         "not run: instanced and stock grass share the engine's own placement math (checked offline)";
     lua_pushlstring(L, placement, sizeof(placement) - 1);

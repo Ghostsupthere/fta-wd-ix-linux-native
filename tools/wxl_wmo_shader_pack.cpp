@@ -13,6 +13,10 @@
 #include "Engine/Source/ModernAssets/WxlWmo/WmoShaderCompact.hpp"
 #include "Engine/Source/ModernAssets/WxlGrass/GrassShaderText.hpp"
 #include "Engine/Source/ModernAssets/WxlGrass/GrassInstancing.hpp"
+#include "Engine/Source/ModernAssets/WxlSurfaceLights/LightShaderPack.hpp"
+#include "Engine/Source/ModernAssets/WxlSurfaceLights/ModelLightShaderText.hpp"
+#include "Engine/Source/ModernAssets/WxlSurfaceLights/TerrainLightShaderText.hpp"
+#include <map>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -69,6 +73,72 @@ int main(int argc, char** argv) {
         std::vector<uint8_t> code;
         if (!ReadFile(argv[2], code)) return 1;
         std::fputs(Disassemble(code).c_str(), stdout);
+        return 0;
+    }
+    if (std::strcmp(argv[1], "--lights") == 0 && argc >= 4) {
+        // Surface lights (wxl-living-azeroth): the client's terrain, M2 and WMO shaders with the supplied
+        // text patches applied. Inputs are named <group>__<family>__<index>.vs|ps with group tv/tp
+        // (terrain vertex/pixel), m2 or wmo (vertex). Output: argv[3].
+        namespace sl = wxl::surfacelights;
+        const std::string lightDir = argv[2];
+        struct Result { std::string patched; sl::LightPackEntry entry; bool conflict = false; };
+        std::map<std::pair<int, uint64_t>, Result> results;
+        unsigned seenCount = 0, skipped = 0, conflicts = 0;
+        unsigned terrainVertex = 0, terrainVertexSkipped = 0, terrainPixel = 0, terrainPixelSkipped = 0;
+        std::map<std::string, unsigned> skipReasons;
+        for (const char* extension : {"vs", "ps"}) for (const auto& name : List(lightDir, extension)) {
+            const size_t a = name.find("__"), b = a == std::string::npos ? a : name.find("__", a + 2);
+            if (b == std::string::npos) continue;
+            const std::string group = name.substr(0, a), family = name.substr(a + 2, b - a - 2);
+            std::vector<uint8_t> code;
+            if (!ReadFile(lightDir + "\\" + name, code) || code.size() < 8 || code.size() > wxl::wmo::kMaxShaderBytes) continue;
+            ++seenCount;
+            const bool pixel = std::strcmp(extension, "ps") == 0;
+            std::string source = Disassemble(code), why;
+            bool ok = false;
+            uint8_t groupId = sl::kGroupModel;
+            if (group == "tv") { groupId = sl::kGroupTerrain; ++terrainVertex; ok = sl::terrainshader::EditTerrainVertex(source, why); if (!ok) ++terrainVertexSkipped; }
+            else if (group == "tp") { groupId = sl::kGroupTerrain; ++terrainPixel; ok = sl::terrainshader::EditTerrainPixel(source, why); if (!ok) ++terrainPixelSkipped; }
+            else if (group == "m2" || group == "wmo") {
+                groupId = group == "wmo" ? sl::kGroupWmo : sl::kGroupModel;
+                sl::modelshader::g_family = family;
+                ok = sl::modelshader::EditVertex(source, why);
+            } else continue;
+            if (!ok) { ++skipped; ++skipReasons[group + ": " + why]; continue; }
+            sl::LightPackEntry e; e.kind = pixel ? 1 : 0; e.group = groupId; e.originalSize = uint32_t(code.size());
+            e.originalHash = wxl::wmo::HashBytecode(code.data(), code.size());
+            const auto key = std::make_pair(int(e.kind), e.originalHash);
+            const auto it = results.find(key);
+            if (it != results.end()) {   // the same stock bytecode in two families: only if both edits agree
+                if (it->second.patched != source && !it->second.conflict) { it->second.conflict = true; ++conflicts; std::printf("conflict: %s edits differently from an earlier family\n", name.c_str()); }
+                continue;
+            }
+            g_quiet = false;
+            if (!Assemble(source, name.c_str(), e.bytecode)) { ++skipped; ++skipReasons[group + ": assemble"]; continue; }
+            Result r; r.patched = std::move(source); r.entry = std::move(e);
+            results.emplace(key, std::move(r));
+        }
+        // The terrain patch is a pair: a patched pixel shader reads a vertex output only a patched
+        // vertex shader writes, so any terrain shader left unpatched drops the whole terrain set (the
+        // supplied module marks it "not active" the same way).
+        const bool terrainComplete = terrainVertex && terrainPixel && !terrainVertexSkipped && !terrainPixelSkipped;
+        std::vector<sl::LightPackEntry> entries;
+        for (auto& [key, r] : results) {
+            if (r.conflict) continue;
+            if (r.entry.group == sl::kGroupTerrain && !terrainComplete) continue;
+            entries.push_back(std::move(r.entry));
+        }
+        for (const auto& [reason, n] : skipReasons) std::printf("  %u x %s\n", n, reason.c_str());
+        const auto bytes = sl::LightShaderPack::Serialize(entries);
+        FILE* file = std::fopen(argv[3], "wb");
+        if (!file || std::fwrite(bytes.data(), 1, bytes.size(), file) != bytes.size()) { std::fprintf(stderr, "cannot write light pack\n"); return 1; }
+        std::fclose(file);
+        size_t perGroup[4] = {};
+        for (const auto& e : entries) ++perGroup[e.group];
+        std::printf("surface lights: %u shaders read, %u skipped, %u conflicts; terrain %s (vertex %u/%u patched, pixel %u/%u); pack: terrain %zu, M2 %zu, WMO %zu, %zu bytes\n",
+                    seenCount, skipped, conflicts, terrainComplete ? "complete" : "INCOMPLETE (terrain dropped)",
+                    terrainVertex - terrainVertexSkipped, terrainVertex, terrainPixel - terrainPixelSkipped, terrainPixel,
+                    perGroup[1], perGroup[2], perGroup[3], bytes.size());
         return 0;
     }
     if (std::strcmp(argv[1], "--grass") == 0 && argc >= 4) {   // grass-motion vertex shaders (*.vs)

@@ -21,7 +21,8 @@ namespace wxl::grass::environment
         bool integer;
     };
 
-    // Same names, ranges and defaults as the supplied module, in the same order.
+    // Same names, ranges and order as the supplied module. Defaults match it except lights.enabled and
+    // lights.models: surface lights are OFF by default in the native client.
     constexpr Option kOptions[] = {
         {"grass.instanced", 0, 1, 1, true},
         {"grass.memoryMB", 16, 128, 64, true},
@@ -29,8 +30,8 @@ namespace wxl::grass::environment
         {"grass.windStrength", 0, 2, 1, false},
         {"grass.windSpeed", 0, 2, 1, false},
         {"grass.interaction", 0, 1, 1, true},
-        {"lights.enabled", 0, 1, 1, true},
-        {"lights.models", 0, 1, 1, true},
+        {"lights.enabled", 0, 1, 0, true},
+        {"lights.models", 0, 1, 0, true},
         {"lights.brightness", 0, 2, 1, false},
         {"lights.radius", 4, 32, 16, false},
         {"lights.range", 32, 256, 160, true},

@@ -5,6 +5,7 @@
 #include "WoW/Common/ComponentCore/WxlEquipmentOwner.h"
 #include "Engine/Source/ModernAssets/NativeModelPresentation.h"
 #include "WoW/Source/WorldClient/Linux/WxlLootBeam.h"
+#include "WoW/Source/WorldClient/Linux/WxlSurfaceLights.h"
 #include "WoW/Source/Ui/Linux/WxlGameObjectEditor.h"
 #include "WoW/Source/Ui/Linux/WxlUnderwear.h"
 #include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
@@ -1508,6 +1509,7 @@ void World::UnloadMap() {
     WxlAnimationLabWorldLeave();
     WxlLoneWolfWorldLeave();
     WxlGoblinGliderWorldReset();
+    WxlSurfaceLightsWorldLeave();
     WxlReleaseModernVisuals();
 #endif
     CWorldScene::ClearObjectFadeoutList();
@@ -3745,6 +3747,9 @@ void CWorldScene::RenderChunksSinglePass() {
 // VERIFY: 981a5585 manual
 // OFFSET: 0x00798DA0
 void CWorldScene::RenderChunks() {
+#if defined(WOWDECOMP_LINUX)
+    WxlSurfaceLightsBeforeTerrain();
+#endif
     g_theGxDevicePtr->RsPush();
     CMapRenderChunk::s_fogColor = *reinterpret_cast<CImVector*>(&g_theGxDevicePtr->m_appRenderStates[GxRs_FogColor].m_value.m_data.i[0]);
 

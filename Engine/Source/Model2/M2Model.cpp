@@ -6715,6 +6715,7 @@ void CM2Model::ProcessCallbacksRecursive() {
 // OFFSET: 0x00832640
 CM2Model::~CM2Model() {
 #if defined(WOWDECOMP_LINUX)
+    if (NativeVisualHooks::modelDestroyed) NativeVisualHooks::modelDestroyed(this);
     RetireNativeItemPhysics(this);
     delete this->m_wxlBoneRemap;
     this->m_wxlBoneRemap = nullptr;

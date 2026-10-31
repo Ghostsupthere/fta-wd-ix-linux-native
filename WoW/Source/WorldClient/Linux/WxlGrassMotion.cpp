@@ -2,8 +2,10 @@
 #include "WxlGrassMotion.h"
 #include "WxlGrassInstancing.h"
 #include "WxlEnvironmentOptions.h"
+#include "WxlSurfaceLights.h"
 #include "WxlVisualEnvironment.h"
 #include "Engine/Source/ModernAssets/NativeVisualHooks.h"
+#include "Engine/Source/ModernAssets/NativeShaderReplace.h"
 #include "Engine/Source/ModernAssets/WxlGrass/GrassShaderText.hpp"
 #include "Engine/Source/ModernAssets/WxlGrass/GrassRigid.hpp"
 #include "Engine/Source/ModernAssets/WxlWmo/WmoShaderPack.h"
@@ -101,7 +103,7 @@ void WxlGrassInitialize() {
         std::fprintf(stderr, "WarcraftXL: grass motion pack unavailable (%s); stock grass. Run tools/build-wmo-shader-pack.py\n", why.c_str());
         return;
     }
-    NativeVisualHooks::replaceShaderCode = &Replace;
+    NativeShaderReplace::Add(&Replace);
 }
 
 bool WxlGrassMotionActive() { return packLoaded && enabled && patchedShaders > 0; }
@@ -117,7 +119,7 @@ void WxlGrassFillConstants(float* block36) {
     std::memcpy(block36, cached, sizeof(cached));
 }
 
-void WxlGrassFrame() { frameDirty = true; WxlGrassInstancingFrame(); WxlEnvironmentOptionsFrame(); }
+void WxlGrassFrame() { frameDirty = true; WxlGrassInstancingFrame(); WxlEnvironmentOptionsFrame(); WxlSurfaceLightsFrame(); }
 
 bool WxlGrassIsRigid(uint32_t doodadId, const char* modelPath) {
     if (!modelPath || !*modelPath) return false;

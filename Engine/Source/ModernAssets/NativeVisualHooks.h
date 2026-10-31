@@ -37,4 +37,7 @@ inline void (*m2SetBoneSequence)(CM2Model* model,unsigned boneId,unsigned* seque
 // gliderForget when such a model is (re)attached.
 inline void (*gliderUpdate)(CM2Model* model)=nullptr;
 inline void (*gliderForget)(CM2Model* model)=nullptr;
+// Called from ~CM2Model, before the model is torn down, so modules that keep model pointers between
+// frames (surface lights) can drop them.
+inline void (*modelDestroyed)(const CM2Model* model)=nullptr;
 }
