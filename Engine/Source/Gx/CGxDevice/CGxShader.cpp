@@ -1,3 +1,7 @@
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/ModernAssets/NativeVisualHooks.h"
+#include <cstring>
+#endif
 #include <cstdint>
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
 #include "Engine/Source/Gx/CGxDevice/CGxShader.h"
@@ -31,6 +35,17 @@ void CGxShader::Load(SFileImpl* file) {
 
     uint8_t padding[4];
     SFileReadFile(file, padding, ((codeSize + 3) & ~3u) - codeSize, nullptr, nullptr, 0);
+
+#if defined(WOWDECOMP_LINUX)
+    // Offline-patched replacement for an engine shader (grass motion), matched by content.
+    const uint32_t* patched = nullptr;
+    size_t patchedBytes = 0;
+    if (NativeVisualHooks::replaceShaderCode && this->m_code.Count() &&
+        NativeVisualHooks::replaceShaderCode(this->m_code.m_data, this->m_code.Count(), &patched, &patchedBytes) && patched && patchedBytes) {
+        this->m_code.SetCount(static_cast<uint32_t>(patchedBytes));
+        memcpy(this->m_code.m_data, patched, patchedBytes);
+    }
+#endif
 }
 
 // VERIFY: 73c2698b auto

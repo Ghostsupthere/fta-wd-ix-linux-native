@@ -21,6 +21,12 @@ int32_t CM2Shared::SetIndices() {
             return 0;
         }
 
+#if defined(WOWDECOMP_LINUX)
+        WxlNativeDiagnostic("native-m2: uploading skin indices for %s (%u sections, %u indices, %u instances)",
+                            this->m_fileNameWithoutPath, this->m_skinData->m_skinSections.m_count,
+                            this->m_skinData->m_indices.m_count, this->m_instances);
+#endif
+
         int32_t sharedVertices = (this->m_cache->m_flags & 8) || (this->m_data->m_bones.m_count == 1 && (this->m_cache->m_flags & 0x40));
         uint32_t indexStart = 0;
 

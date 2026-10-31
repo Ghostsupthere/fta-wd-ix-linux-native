@@ -10,6 +10,10 @@
 #include <cstdio>
 #include <cstring>
 #include <array>
+#include <new>
+#include <alloca.h>
+#define _alloca alloca
+#include "Engine/Source/ModernAssets/NativeDiagnostic.h"
 #include "Engine/Source/Model2/WxlBoneBudget.h"
 #include "Engine/Source/Model2/WxlGeometryBudget.h"
 
@@ -44,8 +48,12 @@ struct CM2Shared {
     M2SkinSection* m_skinSections;
     const char* m_fileNameWithoutPath = "fixture";
     int32_t SetIndices();
+    bool ConvertTextureValuesToCombos();
+    const char* m_fileName = "fixture";
 };
 #include "Engine/Source/Model2/WxlSkinIndexUpload.inl"
+struct TextureComboList { uint16_t* m_data; uint32_t m_count; };
+#include "Engine/Source/Model2/WxlTextureComboConversion.inl"
 
 static uint32_t allocations = 0;
 static uint8_t* arena = nullptr;
@@ -221,6 +229,67 @@ int main(int argc, char** argv) {
         assert(fixture.skin.m_vertices[fixture.skin.m_indices[i]] == i);
     ReleaseModernM2Data(&fixture.data);
     assert(outstanding.empty());
+    {
+        // Specialized shader combination used to copy/free M2Data here. That
+        // invalidated external relative arrays and left the skin owner stale.
+        Fixture model;
+        arena = model.storage; available = sizeof(model.storage);
+        RegisterModernM2Data(&model.data);
+        model.OverBudget();
+        assert(RebuildModernM2Skin(&model.data, &model.skin, "combo-lifetime.m2"));
+        auto* const sections = model.skin.m_skinSections.Data();
+        auto* const boneCombos = model.data.m_boneCombos.Data();
+        auto* const vertices = model.skin.m_vertices.Data();
+        CM2Shared shared{}; shared.m_data = &model.data; shared.m_skinData = &model.skin;
+        const auto ownersBefore = outstanding.size();
+        model.skin.m_batches[0].m_textureCount = 2;
+        model.skin.m_batches[0].m_textureComboIndex = 0x0201;
+        model.skin.m_batches[0].m_textureTransformComboIndex = 0x0200;
+        M2Material presentationMaterials[2]{};
+        model.data.m_materials.Set(presentationMaterials); model.data.m_materials.m_count = 2;
+        model.skin.m_batches[1].m_materialIndex = 1;
+        model.skin.m_batches[1].m_textureCount = 1;
+        model.skin.m_batches[1].m_textureComboIndex = 3;
+        model.skin.m_batches[1].m_textureTransformComboIndex = 0;
+        assert(shared.ConvertTextureValuesToCombos());
+        assert(shared.m_data == &model.data);
+        assert(outstanding.size() == ownersBefore + 2);
+        assert(model.skin.m_skinSections.Data() == sections);
+        assert(model.data.m_boneCombos.Data() == boneCombos && model.skin.m_vertices.Data() == vertices);
+        assert(model.data.m_textureCombos.m_count == 3 && model.data.m_textureCombos[0] == 1 &&
+               model.data.m_textureCombos[1] == 2 && model.data.m_textureCombos[2] == 3);
+        assert(model.data.m_textureTransformCombos.m_count == 2 &&
+               model.data.m_textureTransformCombos[0] == 0xFFFF && model.data.m_textureTransformCombos[1] == 1);
+        Fixture unrelated;
+        ReleaseModernM2Data(&unrelated.data); // Other model teardown cannot retire this skin.
+        assert(outstanding.size() == ownersBefore + 2 && model.Valid());
+        // Exercise the faulting upload again after combo growth and unrelated cleanup.
+        auto draws = std::vector<M2SkinSection>(sections, sections + model.skin.m_skinSections.m_count);
+        CM2Cache cache; CaptureGx capture; g_theGxDevicePtr = &capture;
+        shared.m_skinSections = draws.data(); shared.m_cache = &cache;
+        assert(shared.SetIndices());
+        capture.buffer.m_valid = false; assert(shared.SetIndices());
+        // No growth reuses tables. Failure to grow both tables commits neither.
+        assert(shared.ConvertTextureValuesToCombos() && outstanding.size() == ownersBefore + 2);
+        const uint16_t values[]{9,8,7,6,5,4};
+        auto* const oldCombos = model.data.m_textureCombos.Data();
+        auto* const oldTransforms = model.data.m_textureTransformCombos.Data();
+        const auto savedAvailable = available;
+        available = 16; // First allocation succeeds, second fails.
+        assert(!StoreNativeM2TextureCombos(&model.data, values, 6, values, 6));
+        assert(outstanding.size() == ownersBefore + 2);
+        assert(model.data.m_textureCombos.Data() == oldCombos && model.data.m_textureCombos.m_count == 3);
+        assert(model.data.m_textureTransformCombos.Data() == oldTransforms && model.data.m_textureTransformCombos.m_count == 2);
+        assert(model.data.m_textureCombos[0] == 1 && model.data.m_textureTransformCombos[0] == 0xFFFF);
+        available = 0;
+        assert(!StoreNativeM2TextureCombos(&model.data, values, 6, values, 6));
+        available = savedAvailable - 16;
+        assert(StoreNativeM2TextureCombos(&model.data, values, 6, values, 6));
+        assert(shared.m_data == &model.data && model.skin.m_skinSections.Data() == sections);
+        ReleaseModernM2Data(&model.data); assert(outstanding.empty());
+        ReleaseModernM2Data(&model.data); assert(outstanding.empty());
+        arena = nullptr; available = allocations = 0;
+    }
     if (argc == 3) {
         auto read = [](const char* name) {
             std::ifstream stream(name, std::ios::binary); assert(stream);

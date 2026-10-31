@@ -5,9 +5,8 @@
 # "d3d9.dll" mapping in Engine/Source/Os/Linux/OsLibrary.cpp).
 #
 # Pinned to an EXACT upstream tag so builds are reproducible. Bump deliberately.
-# This is stock doitsujin/dxvk -- no fork: the client-side features (the
-# sample-rate-shading DXBC rewrite) live in our engine and work against a stock
-# dxvk, so there is nothing to patch here.
+# One native-only patch exposes DXVK's existing Vulkan depth resolve on all
+# adapter vendors. Windows builds and other render states remain upstream.
 #
 #   ./fetch-dxvk.sh            # clone + build into .deps/dxvk, print the build dir
 #   DXVK_DIR=/path ./fetch-dxvk.sh
@@ -27,6 +26,17 @@ else
     echo "fetch-dxvk: $DXVK_DIR already present at $cur (expected $DXVK_TAG); not re-cloning"
 fi
 
+# Keep the vendor-independent native depth path reproducible on fresh checkouts.
+PATCH_PATH="$(cd "$(dirname "$0")" && pwd)/patches/dxvk-native-depth-copy.patch"
+if git -C "$DXVK_DIR" apply --reverse --check "$PATCH_PATH" 2>/dev/null; then
+    : # Already applied.
+elif git -C "$DXVK_DIR" apply --check "$PATCH_PATH"; then
+    git -C "$DXVK_DIR" apply "$PATCH_PATH"
+else
+    echo "fetch-dxvk: native depth-copy patch does not match this DXVK checkout" >&2
+    exit 1
+fi
+
 # Build deps come from nix so the script is self-contained; if meson/ninja are
 # already on PATH this still works (nix-shell just re-provides them).
 run() {
@@ -44,6 +54,9 @@ if [ ! -f "$BUILD_DIR/src/d3d9/libdxvk_d3d9.so" ]; then
         -Dnative_sdl3=enabled -Dnative_sdl2=disabled -Dnative_glfw=disabled && \
         ninja -C '$BUILD_SUBDIR'"
 fi
+
+# Ninja is incremental; existing libraries must also pick up native patches.
+run "ninja -C '$BUILD_DIR'"
 
 if [ ! -f "$BUILD_DIR/src/d3d9/libdxvk_d3d9.so" ]; then
     echo "fetch-dxvk: ERROR -- build did not produce libdxvk_d3d9.so under $BUILD_DIR" >&2

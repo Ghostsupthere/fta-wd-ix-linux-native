@@ -1,4 +1,7 @@
 #include "MapObj.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/WorldClient/Linux/WxlWmoMaterials.h"
+#endif
 #include "WoW/Source/WorldClient/WorldConstants.h"
 #include <cstdlib>
 #include <malloc.h>
@@ -388,7 +391,11 @@ bool CMapObj::CullBatch(SMOBatch* batch) {
     box.t = t;
     box.b.y = batch->m_by;
     box.b.z = batch->m_bz;
-    return CWorldScene::FrustumCull(&box);
+    const bool culled = CWorldScene::FrustumCull(&box);
+#if defined(WOWDECOMP_LINUX)
+    WxlWmoNoteBatch(culled ? nullptr : batch);
+#endif
+    return culled;
 }
 
 // VERIFY: bd88db75 auto
@@ -1338,6 +1345,9 @@ void CMapObj::RenderThruPortals(uint32_t groupNum, uint32_t fromGroup, CRect& nd
 // VERIFY: 687366c6 manual
 // OFFSET: 0x007AC6A0
 void CMapObj::ExteriorRender(CMapObjGroup* group, uint32_t index) {
+#if defined(WOWDECOMP_LINUX)
+    WxlWmoLeafScope wxlWmoScope(this, group);
+#endif
     if (group->m_parent->m_header->m_flags & 0x2) {
         this->UnifiedRender(group, index);
         return;
@@ -1456,6 +1466,9 @@ void CMapObj::ExteriorRender(CMapObjGroup* group, uint32_t index) {
 // VERIFY: 8a73759b manual
 // OFFSET: 0x007AC9F0
 void CMapObj::InteriorRender(CMapObjGroup* group, uint32_t index) {
+#if defined(WOWDECOMP_LINUX)
+    WxlWmoLeafScope wxlWmoScope(this, group);
+#endif
     if (group->m_parent->m_header->m_flags & 0x2) {
         this->UnifiedRender(group, index);
         return;

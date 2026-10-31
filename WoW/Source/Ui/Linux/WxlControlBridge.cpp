@@ -10,6 +10,7 @@
 #include <cstring>
 
 #include "Engine/Source/FrameScript/FrameScript.h"
+#include "WoW/Source/WorldClient/Linux/WxlGrassMotion.h"
 #include "Engine/Source/lua-5.1/src/lauxlib.h"
 #include "Engine/Source/lua-5.1/src/lua.h"
 
@@ -250,6 +251,23 @@ int32_t Script_WarcraftXL_ResetOptions(lua_State* L) {
     return 1;
 }
 
+// Grass sway control for problem zones (the addon decides; the renderer only gets a boolean).
+int32_t Script_WarcraftXL_SetHellfireGrassSwayDisabled(lua_State* L) {
+    if (!lua_isnumber(L, 1)) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+
+    WxlGrassSetSwayDisabled(lua_tonumber(L, 1) != 0.0);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+int32_t Script_WarcraftXL_GetHellfireGrassSwayDisabled(lua_State* L) {
+    lua_pushboolean(L, WxlGrassSwayDisabled() ? 1 : 0);
+    return 1;
+}
+
 }  // namespace
 
 void WxlRegisterControlBridgeLua() {
@@ -259,6 +277,8 @@ void WxlRegisterControlBridgeLua() {
     FrameScript_RegisterFunction("WarcraftXL_SetOption", &Script_WarcraftXL_SetOption);
     FrameScript_RegisterFunction("WarcraftXL_SaveOptions", &Script_WarcraftXL_SaveOptions);
     FrameScript_RegisterFunction("WarcraftXL_ResetOptions", &Script_WarcraftXL_ResetOptions);
+    FrameScript_RegisterFunction("WarcraftXL_SetHellfireGrassSwayDisabled", &Script_WarcraftXL_SetHellfireGrassSwayDisabled);
+    FrameScript_RegisterFunction("WarcraftXL_GetHellfireGrassSwayDisabled", &Script_WarcraftXL_GetHellfireGrassSwayDisabled);
 }
 
 #endif  // WOWDECOMP_LINUX

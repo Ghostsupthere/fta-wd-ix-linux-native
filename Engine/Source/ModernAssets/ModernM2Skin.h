@@ -26,6 +26,12 @@ bool ValidateNativeM2Skin(const M2Data* data, const M2SkinProfile* skin);
 // True means unchanged or rebuilt successfully; false means unsafe to load.
 bool RebuildModernM2Skin(M2Data* data, M2SkinProfile* skin, const char* name);
 
+// Update specialized-shader combo tables without moving M2Data. External
+// relative arrays and their ownership registry depend on that stable address.
+// Allocation failure leaves both tables unchanged.
+bool StoreNativeM2TextureCombos(M2Data* data, const uint16_t* combos, uint32_t comboCount,
+                               const uint16_t* transforms, uint32_t transformCount);
+
 // Releases the near allocations used for either native or converted models. This must run
 // before CM2Shared frees the model file buffer.
 void ReleaseModernM2Data(M2Data* data);

@@ -1,3 +1,4 @@
+#include <string>
 #include "Engine/Source/ModernAssets/ModernWmo.h"
 #include "Engine/Source/ModernAssets/WxlWmo/models/wmo/WmoVisualData.hpp"
 #include <cassert>
@@ -65,6 +66,10 @@ int main() {
     source=Root(23,true);
     TransformModernWmoRoot(source.data(),source.size(),output,&root);
     assert(root && root->materials[0].layers==4 && root->materials[0].textures[7]=="Textures\\1007.blp");
+    { ModernWmoMaterialView view;   // the C++17-clean facade used by the native draw integration
+      assert(ModernWmoFindMaterial(*root,0,view) && view.layers==4 && view.flags==0xC0 && view.tint==0xFF123456);
+      assert(std::string(view.textures[0])=="Textures\\1000.blp" && std::string(view.textures[7])=="Textures\\1007.blp");
+      assert(!ModernWmoFindMaterial(*root,7,view)); }
     auto retained = root; root.reset(); assert(ModernWmoVisualBytes()>baseline);
     retained.reset(); assert(ModernWmoVisualBytes()==baseline);
 
@@ -72,6 +77,8 @@ int main() {
     source=Group(); TransformModernWmoGroup(source.data(),source.size(),output,&group);
     assert(group && group->uvSets==4 && group->vertices.size()==3 && group->hasWeights);
     assert(group->vertices[1].uv[3][0]==4 && group->vertices[0].weights==0x12345678);
+    { const ModernWmoMeshView mesh=ModernWmoMesh(*group);
+      assert(mesh.uvSets==4 && mesh.hasWeights && mesh.vertexCount==3 && mesh.vertexStride==36 && mesh.vertices==group->vertices.data()); }
     TransformModernWmoGroup(source.data(),source.size(),plain); assert(output==plain);
     group.reset(); assert(ModernWmoVisualBytes()==baseline);
     source=Group(true); TransformModernWmoGroup(source.data(),source.size(),output,&group);

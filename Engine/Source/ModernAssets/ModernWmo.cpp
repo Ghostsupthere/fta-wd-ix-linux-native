@@ -30,6 +30,25 @@ bool ResolveWmoPath(void*, uint32_t id, std::string& path) {
 }
 } // namespace
 
+bool ModernWmoFindMaterial(const ModernWmoRootVisuals& root, uint32_t index, ModernWmoMaterialView& out) {
+    for (const auto& material : root.materials) {
+        if (material.index != index) continue;
+        out = {};
+        out.index = material.index; out.layers = material.layers; out.flags = material.flags; out.tint = material.tint;
+        for (size_t i = 0; i < 8; ++i) out.textures[i] = material.textures[i].c_str();
+        return true;
+    }
+    return false;
+}
+
+ModernWmoMeshView ModernWmoMesh(const ModernWmoGroupVisuals& group) {
+    ModernWmoMeshView view;
+    view.uvSets = group.uvSets; view.hasWeights = group.hasWeights;
+    view.vertexCount = group.vertices.size(); view.vertexStride = sizeof(wxl::modern::assets::wmo::visual::Vertex);
+    view.vertices = group.vertices.data();
+    return view;
+}
+
 size_t ModernWmoVisualBytes() { return s_visualBytes.load(std::memory_order_relaxed); }
 
 ModernWmoTransformResult TransformModernWmoRoot(const void* source, uint32_t sourceSize,

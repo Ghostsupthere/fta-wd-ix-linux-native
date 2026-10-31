@@ -6,6 +6,8 @@
 #include "Engine/Source/Tempest/C44Matrix.h"
 #include <algorithm>
 #include <atomic>
+#include <array>
+#include <memory>
 #include <cmath>
 
 #include "Engine/Source/ModernAssets/NativeModelPresentation.inl"

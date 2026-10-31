@@ -1,7 +1,10 @@
+#include "WoW/Source/WorldClient/Linux/WxlModernVisuals.h"
 #include "World.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Common/ComponentCore/WxlEquipmentOwner.h"
+#include "Engine/Source/ModernAssets/NativeModelPresentation.h"
+#include "WoW/Source/WorldClient/Linux/WxlLootBeam.h"
 #endif
 #include <cfloat>
 #include "WoW/Source/WorldClient/WorldConstants.h"
@@ -1493,6 +1496,9 @@ void CWorldScene::ClearObjectFadeoutList() {
 void World::UnloadMap() {
 #if defined(WOWDECOMP_LINUX)
     WxlInvalidateWorldEquipment();
+    InvalidateNativeWeaponWorld();
+    WxlClearLootBeams();
+    WxlReleaseModernVisuals();
 #endif
     CWorldScene::ClearObjectFadeoutList();
 

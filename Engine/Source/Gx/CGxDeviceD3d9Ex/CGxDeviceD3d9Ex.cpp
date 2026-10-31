@@ -5,6 +5,7 @@
 #define WOWDECOMP_GX_DXVK
 #endif
 
+#include "Engine/Source/ModernAssets/NativeVisualHooks.h"
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -1270,7 +1271,7 @@ void CGxDeviceD3d9Ex::DsSet(EDeviceState state, uint32_t value) {
             break;
 
         case Ds_ZWriteEnable:
-            this->m_d3dDevice->SetRenderState(D3DRS_ZWRITEENABLE, value);
+            this->m_d3dDevice->SetRenderState(D3DRS_ZWRITEENABLE, value || NativeVisualHooks::waterDepthWriteOverride);
             break;
 
         case Ds_ColorWriteEnable: {
@@ -2730,6 +2731,7 @@ int32_t CGxDeviceD3d9Ex::ICreateD3dDevice(const CGxFormat& format) {
 // VERIFY: 22679807 manual
 // OFFSET: 0x006A1CE0
 void CGxDeviceD3d9Ex::IReleaseD3dResources(int32_t freeTextures) {
+    if (NativeVisualHooks::deviceLost) NativeVisualHooks::deviceLost();
     this->ITexForceRecreation(freeTextures);
     this->IReleaseD3dShaders(freeTextures);
     this->IReleaseD3dPools(freeTextures);
@@ -3254,7 +3256,10 @@ void CGxDeviceD3d9Ex::Draw(CGxBatch* batch, int32_t count) {
 
     if (count) {
         uint32_t primCount = this->PrimCalcCount(batch->m_primType, batch->m_count);
-        this->m_d3dDevice->DrawIndexedPrimitive(s_primitiveConversion[batch->m_primType], baseVertexIndex, batch->m_minIndex, batch->m_maxIndex - batch->m_minIndex + 1, batch->m_start + (this->m_primIndexBuf->m_index >> 1), primCount);
+        const uint32_t startIndex = batch->m_start + (this->m_primIndexBuf->m_index >> 1);
+        if (!NativeVisualHooks::wmoDraw || !NativeVisualHooks::wmoDraw(this->m_d3dDevice, s_primitiveConversion[batch->m_primType], baseVertexIndex, batch->m_minIndex, batch->m_maxIndex - batch->m_minIndex + 1, startIndex, primCount)) {
+            this->m_d3dDevice->DrawIndexedPrimitive(s_primitiveConversion[batch->m_primType], baseVertexIndex, batch->m_minIndex, batch->m_maxIndex - batch->m_minIndex + 1, startIndex, primCount);
+        }
     } else {
         uint32_t primCount = this->PrimCalcCount(batch->m_primType, batch->m_count);
         this->m_d3dDevice->DrawPrimitive(s_primitiveConversion[batch->m_primType], baseVertexIndex, primCount);

@@ -9,5 +9,7 @@
 #include "WoW/Source/ObjectMgrClient/ObjectMgrClient.h"
 #include "WoW/Source/Object/ObjectClient/Player_C.h"
 
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
+#include <cmath>
 #include "WoW/Source/Ui/Linux/WxlModelPresentation.inl"
 #endif

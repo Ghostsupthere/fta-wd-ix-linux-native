@@ -1,3 +1,4 @@
+#include "WoW/Source/WorldClient/Linux/WxlModernVisuals.h"
 #include "Liquid.h"
 #include <cstdlib>
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
@@ -120,12 +121,15 @@ void Liquid::CRenderer::Flush(const C3Vector& cameraPos, uint32_t pass) {
 
     uint32_t count = instances.Count();
 
+    if (count) WxlBeginModernWater();
     for (uint32_t i = 0; i < count; i++) {
         Liquid::CInstance* instance = instances.m_data[i];
+        WxlTagModernWater(instance->m_settings);
         instance->m_material->Render(instance->m_environment, instance->m_geomFactory, instance->m_waveManager, cameraPos, &instance->m_transform, &instance->m_bounds, instance->m_settings);
         instance->m_queued = 0;
     }
 
+    WxlEndModernWater();
     instances.Clear();
 
     for (uint32_t i = 0; i < 4; i++) {

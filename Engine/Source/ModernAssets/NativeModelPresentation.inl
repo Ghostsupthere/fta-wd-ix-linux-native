@@ -31,7 +31,9 @@ void GetNativeEquipmentScales(float& weapon, float& shield) {
 void SetNativeEquipmentResolver(CM2Model* (*resolver)()) {
     localResolver = resolver; localModel.store(nullptr, std::memory_order_relaxed);
 }
+#include "Engine/Source/ModernAssets/NativeWeaponFlip.inl"
 void RefreshNativeEquipmentOwner() {
     localModel.store(localResolver ? localResolver() : nullptr, std::memory_order_relaxed);
+    RefreshNativeRemoteWeapons();
 }
 #include "Engine/Source/ModernAssets/NativeEquipmentScale.inl"

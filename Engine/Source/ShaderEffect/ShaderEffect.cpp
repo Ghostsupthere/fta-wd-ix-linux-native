@@ -1,3 +1,6 @@
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/ModernAssets/NativeVisualHooks.h"
+#endif
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -268,6 +271,11 @@ void CShaderEffect::SetShaders(uint32_t vertexPermute, uint32_t pixelPermute) {
     if (CShaderEffect::s_enableShaders) {
         g_theGxDevicePtr->RsSet(GxRs_VertexShader, CShaderEffect::s_curEffect->m_vertexShaders[vertexPermute]);
         g_theGxDevicePtr->RsSet(GxRs_PixelShader, CShaderEffect::s_curEffect->m_pixelShaders[pixelPermute]);
+#if defined(WOWDECOMP_LINUX)
+        if (NativeVisualHooks::wmoBind) {
+            NativeVisualHooks::wmoBind(CShaderEffect::s_curEffect->m_vertexShaders[vertexPermute], CShaderEffect::s_curEffect->m_pixelShaders[pixelPermute]);
+        }
+#endif
         useAlphaRef = (pixelPermute & 8) == 0;
     }
 

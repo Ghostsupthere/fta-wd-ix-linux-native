@@ -1,4 +1,7 @@
 #include "DetailDoodad.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/WorldClient/Linux/WxlGrassMotion.h"
+#endif
 #include <cmath>
 #include "Engine/Source/Base/Handle.h"
 #include "Engine/Source/Base/ObjectAlloc.h"
@@ -153,6 +156,13 @@ void CDetailDoodad::SetupVertexShader(const C44Matrix& world, uint32_t index) {
     view = stack.m_mtx[stack.m_level];
 
     CDetailDoodad::s_shaderConstants.m_worldView = world * view;
+#if defined(WOWDECOMP_LINUX)
+    if (index == 0) {
+        // The live shaders' motion constants occupy the dormant point-light registers c14..c22.
+        static_assert(sizeof(CDetailDoodad::SShaderConstants::SPointLight) * 3 == sizeof(float) * 36, "c14..c22");
+        WxlGrassFillConstants(reinterpret_cast<float*>(CDetailDoodad::s_shaderConstants.m_pointLights));
+    }
+#endif
     g_theGxDevicePtr->ShaderConstantsSet(GxSh_Vertex, 0, reinterpret_cast<const float*>(&CDetailDoodad::s_shaderConstants), sizeof(CDetailDoodad::s_shaderConstants) / sizeof(C4Vector));
 }
 
@@ -365,6 +375,13 @@ void CDetailDoodadInstBatch::FillVertices() {
         M2SkinProfile* skin = model->m_shared->m_skinData;
         uint32_t vertexCount = skin->m_vertices.m_count;
         CImVector color = add.m_color;
+#if defined(WOWDECOMP_LINUX)
+        // Rigid props (rocks, bones) get an interior alpha the patched shader reads as "no motion".
+        if (CDetailDoodad::s_bUseShaders && WxlGrassMotionActive() && data->m_record &&
+            (color.a == 0x00 || color.a == 0xFF) && WxlGrassIsRigid(add.m_doodadId, data->m_record->m_doodadpath)) {
+            color.a = color.a == 0x00 ? 0x01 : 0xFE;
+        }
+#endif
 
         if (!CDetailDoodad::s_bUseShaders) {
             uint32_t scale = 76 * color.a + 45874;
@@ -509,6 +526,9 @@ void CDetailDoodad::Initialize() {
     if (!(CWorld::enables2 & Enable_VertexShader)) {
         CDetailDoodad::s_bUseShaders = 0;
     } else if (CDetailDoodad::s_bUseShaders) {
+#if defined(WOWDECOMP_LINUX)
+        WxlGrassInitialize();
+#endif
         g_theGxDevicePtr->ShaderCreate(CDetailDoodad::s_vertexShader, GxSh_Vertex, "Shaders\\Vertex", "DetailDoodad", sizeof(CDetailDoodad::s_vertexShader) / sizeof(CDetailDoodad::s_vertexShader[0]));
         g_theGxDevicePtr->ShaderCreate(CDetailDoodad::s_pixelShader, GxSh_Pixel, "Shaders\\Pixel", "DetailDoodad", sizeof(CDetailDoodad::s_pixelShader) / sizeof(CDetailDoodad::s_pixelShader[0]));
     }

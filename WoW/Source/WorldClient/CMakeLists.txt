@@ -10,3 +10,7 @@ target_include_directories(WorldClient
 )
 
 target_link_libraries(WorldClient PRIVATE ModernAssets)
+# Native loot-beam draw uses the existing D3D9 device, without linking another frontend.
+if (TARGET dxvk_d3d9_headers)
+    target_link_libraries(WorldClient PRIVATE dxvk_d3d9_headers)
+endif ()

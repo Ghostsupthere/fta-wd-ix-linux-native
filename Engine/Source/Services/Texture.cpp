@@ -1,3 +1,6 @@
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/Services/Linux/TextureDiagnostics.h"
+#endif
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -194,6 +197,9 @@ void AsyncTextureDestroyedCallback(CAsyncObject* object) {
 // VERIFY: 0a24e97f auto
 // OFFSET: 0x004B5170
 void TextureReportLoadError(const char* type, const char* fileName, CStatus* status) {
+#if defined(WOWDECOMP_LINUX)
+    WxlTextureFailure("file-load",fileName);
+#endif
     char buffer[256];
     SErrGetErrorStr(SErrGetLastError(), buffer, sizeof(buffer));
     status->Add(STATUS_FATAL, "Error loading %s file \"%s\": %s\n", type, fileName, buffer);
@@ -1698,6 +1704,9 @@ int32_t LoadTgaMips(char* fileName, char* extension, int32_t flags, MipBits** im
     }
 
     if (!image.LoadImageData(3)) {
+#if defined(WOWDECOMP_LINUX)
+        WxlTextureFailure("tga-decode",fileName);
+#endif
         return 0;
     }
 
@@ -1836,6 +1845,9 @@ int32_t PumpBlpTextureAsync(CTexture* texture, void* data) {
     CBLPFile image;
 
     if (!image.Source(data)) {
+#if defined(WOWDECOMP_LINUX)
+        WxlTextureFailure("blp-header",texture->m_filename);
+#endif
         texture->m_status.Add(STATUS_FATAL, "BLP Texture failure: \"%s\" invalid file version\n", texture->m_filename);
         return 0;
     }
@@ -1864,6 +1876,9 @@ int32_t PumpBlpTextureAsync(CTexture* texture, void* data) {
     EnsureMipBitsCapacity(pixelFormat, width, height);
 
     if (!image.LockChain2(texture->m_filename, pixelFormat, s_mipBits, texture->m_bestMip, 1)) {
+#if defined(WOWDECOMP_LINUX)
+        WxlTextureFailure("blp-decode",texture->m_filename);
+#endif
         s_pumping = 0;
         texture->m_status.Add(STATUS_FATAL, "BLP Texture failure: \"%s\" decompression failed.\n", texture->m_filename);
         return 0;
@@ -1909,6 +1924,9 @@ int32_t PumpBlpTextureAsync(CTexture* texture, void* data) {
         texture->m_gxTex = TextureAllocGxTex(texture->m_gxTexTarget, texture->m_gxWidth, texture->m_gxHeight, 0, texture->m_gxTexFormat, texture->m_gxTexFlags, texture, UpdateBlpTextureAsync, texture->m_dataFormat, texture->m_filename);
 
         if (!texture->m_gxTex) {
+#if defined(WOWDECOMP_LINUX)
+            WxlTextureFailure("blp-gpu-allocation",texture->m_filename);
+#endif
             s_pumping = 0;
             texture->m_status.Add(STATUS_FATAL, "BLP Texture failure: \"%s\" allocating %dx%d texture failed.\n", texture->m_filename, faceWidth, height);
             return 0;

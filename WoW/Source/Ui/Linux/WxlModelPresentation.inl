@@ -41,7 +41,28 @@ int RegisterFrame(lua_State* L) {
     lua_pushboolean(L, frame != nullptr); return 1;
 }
 int ClearFrames(lua_State* L) { ClearNativeEquipmentPreviews(); lua_pushboolean(L, true); return 1; }
+#include "WoW/Source/Ui/Linux/WxlWeaponFlipLua.inl"
 FrameScript_Method methods[]{
+    {"WarcraftXL_IsBackSheathFlipAvailable", WeaponFlipAvailable},
+    {"WarcraftXL_IsHandWeaponFlipAvailable", WeaponFlipAvailable},
+    {"WarcraftXL_SetBackSheathFlipEnabled", SetFlip<1>},
+    {"WarcraftXL_SetMainHandWeaponFlipEnabled", SetFlip<2>},
+    {"WarcraftXL_SetOffHandWeaponFlipEnabled", SetFlip<4>},
+    {"WarcraftXL_SetMainHandReverseGripEnabled", SetFlip<8>},
+    {"WarcraftXL_SetOffHandReverseGripEnabled", SetFlip<16>},
+    {"WarcraftXL_IsBackSheathFlipEligible", FlipEligible<1>},
+    {"WarcraftXL_IsMainHandWeaponFlipEligible", FlipEligible<2>},
+    {"WarcraftXL_IsOffHandWeaponFlipEligible", FlipEligible<4>},
+    {"WarcraftXL_InvalidateWeaponFlipEligibility", RefreshWeaponPlacement},
+    {"WarcraftXL_RefreshWeaponPlacement", RefreshWeaponPlacement},
+    {"WarcraftXL_BeginRemoteBackSheathSync", BeginRemote<false>},
+    {"WarcraftXL_SetRemoteBackSheathFlip", SetRemoteBack},
+    {"WarcraftXL_EndRemoteBackSheathSync", EndRemote<false>},
+    {"WarcraftXL_ClearAllRemoteBackSheathFlips", ClearRemote<false>},
+    {"WarcraftXL_BeginRemoteHandWeaponFlipSync", BeginRemote<true>},
+    {"WarcraftXL_SetRemoteHandWeaponFlip", SetRemoteHands},
+    {"WarcraftXL_EndRemoteHandWeaponFlipSync", EndRemote<true>},
+    {"WarcraftXL_ClearAllRemoteHandWeaponFlips", ClearRemote<true>},
     {"WXL_SetModelPreviewCamera", SetView}, {"WXL_SetModelPreviewCameraAt", SetView},
     {"WXL_ResetModelPreviewCameras", ResetViews},
     {"WarcraftXL_IsEquipmentScaleAvailable", ScaleAvailable},
@@ -51,11 +72,15 @@ FrameScript_Method methods[]{
 };
 }
 void WxlRegisterModelPresentationLua() {
+    ResetNativeWeaponPresentation();
+    SetNativeWeaponFeatureEnabled(WxlProfileEnabled("WXL_BACK_SHEATH_FLIP", true));
+    SetNativeRemoteWeaponResolver(RemoteEquipmentRoot);
     ResetNativePreviewCameras(); ClearNativeEquipmentPreviews(); SetNativeEquipmentScales(1, 1);
     SetNativeEquipmentResolver(LocalEquipmentRoot);
     for (const auto& method : methods) FrameScript_RegisterFunction(method.m_name, method.m_method);
 }
 void WxlUnregisterModelPresentationLua() {
+    SetNativeRemoteWeaponResolver(nullptr); ResetNativeWeaponPresentation();
     SetNativeEquipmentResolver(nullptr); SetNativeEquipmentScales(1, 1);
     ResetNativePreviewCameras(); ClearNativeEquipmentPreviews();
     for (const auto& method : methods) FrameScript_UnregisterFunction(method.m_name);

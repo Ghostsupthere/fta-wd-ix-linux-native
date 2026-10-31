@@ -87,7 +87,7 @@ class CM2Shared {
     int32_t CallbackWhenLoaded(CM2Model* model);
     void CancelAllDeferredSequences();
     void ConvertTextureCombosToValues();
-    void ConvertTextureValuesToCombos();
+    bool ConvertTextureValuesToCombos();
     void DestroyBuffers();
     int32_t FinishLoading();
     int32_t FinishLoadingLowPrioritySequence(uint32_t sequenceIndex, uint8_t* buffer, uint32_t size);
@@ -105,7 +105,7 @@ class CM2Shared {
     int32_t SetIndices();
     int32_t SetVertices(uint32_t texCoordIndex);
     void SubstituteSimpleShaders();
-    void SubstituteSpecializedShaders();
+    bool SubstituteSpecializedShaders();
 };
 
 template <class T>

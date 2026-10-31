@@ -7,3 +7,9 @@ Native ownership/budget and GPU integration are separate from this import.
 
 - `WmoVisualData.hpp`: `85dfc6c1daf2636bc695121c3b078285e2ec98c702879570dbfdde9b8700951e`
 - `WmoVisualData.cpp`: `d8c0c31a016196cf2ab7a4672567e127609eb1b565dfc1516697e3187123edbd`
+
+Imported unchanged on 2026-10-31 from the same directory for the offline
+native shader-pack tool (`tools/wxl_wmo_shader_pack.cpp`); the runtime never
+assembles shader text.
+
+- `WmoShaderText.hpp`: `26242ef64c3cfbbfc0a7501f8917ec7e4018c1204539599a700e9849cb39c08d`

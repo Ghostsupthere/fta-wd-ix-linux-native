@@ -10,13 +10,15 @@ float WxlProfileNumber(const char* key, float fallback, float minimum, float max
 // Scales the linear fog range for a single world draw and restores the original
 // values on exit. The caller must provide whether the camera is underwater.
 struct WxlWorldFogScope {
-    WxlWorldFogScope(bool underwater);
+    WxlWorldFogScope(bool underwater,const float* target=nullptr);
     ~WxlWorldFogScope();
     WxlWorldFogScope(const WxlWorldFogScope&) = delete;
     WxlWorldFogScope& operator=(const WxlWorldFogScope&) = delete;
 private:
     float m_outdoorEnd = 0.0f;
     float m_interiorEnd = 0.0f;
+    float m_outdoorStart = 0.0f, m_interiorStart = 0.0f, m_groupStart = 0.0f, m_groupEnd = 0.0f;
+    bool m_replaced = false;
     bool m_active = false;
 };
 

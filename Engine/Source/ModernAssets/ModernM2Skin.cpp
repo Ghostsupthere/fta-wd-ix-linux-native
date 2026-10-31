@@ -513,6 +513,33 @@ bool ValidateNativeM2Skin(const M2Data* data, const M2SkinProfile* skin) {
     return true;
 }
 
+bool StoreNativeM2TextureCombos(M2Data* data, const uint16_t* combos, uint32_t comboCount,
+                               const uint16_t* transforms, uint32_t transformCount) {
+    if (!data || comboCount > kMaxEntries || transformCount > kMaxEntries ||
+        (comboCount && !combos) || (transformCount && !transforms)) return false;
+    // Never relocate the model allocation: its external relative arrays, live
+    // users and s_owned key all depend on this address. Grow only the tables.
+    auto* newCombos = comboCount > data->m_textureCombos.m_count ?
+        AllocateNear<uint16_t>(&data->m_textureCombos, comboCount) : nullptr;
+    auto* newTransforms = transformCount > data->m_textureTransformCombos.m_count ?
+        AllocateNear<uint16_t>(&data->m_textureTransformCombos, transformCount) : nullptr;
+    if ((comboCount > data->m_textureCombos.m_count && !newCombos) ||
+        (transformCount > data->m_textureTransformCombos.m_count && !newTransforms)) {
+        OsFreeNear(newCombos); OsFreeNear(newTransforms); return false;
+    }
+    void* allocations[]{newCombos, newTransforms};
+    if (!Adopt(data, allocations, 2)) {
+        OsFreeNear(newCombos); OsFreeNear(newTransforms); return false;
+    }
+    if (newCombos) data->m_textureCombos.Set(newCombos);
+    if (newTransforms) data->m_textureTransformCombos.Set(newTransforms);
+    if (comboCount) std::memcpy(data->m_textureCombos.Data(), combos, comboCount * sizeof(uint16_t));
+    if (transformCount) std::memcpy(data->m_textureTransformCombos.Data(), transforms, transformCount * sizeof(uint16_t));
+    data->m_textureCombos.m_count = comboCount;
+    data->m_textureTransformCombos.m_count = transformCount;
+    return true;
+}
+
 void RegisterModernM2Data(M2Data* data) {
     if (!data) return;
     std::lock_guard<std::mutex> lock(s_mutex);

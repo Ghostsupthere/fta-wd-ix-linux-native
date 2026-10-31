@@ -1,0 +1,38 @@
+--- a/src/d3d9/d3d9_device.cpp
++++ b/src/d3d9/d3d9_device.cpp
+@@ -2502,6 +2502,15 @@
+           break;
+ 
+         case D3DRS_POINTSIZE: {
++#ifndef _WIN32
++        // Native clients have no NVAPI depth-copy DLL. The existing Vulkan
++        // resolve works independently of the reported D3D adapter vendor.
++        if (unlikely(Value == 0x7fa05000)) {
++          ResolveZ();
++          break;
++        }
++#endif
++
+           const uint32_t vendorId = m_adapter->GetVendorId();
+ 
+           // AMD's driver hack for ATOC, RESZ, INST and CENT (also supported on Nvidia)
+--- a/src/d3d9/d3d9_adapter.cpp
++++ b/src/d3d9/d3d9_adapter.cpp
+@@ -164,10 +164,13 @@
+     // AMD/Intel's driver hack for RESZ
+     // (also advertised in D3D8 by AMD drivers,
+     // not advertised at all by modern Intel drivers)
+-    if (unlikely(rt && CheckFormat == D3D9Format::RESZ && surface))
+-      return isAmd
+-        ? D3D_OK
+-        : D3DERR_NOTAVAILABLE;
++    if (unlikely(rt && CheckFormat == D3D9Format::RESZ && surface)) {
++#ifndef _WIN32
++      return D3D_OK;
++#else
++      return isAmd ? D3D_OK : D3DERR_NOTAVAILABLE;
++#endif
++    }
+ 
+     // Nvidia/Intel's driver hack for ATOC
+     if (unlikely(CheckFormat == D3D9Format::ATOC && surface))

@@ -1,3 +1,7 @@
+#include "WoW/Source/WorldClient/Linux/WxlModernVisuals.h"
+#include "WoW/Source/WorldClient/Linux/WxlLootBeam.h"
+#include "WoW/Source/WorldClient/Linux/WxlWmoMaterials.h"
+#include "WoW/Source/WorldClient/Linux/WxlGrassMotion.h"
 #include "WorldFrame.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "Engine/Source/Base/ConvertUTF.h"
@@ -1737,7 +1741,7 @@ void CGWorldFrame::OnWorldRender() {
     // has already located the viewer; do the regular liquid refresh here.
     CWorldScene::UpdateViewerLiquid();
 #endif
-    WxlWorldFogScope wxlFogScope(World::SceneCamLiquidStatus(nullptr) != 0);
+    WxlWorldFogScope wxlFogScope(World::SceneCamLiquidStatus(nullptr) != 0, &this->m_camera->m_targetPosition.x);
     CWorld::Render(this->m_camera->m_position, this->m_elapsedSec);
     CMap::RenderFootprints();
     ClntObjMgrEnumVisibleObjects(UnitPostAnimateProc, this);
@@ -1760,6 +1764,7 @@ void CGWorldFrame::OnWorldRender() {
     scene->SetFloat18(-CWorld::s_unk_CD7758);
     scene->m_passMask = CWorld::m_M2PassMask;
     scene->Draw(M2PASS_0);
+    WxlCaptureVisualCamera();
 
     if (s_spellShadowStyle < NUM_SPELL_SHADOWS) {
         DrawSpellCursorShadow(0x200122);
@@ -1794,6 +1799,12 @@ void CGWorldFrame::OnWorldRender() {
     CWorldScene::RenderParticulate();
     GxuSortDrawList(GxuCat_1, GxuSort_B2F, *World::GetCamPos());
     GxuFlushDrawList(GxuCat_1, *World::GetCamPos());
+#if defined(WOWDECOMP_LINUX)
+    WxlFinishVisualWorld();
+    WxlDrawLootBeams();
+    WxlWmoFrame();
+    WxlGrassFrame();
+#endif
     DayNight::RenderGlares();
     PlayerNameUpdateLate();
 

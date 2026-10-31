@@ -6,7 +6,9 @@ void ApplyNativeEquipmentScale(CM2Model* model) {
     const auto* owner = model->m_attachParent;
     const bool preview = owner->m_wxlEquipmentPreviewOwner &&
         owner->m_wxlEquipmentPreviewGeneration == NativeEquipmentPreviewGeneration();
-    if (!preview && owner != localModel.load(std::memory_order_relaxed)) return;
+    const bool local = preview || owner == localModel.load(std::memory_order_relaxed);
+    ApplyNativeWeaponOrientation(model, local);
+    if (!local) return;
     const auto kind = wxl::equipmentscale::ForAttachment(WxlAttachmentPoint(model->m_attachmentId),
         wxl::equipmentscale::ClassifyPath(model->m_shared->m_fileName, sizeof(model->m_shared->m_fileName)));
     float scale = 1.0f;

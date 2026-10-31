@@ -1,3 +1,4 @@
+#include "WxlModernVisuals.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "WoW/Source/WorldClient/Linux/WxlFogRange.h"
 #include "WoW/Source/WorldClient/DayNight__DNInfo.h"
@@ -70,11 +71,21 @@ float WxlProfileNumber(const char* key, float fallback, float minimum, float max
     return std::clamp(parsed, minimum, maximum);
 }
 
-WxlWorldFogScope::WxlWorldFogScope(bool underwater) {
+WxlWorldFogScope::WxlWorldFogScope(bool underwater,const float* target) {
 #if defined(WOWDECOMP_LINUX)
+    const bool replaceFog = WxlBeginVisualWorld(underwater,target);
     if (underwater || !WxlProfileEnabled("WXL_VISUAL_ENVIRONMENT", true)) return;
     auto* info = DayNight::GetInfo();
     if (!info) return;
+    if (replaceFog) {
+        m_outdoorStart = info->m_fog.m_start; m_outdoorEnd = info->m_fog.m_end;
+        m_interiorStart = info->m_fogInterior.m_start; m_interiorEnd = info->m_fogInterior.m_end;
+        m_groupStart = info->m_fogGroup.m_start; m_groupEnd = info->m_fogGroup.m_end;
+        info->m_fog.m_start = info->m_fogInterior.m_start = info->m_fogGroup.m_start = 1.0e8f;
+        info->m_fog.m_end = info->m_fogInterior.m_end = info->m_fogGroup.m_end = 2.0e8f;
+        m_replaced = m_active = true;
+        return;
+    }
     const float scale = WxlProfileNumber("WXL_FOG_DENSITY_SCALE", 0.5f, 0.0f, 2.0f);
     float outdoor = 0.0f;
     float interior = 0.0f;
@@ -86,13 +97,18 @@ WxlWorldFogScope::WxlWorldFogScope(bool underwater) {
     info->m_fogInterior.m_end = interior;
     m_active = true;
 #else
-    (void)underwater;
+    (void)underwater;(void)target;
 #endif
 }
 
 WxlWorldFogScope::~WxlWorldFogScope() {
     if (!m_active) return;
     auto* info = DayNight::GetInfo();
+    if (m_replaced) {
+        info->m_fog.m_start = m_outdoorStart;
+        info->m_fogInterior.m_start = m_interiorStart;
+        info->m_fogGroup.m_start = m_groupStart;info->m_fogGroup.m_end = m_groupEnd;
+    }
     info->m_fog.m_end = m_outdoorEnd;
     info->m_fogInterior.m_end = m_interiorEnd;
 }
