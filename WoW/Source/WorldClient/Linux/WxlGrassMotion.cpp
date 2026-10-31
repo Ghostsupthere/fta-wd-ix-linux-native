@@ -1,6 +1,7 @@
 #if defined(WOWDECOMP_LINUX)
 #include "WxlGrassMotion.h"
 #include "WxlGrassInstancing.h"
+#include "WxlEnvironmentOptions.h"
 #include "WxlVisualEnvironment.h"
 #include "Engine/Source/ModernAssets/NativeVisualHooks.h"
 #include "Engine/Source/ModernAssets/WxlGrass/GrassShaderText.hpp"
@@ -21,8 +22,11 @@ using wxl::grass::PhysicsSettings;
 using wxl::grass::WindSettings;
 
 // Active rows: the original's compile-time defaults.
-const WindSettings wind = {true, 45.0f, 6.0f, 0.12f, 18.0f, 0.05f, 6.5f, 35.0f, 0.35f, 0.6f, 0.015f, 0.3f};
-const PhysicsSettings physics = {true, 2.0f, 0.5f, 0.0f, 0.5f, 0.3f};
+const WindSettings kWind = {true, 45.0f, 6.0f, 0.12f, 18.0f, 0.05f, 6.5f, 35.0f, 0.35f, 0.6f, 0.015f, 0.3f};
+const PhysicsSettings kPhysics = {true, 2.0f, 0.5f, 0.0f, 0.5f, 0.3f};
+// The live values: the defaults above scaled by the Environment page (WxlGrassSetMotion).
+WindSettings wind = kWind;
+PhysicsSettings physics = kPhysics;
 constexpr float kEps = 1.0e-3f, kJitter = 1.7f, kTwoPi = 6.2831853f;
 
 wxl::wmo::ShaderPack pack;
@@ -85,6 +89,7 @@ RigidEntry rigidCache[1024];
 void WxlGrassInitialize() {
     if (initialised) return;
     initialised = true;
+    WxlEnvironmentOptionsLoad();
     enabled = WxlProfileEnabled("WXL_GRASS_MOTION", true);
     if (!enabled) return;
     std::error_code error;
@@ -112,7 +117,7 @@ void WxlGrassFillConstants(float* block36) {
     std::memcpy(block36, cached, sizeof(cached));
 }
 
-void WxlGrassFrame() { frameDirty = true; WxlGrassInstancingFrame(); }
+void WxlGrassFrame() { frameDirty = true; WxlGrassInstancingFrame(); WxlEnvironmentOptionsFrame(); }
 
 bool WxlGrassIsRigid(uint32_t doodadId, const char* modelPath) {
     if (!modelPath || !*modelPath) return false;
@@ -120,6 +125,17 @@ bool WxlGrassIsRigid(uint32_t doodadId, const char* modelPath) {
     if (entry.valid && entry.id == doodadId && entry.path == modelPath) return entry.rigid;
     entry.id = doodadId; entry.path = modelPath; entry.rigid = wxl::grass::IsRigidDetailDoodadName(modelPath); entry.valid = true;
     return entry.rigid;
+}
+
+// Same scaling as the supplied compat::SetMotion: amplitudes by strength (zero turns the wind off),
+// speed by speed, player interaction on or off.
+void WxlGrassSetMotion(float strength, float speed, bool interaction) {
+    wind.enabled = kWind.enabled && strength > 0.0f;
+    wind.amplitude = kWind.amplitude * strength;
+    wind.crossAmplitude = kWind.crossAmplitude * strength;
+    wind.speed = kWind.speed * speed;
+    physics.enabled = interaction;
+    frameDirty = true;
 }
 
 void WxlGrassSetSwayDisabled(bool disabled) { swayDisabled.store(disabled, std::memory_order_release); frameDirty = true; }

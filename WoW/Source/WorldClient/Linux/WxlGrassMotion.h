@@ -19,6 +19,8 @@ void WxlGrassFillConstants(float* block36);
 void WxlGrassFrame();
 // Classifies a ground-effect doodad model path; rigid props must not sway.
 bool WxlGrassIsRigid(uint32_t doodadId, const char* modelPath);
+// Environment page: wind amplitude and speed scale, player interaction on/off.
+void WxlGrassSetMotion(float strength, float speed, bool interaction);
 // Lua control bridge (Hellfire grass problem zones / global disable).
 void WxlGrassSetSwayDisabled(bool disabled);
 bool WxlGrassSwayDisabled();

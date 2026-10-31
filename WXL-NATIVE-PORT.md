@@ -83,6 +83,32 @@ tiers and frame cost. The first live run logs `grass motion active` in the launc
 The original's grass instancing/performance integrations (`wxl-living-azeroth`) are not
 part of this port.
 
+### Environment page backend (2026-10-31)
+
+The control add-on's Environment page calls `WarcraftXL_EnvironmentAvailable`, `Get/SetEnvironmentOption`,
+`Save/ResetEnvironmentOptions`, `GetEnvironmentStatus`, `ResetEnvironmentTiming` and
+`VerifyGrassPlacement`; none existed natively, so the page showed "need the matching WarcraftXL runtime".
+`WxlEnvironmentOptions` (`WoW/Source/WorldClient/Linux/`, pure logic in
+`Engine/Source/ModernAssets/WxlGrass/EnvironmentOptions.hpp`, test `tests/wxl_environment_options_test.cpp`)
+ports the supplied `Options.cpp`: the same 17 keys, ranges and defaults, clamping, and the same
+`WTF/WXL/Environment.ini` text (this install's file, written by the Windows client, parses to all 17 values).
+Saves go through a temporary file and a rename.
+
+- **Live:** `grass.instanced` (`WxlGrassInstancingSetEnabled`; off drops the cached buffers and draws stock),
+  `grass.windStrength` / `windSpeed` / `interaction` (`WxlGrassSetMotion`, the supplied `compat::SetMotion`
+  scaling: amplitudes by strength, zero strength turns wind off, speed by speed, interaction on/off).
+- **Saved but not wired:** `grass.memoryMB` / `buildMs` (the native instancing has no pool or build budget) and
+  every `lights.*` option (the surface-light renderer is not ported). The page's status text says so.
+- **Performance sample:** the "Start 30-second performance sample" button records frame times and reports
+  median / 95th / 99th / worst. "Check grass placement" does not compare anything natively: the status says it
+  was not run, because instanced and stock grass share the engine's placement math.
+- **Note:** this install's `Environment.ini` has `lights.enabled=0`, `lights.models=0`, `lights.occlusion=0` and
+  `lights.indoorIsolation=0` (written 2026-10-09 by the Windows client), so surface lights are off in this
+  profile regardless of the module's defaults.
+
+Verified: the ASan/UBSan test (table, clamping, hostile input, round trip, percentiles) passes and `Wow` builds.
+**Not seen in game.**
+
 ### Native WMO layered materials (2026-10-31)
 
 Converted modern WMO roots carry layered-material snapshots (texture paths, up to
@@ -420,9 +446,9 @@ seen in game**. Each has a `WXL_<NAME>=0` profile switch.
 **Not ported:** `wxl-db2` publishes the `wxl.db2` v1 C API for out-of-core extension DLLs and decodes
 WDC tables through the x64 asset host; nothing in the supplied tree consumes it and the native client
 has neither the host nor an extension loader, so there is nothing to attach it to. `wxl-living-azeroth`'s
-grass instancing is already ported; its clustered surface lights (terrain/model/WMO shader patching,
-doodad light tables, the Environment page settings, obstruction rays) are a separate renderer-sized
-project and are not started.
+grass instancing and Environment page backend are ported; its clustered surface lights (terrain/model/WMO
+shader patching, doodad light tables, obstruction rays) are a separate renderer-sized project and are not
+started.
 
 ### Game-object editor: native implementation (2026-10-31)
 
@@ -934,7 +960,7 @@ new native implementation and acceptance test.
 | `d3d9.dll` proxy / bundled DXVK selection | Native-DXVK launch path exists; no Windows proxy is used. Its proxy-specific selection logic is not applicable on Linux. |
 | `WarcraftXLHost.exe` asset IPC, M3/M3A/M3CFG/DDS provider | Direct M2/BLP/WMO loaders are in-process. The loose M3 family/provider is not ported and has no supplied input files. |
 | `WarcraftXL.dll`: modern-assets | Partial; see the direct-asset table. Native material/batch rebuilding, palette subdivision, WMO visibility handling and layered source-data preservation are implemented. WMO layered GPU draws are implemented (probe-verified, not yet seen in game); unsupported M2 formats and M3 remain open. |
-| `WarcraftXLVisuals.dll`: renderer wrapper | Partial: water, multisample depth, atmosphere, god rays and local lights run in-process through dxvk-native D3D9 (precompiled, hash-verified shaders; vendor-independent depth copy patch). Synthetic real-GPU and sanitizer tests pass. Grading/postprocess modules, transparent-draw fog fitting is not ported; nothing is accepted in game yet. |
+| `WarcraftXLVisuals.dll`: renderer wrapper | Partial: water, multisample depth, atmosphere, god rays and local lights run in-process through dxvk-native D3D9 (precompiled, hash-verified shaders; vendor-independent depth copy patch). Synthetic real-GPU and sanitizer tests pass. Transparent-draw fog fitting is ported (opt-in, see "Transparent fog"). Colour grading and Forever Glow/Look are **not ported on purpose**: the supplied `selection_policy.cpp` forces `ColorGrading=0`, `ForeverGlow=0`, `DataMode=0` and the Classic noise/phase off, and the supplied runtime logs "Classic placements/noise, grading, glow replacement and sprite changes disabled", so the shipped Windows product never runs them. They also need the Classic fog data and engine byte-placement patches. Porting them would add behaviour the Windows build does not have; nothing is accepted in game yet. |
 | `WarcraftXL.dll`: cast-failure sound filter | Native `SI2::PlaySoundKit` filters SoundEntries 1424–1428 when `WXL_MUTE_CAST_FAILURE_SOUNDS` is enabled, returns success and clears the optional sound handle like the Windows hook. The existing profile/environment reader supplies the option; a one-time stderr diagnostic records actual suppression. Build verified; gameplay and diagnostic verification pending. |
 | `wxl-collection-armor` | Partial: direct `CCharacterComponent` integration provides race/sex resolution, section filtering, independent slot ownership, Icon2/sidecar placement, bounded texture readiness, owner/world replay, cached-preview polling and cached/post-worker semantic bone copying. Model/material CSV and loose overlays are supported. Weapon sidecars are ported (user reports working in game; offhand mirroring open) and remaining policy cases are open. Production cache/copy and lifecycle fixtures pass; rendered appearance, full transition recovery and performance remain unverified. |
 | `wxl-waist-models` | Native attachment-53 buckle path implemented with nonblocking texture readiness, bounded retries, slot cleanup and owner identity checks. Path/name/retry fixture and native build pass; appearance and lifecycle acceptance remain unverified. |
@@ -952,7 +978,7 @@ new native implementation and acceptance test.
 | `wxl-selcircle-poc`, `wxl-quest-marker`, `wxl-unit-outline` | Not ported, deliberately: disabled in the checked profile (`WXL_QUEST_RENDERING=0`, `WXL_UNIT_OVERLAYS=0`; `SelCirclePoc::InstallModule` returns immediately without `WXL_QUEST_RENDERING`). |
 | `wxl-underwear` | Ported natively (2026-10-31); see "Underwear and gossip" below. In-game acceptance pending. |
 | `wxl-required-addons`, `wxl-npcbot-targets` (+ resurrection), `wxl-npcbot-enchant`, `wxl-lone-wolf`, `wxl-goblin-glider` | Ported natively (2026-10-31); see "Required add-ons, NPCBot targeting, ..." above. In-game acceptance pending. |
-| `wxl-living-azeroth` | Grass instancing ported earlier; clustered surface lights, doodad light tables and the Environment settings are not ported (renderer-sized). |
+| `wxl-living-azeroth` | Grass instancing and the Environment page backend (grass options live, light options saved only) ported 2026-10-31. Clustered surface lights and doodad light tables are not ported (renderer-sized: terrain/M2/WMO shader patching through the offline pack, light grid texture, baked occlusion). Surface lights are off in this install's saved `Environment.ini`. |
 | `wxl-db2` | Not ported: an extension-DLL service with no consumer in this tree and no host/extension loader on the native client. |
 | `wxl-skybox-control` | Native Lua API and DayNight application already exist (`WxlSkyboxOverride`). It needs scenario verification. |
 | `wxl-visual-time` | Native Lua API and time application already exist (`WxlVisualTimeOverride`). It needs scenario verification. |

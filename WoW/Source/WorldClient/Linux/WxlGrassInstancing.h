@@ -5,6 +5,7 @@
 // The engine's own vertex shader is derived offline (Utils/WarcraftXL/visuals/
 // grass_instanced.pack, tools/build-wmo-shader-pack.py); without the pack, with
 // WXL_GRASS_INSTANCING=0, or whenever anything is missing the stock bake and draw run.
+#include <cstddef>
 #include <cstdint>
 
 class CDetailDoodadInstBatch;
@@ -27,6 +28,10 @@ void WxlGrassInstancingDisarm();
 void WxlGrassInstancingForget(const CDetailDoodadInstBatch* batch);
 // Once per rendered frame: expires unused buffers.
 void WxlGrassInstancingFrame();
+// Environment page switch ("Optimized grass rendering"). Off drops the cached buffers and draws stock.
+void WxlGrassInstancingSetEnabled(bool on);
+struct WxlGrassInstancingStats { bool loaded; bool enabled; bool problem; size_t batches; size_t models; uint64_t drawn, fallbacks, failures; };
+WxlGrassInstancingStats WxlGrassInstancingGetStats();
 // Device loss, world leave and shutdown.
 void WxlGrassInstancingRelease();
 

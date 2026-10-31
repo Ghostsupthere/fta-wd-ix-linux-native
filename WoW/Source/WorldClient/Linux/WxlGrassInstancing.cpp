@@ -30,7 +30,7 @@ template<class T> struct Release { void operator()(T* p) const { if (p) p->Relea
 template<class T> using Com = std::unique_ptr<T, Release<T>>;
 
 ShaderPack pack;
-bool initialised = false, enabled = false;
+bool initialised = false, enabled = false, userOn = true;
 IDirect3DDevice9* device = nullptr;
 Com<IDirect3DVertexDeclaration9> declaration;
 std::unordered_map<const PackEntry*, Com<IDirect3DVertexShader9>> shaders;
@@ -278,10 +278,20 @@ void WxlGrassInstancingInitialize() {
     Log("instanced grass: %zu derived shaders loaded", pack.Count());
 }
 
+void WxlGrassInstancingSetEnabled(bool on) {
+    if (userOn == on) return;
+    userOn = on;
+    if (!on) DropAll();
+}
+
+WxlGrassInstancingStats WxlGrassInstancingGetStats() {
+    return {enabled, enabled && userOn, problem, entries.size(), geometry.size(), drawn, fallbacks, failures};
+}
+
 void WxlGrassInstancingNoteShader(CGxShader* vertex) { noted = vertex; }
 
 const void* WxlGrassInstancingPlan(const CDetailDoodadInstBatch* batch) {
-    if (!enabled || problem || !batch || !noted) return nullptr;
+    if (!enabled || !userOn || problem || !batch || !noted) return nullptr;
     auto* gx = Backend();
     if (!gx || !gx->m_d3dDevice || !EnsureDevice(gx->m_d3dDevice)) return nullptr;
     IDirect3DVertexShader9* shader = InstancedShader(gx->m_d3dDevice, noted);

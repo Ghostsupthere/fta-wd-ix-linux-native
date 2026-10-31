@@ -38,6 +38,7 @@
 #include "WoW/Source/DB/Rec/LockRec.h"
 #include "WoW/Source/Ui/RuneInfo.h"
 #include "WoW/Source/Game/Linux/WxlVisualTimeOverride.h"
+#include "WoW/Source/WorldClient/Linux/WxlEnvironmentOptions.h"
 #include "WoW/Source/Ui/Linux/WxlControlBridge.h"
 #include "WoW/Source/Ui/Linux/LuaStringCompatibility.h"
 #include "WoW/Source/Ui/Linux/WxlModelPresentation.h"
@@ -4660,6 +4661,7 @@ void ScriptEventsRegisterFunctions() {
     // Linux-only: WarcraftXL extension ports register their Lua API here,
     // alongside the client's own native functions.
     WxlRegisterControlBridgeLua();
+    WxlRegisterEnvironmentLua();
     WxlRegisterSkyboxLua();
     WxlRegisterWeatherLua();
     WxlRegisterVisualTimeLua();
