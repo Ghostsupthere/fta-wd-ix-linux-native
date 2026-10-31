@@ -203,3 +203,25 @@ if (WIN32)
             ${CMAKE_SOURCE_DIR}
     )
 endif ()
+
+# Dear ImGui (MIT), its DX9 backend and ImGuizmo (MIT) for the native game-object
+# editor gizmo. The editor drives the engine's own D3D9 device through
+# dxvk-native, so only the native Linux profile builds it; see ThirdParty/imgui/SOURCE.md.
+if (TARGET dxvk_d3d9_headers)
+    add_library(wxl_imgui STATIC
+        imgui/imgui.cpp
+        imgui/imgui_draw.cpp
+        imgui/imgui_tables.cpp
+        imgui/imgui_widgets.cpp
+        imgui/imgui_impl_dx9.cpp
+        imgui/ImGuizmo.cpp
+    )
+
+    target_include_directories(wxl_imgui
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/imgui
+    )
+
+    target_link_libraries(wxl_imgui PRIVATE dxvk_d3d9_headers)
+    target_compile_options(wxl_imgui PRIVATE -w)
+endif ()
