@@ -47,6 +47,10 @@
 #include "WoW/Source/Magic/MagicClient/SpellVisuals.h"
 #include "WoW/Source/Net/NetClient/NetClient.h"
 #include "WoW/Source/Net/Types.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
+#include "WoW/Source/Object/ObjectClient/Linux/WxlSelectionCircle.h"
+#endif
 #include "WoW/Source/Object/CMoveSpline.h"
 #include "WoW/Source/Object/CreatureStats.h"
 #include "WoW/Source/Object/Object.h"
@@ -4358,6 +4362,11 @@ void CGUnit_C::UpdateHandItemAnimEffects(bool force) {
 // VERIFY: 4d39ab41 manual
 // OFFSET: 0x007385C0
 void CGUnit_C::PlayBaseAnimation(uint32_t animId, int32_t flags) {
+#if defined(WOWDECOMP_LINUX)
+    // The Character Animation Studio needs the outer request that every nested bone-sequence call serves.
+    WxlUnitAnimationScope animationScope(this, animId, flags);
+#endif
+
     if (!(this->m_modelFlags & 0x40000) || (this->m_modelFlags & 0x20000) || !this->GetObjectModel() || !this->m_worldModel) {
         return;
     }
@@ -17154,6 +17163,12 @@ void CGUnit_C::TriggerDamageFeedback() {
 // VERIFY: b7d9f2a8 manual
 // OFFSET: 0x0072BDB0
 int32_t CGUnit_C::VerifyAttackIconPressed(WOWGUID* target, int32_t useGiven, int32_t checkRange, bool autoTarget, bool showErrors) {
+#if defined(WOWDECOMP_LINUX)
+    if (showErrors) {
+        WxlAnimationLabBeforeAttackCheck(this);
+    }
+#endif
+
     if (this->IsDeadOrGhost()) {
         CGPlayer_C* player;
 
@@ -23196,6 +23211,9 @@ void CGUnit_C::RenderTargetSelection() const {
 
     C44Matrix matrix;
     CGObject_C::BuildSelectionRotMatrix(&matrix, &position);
+#if defined(WOWDECOMP_LINUX)
+    WxlSelectionCircleApply(this, &matrix);
+#endif
     g_theGxDevicePtr->RsPush();
     int32_t states = CGObject_C::SetCircleRenderStates();
 
@@ -23273,6 +23291,9 @@ void CGUnit_C::RenderPetTargetSelection() const {
 
     C44Matrix matrix;
     CGObject_C::BuildSelectionRotMatrix(&matrix, &position);
+#if defined(WOWDECOMP_LINUX)
+    WxlSelectionCircleApply(this, &matrix);
+#endif
     g_theGxDevicePtr->RsPush();
 
     if (CGObject_C::SetCircleRenderStates()) {

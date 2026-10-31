@@ -5,6 +5,9 @@
 #include "WoW/Common/ComponentCore/WxlEquipmentOwner.h"
 #include "Engine/Source/ModernAssets/NativeModelPresentation.h"
 #include "WoW/Source/WorldClient/Linux/WxlLootBeam.h"
+#include "WoW/Source/Ui/Linux/WxlGameObjectEditor.h"
+#include "WoW/Source/Ui/Linux/WxlUnderwear.h"
+#include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
 #endif
 #include <cfloat>
 #include "WoW/Source/WorldClient/WorldConstants.h"
@@ -1498,6 +1501,9 @@ void World::UnloadMap() {
     WxlInvalidateWorldEquipment();
     InvalidateNativeWeaponWorld();
     WxlClearLootBeams();
+    WxlGameObjectEditorWorldLeave();
+    WxlUnderwearWorldLeave();
+    WxlAnimationLabWorldLeave();
     WxlReleaseModernVisuals();
 #endif
     CWorldScene::ClearObjectFadeoutList();

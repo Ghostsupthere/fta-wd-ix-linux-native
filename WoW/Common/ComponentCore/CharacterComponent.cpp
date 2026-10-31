@@ -47,6 +47,10 @@
 #include "WoW/Common/ComponentCore/ComponentUtils.h"
 #include "WoW/Common/ComponentCore/WxlCollectionSidecar.h"
 #include "WoW/Common/ComponentCore/WxlWeaponSidecar.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/Ui/Linux/WxlUnderwear.h"
+#include "WoW/Source/Glue/Linux/WxlCharacterCustomizer.h"
+#endif
 #include "WoW/Common/ComponentCore/WxlWaistModel.h"
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
@@ -580,7 +584,14 @@ void CCharacterComponent::DestroyRenderTextures() {
 // VERIFY: 47092af8 auto
 // OFFSET: 0x004E76D0
 CharSectionsRec* CCharacterComponent::GetSectionsRecord(CHARTEXTUREVARIATIONS variation, int32_t variationIndex, int32_t colorIndex, bool* found) {
-    return ComponentGetSectionsRecord(CCharacterComponent::s_chrVarArray, this->m_data.m_preferences.m_raceID, this->m_data.m_preferences.m_sexID, variation, variationIndex, colorIndex, found);
+    CharSectionsRec* rec = ComponentGetSectionsRecord(CCharacterComponent::s_chrVarArray, this->m_data.m_preferences.m_raceID, this->m_data.m_preferences.m_sexID, variation, variationIndex, colorIndex, found);
+#if defined(WOWDECOMP_LINUX)
+    // wxl-underwear: a per-character underwear choice replaces this record's textures.
+    if (variation == VARIATION_UNDERWEAR) {
+        rec = WxlUnderwearRecord(this, rec);
+    }
+#endif
+    return rec;
 }
 
 // VERIFY: d8815212 manual
@@ -1536,6 +1547,12 @@ void CCharacterComponent::CreateRequestTU() {
 // VERIFY: 0a0fcd15 auto
 // OFFSET: 0x004E9280
 void CCharacterComponent::CreateRequestTL() {
+#if defined(WOWDECOMP_LINUX)
+    // wxl-underwear: the torso-lower band goes in first so equipment layers keep precedence.
+    if (HTEXTURECACHE underwear = WxlUnderwearLowerTexture(this)) {
+        this->m_request->AddLayer(SECTION_TORSO_LOWER, underwear);
+    }
+#endif
     this->m_request->m_baseTextures[SECTION_TORSO_LOWER] = TextureCacheCopyTexture(this->m_baseVariation[CHARTEXTUREVAR_SKIN].m_texture[0]);
 
     for (int32_t layer = 0; layer < 7; layer++) {
@@ -5112,6 +5129,15 @@ void CCharacterComponent::RenderPrepTL() {
             CCharacterComponent::PasteToSection(SECTION_TORSO_LOWER, this->m_section[SECTION_TORSO_LOWER].m_layerTex[layer], CCharacterComponent::s_textureBuffer);
         }
     }
+
+#if defined(WOWDECOMP_LINUX)
+    // wxl-underwear: equipment is already drawn, so add the band only to an uncovered region.
+    if (!this->m_section[SECTION_TORSO_LOWER].m_layerMask) {
+        if (HTEXTURECACHE underwear = WxlUnderwearLowerTexture(this)) {
+            CCharacterComponent::PasteToSection(SECTION_TORSO_LOWER, underwear, CCharacterComponent::s_textureBuffer);
+        }
+    }
+#endif
 }
 
 // VERIFY: a637f73d manual
@@ -5410,6 +5436,9 @@ bool CCharacterComponent::RenderPrep(int32_t wait) {
 // VERIFY: 3d69252b auto
 // OFFSET: 0x004F16C0
 void CCharacterComponent::FreeComponent(CCharacterComponent* component) {
+#if defined(WOWDECOMP_LINUX)
+    WxlCreationSceneDestroy(component);
+#endif
     uint32_t* heap = s_componentHeap;
     component->~CCharacterComponent();
     ObjectFree(*heap, component->m_heapIndex);

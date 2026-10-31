@@ -41,6 +41,10 @@
 #include "WoW/Source/Ui/Linux/WxlControlBridge.h"
 #include "WoW/Source/Ui/Linux/LuaStringCompatibility.h"
 #include "WoW/Source/Ui/Linux/WxlModelPresentation.h"
+#include "WoW/Source/Ui/Linux/WxlGameObjectEditor.h"
+#include "WoW/Source/Ui/Linux/WxlUnderwear.h"
+#include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
+#include "WoW/Source/Ui/Linux/WxlCombatReadability.h"
 #include "WoW/Source/Ui/Linux/WxlWeatherOverride.h"
 #include "WoW/Source/WorldClient/Linux/WxlSkyboxOverride.h"
 #include "WoW/Source/Ui/RaidInfo.h"
@@ -4656,6 +4660,10 @@ void ScriptEventsRegisterFunctions() {
     WxlRegisterSkyboxLua();
     WxlRegisterWeatherLua();
     WxlRegisterVisualTimeLua();
+    WxlRegisterGameObjectEditorLua();
+    WxlRegisterUnderwearLua();
+    WxlRegisterAnimationLabLua();
+    WxlRegisterCombatReadabilityLua();
 #endif
 }
 

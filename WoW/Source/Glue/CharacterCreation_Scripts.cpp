@@ -1,4 +1,7 @@
 #include "CharacterCreation.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/Glue/Linux/WxlCharacterCustomizer.h"
+#endif
 #include <cstdint>
 #include "Engine/Source/BlizzardCore/SFile2-Core.h"
 #include "Engine/Source/Frame/CScriptObject.h"
@@ -614,6 +617,10 @@ void CharacterCreateRegisterScriptFunctions() {
     for (uint32_t i = 0; i < sizeof(s_scriptFunctions) / sizeof(s_scriptFunctions[0]); i++) {
         FrameScript_RegisterFunction(s_scriptFunctions[i].m_name, s_scriptFunctions[i].m_method);
     }
+
+#if defined(WOWDECOMP_LINUX)
+    WxlRegisterCharacterCustomizerLua();
+#endif
 }
 
 // VERIFY: 50e76597 auto
@@ -622,4 +629,8 @@ void CharacterCreateUnregisterScriptFunctions() {
     for (uint32_t i = 0; i < sizeof(s_scriptFunctions) / sizeof(s_scriptFunctions[0]); i++) {
         FrameScript_UnregisterFunction(s_scriptFunctions[i].m_name);
     }
+
+#if defined(WOWDECOMP_LINUX)
+    WxlUnregisterCharacterCustomizerLua();
+#endif
 }

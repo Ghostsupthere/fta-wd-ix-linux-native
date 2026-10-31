@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 #include "Engine/Source/Base/OsTypes.h"
 #include "Engine/Source/Event/Types.h"
+#include "Engine/Source/ModernAssets/NativeVisualHooks.h"
 #include "Engine/Source/Os/Gui.h"
 #include "Engine/Source/Os/Input.h"
 #include "Engine/Source/Os/Joystick.h"
@@ -531,6 +532,11 @@ static void HandleMouseButton(const SDL_MouseButtonEvent& event, OSINPUT id) {
         ScalePoint(&x, &y, 1);
     }
 
+    // The game-object editor can claim a click on its gizmo.
+    if (NativeVisualHooks::mouseInput && NativeVisualHooks::mouseInput(id == OS_INPUT_MOUSE_DOWN ? 1 : 2, event.button, x, y)) {
+        return;
+    }
+
     OsQueuePut(id, button, x, y, 0);
 }
 
@@ -557,6 +563,10 @@ static void HandleWindowEvent(const SDL_WindowEvent& event) {
         case SDL_EVENT_WINDOW_FOCUS_LOST:
             s_appActive = event.type == SDL_EVENT_WINDOW_FOCUS_GAINED;
             s_osButtonState = 0;
+
+            if (NativeVisualHooks::mouseInput) {
+                NativeVisualHooks::mouseInput(3, 0, 0, 0);
+            }
 
             if (!s_appActive) {
                 SDL_CaptureMouse(false);
@@ -813,6 +823,11 @@ intptr_t OsWindowProc(void* window, uint32_t message, uintptr_t wparam, intptr_t
                 int32_t y = static_cast<int32_t>(event.motion.y);
 
                 ScalePoint(&x, &y, 1);
+
+                if (NativeVisualHooks::mouseInput) {
+                    NativeVisualHooks::mouseInput(0, 0, x, y);
+                }
+
                 OsQueuePut(OS_INPUT_MOUSE_MOVE, 0, x, y, 0);
                 SaveMouse(x, y);
             }

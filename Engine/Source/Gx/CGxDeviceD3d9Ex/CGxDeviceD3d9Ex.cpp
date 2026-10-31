@@ -2732,6 +2732,7 @@ int32_t CGxDeviceD3d9Ex::ICreateD3dDevice(const CGxFormat& format) {
 // OFFSET: 0x006A1CE0
 void CGxDeviceD3d9Ex::IReleaseD3dResources(int32_t freeTextures) {
     if (NativeVisualHooks::deviceLost) NativeVisualHooks::deviceLost();
+    if (NativeVisualHooks::overlayDeviceLost) NativeVisualHooks::overlayDeviceLost();
     this->ITexForceRecreation(freeTextures);
     this->IReleaseD3dShaders(freeTextures);
     this->IReleaseD3dPools(freeTextures);
@@ -3185,6 +3186,7 @@ void CGxDeviceD3d9Ex::ScenePresent() {
         int32_t scrShotClick = this->m_scrShotClick;
 
         CGxDevice::ScenePresent();
+        if (NativeVisualHooks::overlayDraw) NativeVisualHooks::overlayDraw(this->m_d3dDevice);
         this->ISceneEnd();
         this->ICursorDraw();
 

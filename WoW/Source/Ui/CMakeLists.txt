@@ -20,3 +20,7 @@ if (WIN32)
             lgLcd
     )
 endif ()
+
+if (TARGET wxl_imgui)
+    target_link_libraries(Ui PRIVATE wxl_imgui dxvk_d3d9_headers)
+endif ()

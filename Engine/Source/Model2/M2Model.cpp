@@ -18,6 +18,7 @@
 #include "Engine/Source/Model2/WxlBoneRemap.h"
 #include "Engine/Source/Model2/WxlGeometryBudget.h"
 #include "Engine/Source/ModernAssets/NativeItemPhysics.h"
+#include "Engine/Source/ModernAssets/NativeVisualHooks.h"
 #include "Engine/Source/ModernAssets/NativeModelPresentation.h"
 #endif
 #include "Engine/Source/Base/Handle.h"
@@ -6918,6 +6919,12 @@ void CM2Model::UnsetBoneSequence(uint32_t boneId, int32_t blend, int32_t primary
 // VERIFY: 6d0c8da6 manual
 // OFFSET: 0x00832AB0
 void CM2Model::SetBoneSequence(uint32_t boneId, uint32_t sequenceId, uint32_t variation, uint32_t time, float speed, int32_t blend, int32_t primary) {
+#if defined(WOWDECOMP_LINUX)
+    if (NativeVisualHooks::m2SetBoneSequence && sequenceId != 0xFFFFFFFF) {
+        NativeVisualHooks::m2SetBoneSequence(this, boneId, &sequenceId);
+    }
+#endif
+
     if (sequenceId == 0xFFFFFFFF) {
         this->UnsetBoneSequence(boneId, blend, primary);
         return;

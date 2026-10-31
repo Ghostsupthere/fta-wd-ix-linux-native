@@ -1,3 +1,6 @@
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/Glue/Linux/WxlCharacterCustomizer.h"
+#endif
 #include "CharacterCreation.h"
 #include <cstring>
 #include "Engine/Source/Event/Event.h"
@@ -171,6 +174,11 @@ bool IsRaceClassValid(int32_t raceID, int32_t classID) {
 // VERIFY: 0df0d554 auto
 // OFFSET: 0x004E0040
 void CCharacterCreation::SetCharCustomizeModel(const char* modelName) {
+#if defined(WOWDECOMP_LINUX)
+    // wxl-character-customizer: release the druid/eye-halo previews and show them against the new background.
+    WxlCreationBackgroundScope previews;
+#endif
+
     if (!CCharacterCreation::m_charCustomizeFrame || !modelName || !*modelName) {
         return;
     }
@@ -205,6 +213,10 @@ void CCharacterCreation::SetCharacterFacing(float facing) {
         C3Vector position(0.0f, 0.0f, 0.0f);
         CCharacterCreation::m_character->m_data.m_model->SetWorldTransform(position, facing, 1.0f);
     }
+
+#if defined(WOWDECOMP_LINUX)
+    WxlCreationSceneFacing(facing);
+#endif
 }
 
 // VERIFY: 308d1147 auto
@@ -411,6 +423,17 @@ int32_t CCharacterCreation::GetRandomClassID() {
 // VERIFY: b15e5451 auto
 // OFFSET: 0x004E0FD0
 void CCharacterCreation::Dress() {
+#if defined(WOWDECOMP_LINUX)
+    // wxl-character-customizer: "armor off" keeps the preview unequipped across rebuilds.
+    if (WxlCharacterCreateHidesArmor()) {
+        return;
+    }
+
+    struct AfterDress {
+        ~AfterDress() { WxlCharacterCreateAfterDress(); }
+    } afterDress;
+#endif
+
     if (CCharacterCreation::m_existingCharacterIndex >= 0) {
         CharacterSelectionDisplay* display = CCharacterSelection::GetCharacterDisplay(CCharacterCreation::m_existingCharacterIndex);
 
@@ -542,6 +565,10 @@ void CCharacterCreation::Dress() {
 // VERIFY: 6d456576 auto
 // OFFSET: 0x004E13A0
 void CCharacterCreation::InitCharacterComponents(ComponentData* data, bool randomize) {
+#if defined(WOWDECOMP_LINUX)
+    WxlCreationSceneBeforeBuild();
+#endif
+
     CreatureModelDataRec* modelRec = GetModelDataRec(data->m_preferences.m_raceID, data->m_preferences.m_sexID);
 
     if (!modelRec || !*modelRec->m_modelName) {

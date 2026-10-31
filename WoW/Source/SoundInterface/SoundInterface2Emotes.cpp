@@ -6,6 +6,9 @@
 #include "WoW/Source/DB/DBClient/DBClient.h"
 #include "WoW/Source/SoundInterface/SoundInterface2.h"
 #include "WoW/Source/SoundInterface/SoundInterface2Internal.h"
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/ModernAssets/WxlCustomizer/EmoteSoundLookup.hpp"
+#endif
 
 // STATIC: 0x00B4ADE4
 static TSGrowableArray<TEXTEMOTELOOKUP> s_textEmoteLookups;
@@ -22,6 +25,32 @@ TEXTEMOTELOOKUP::TEXTEMOTELOOKUP() {
     memset(this->m_soundIds, 0, sizeof(this->m_soundIds));
 }
 
+#if defined(WOWDECOMP_LINUX)
+// wxl-character-customizer (race-emotes): the native cache only stores races below 22, so a
+// Worgen or other extended race loads its EmotesTextSound rows but never reaches the cache. Read
+// the loaded rows directly instead; races 0..21 keep using the cache. The last matching row wins,
+// as in the cache initializer.
+static int32_t ExtendedTextEmoteSoundKit(uint32_t emotesTextId, uint32_t race, uint32_t sex) {
+    using namespace wxl::customizer::emotes;
+    if (!IsExtendedIdentity(race, sex) || static_cast<uint32_t>(g_emotesTextSoundDB.m_numRecords) > kMaximumRows) {
+        return 0;
+    }
+
+    uint32_t result = 0;
+
+    for (int32_t i = 0; i < g_emotesTextSoundDB.m_numRecords; i++) {
+        const EmotesTextSoundRec& rec = g_emotesTextSoundDB.m_records[i];
+
+        if (static_cast<uint32_t>(rec.m_emotesTextID) == emotesTextId && static_cast<uint32_t>(rec.m_raceID) == race && static_cast<uint32_t>(rec.m_sexID) == sex) {
+            result = rec.m_soundID;
+        }
+    }
+
+    // The sound-kit cache compares signed 32-bit ids.
+    return result <= static_cast<uint32_t>(INT32_MAX) ? static_cast<int32_t>(result) : 0;
+}
+#endif
+
 // VERIFY: b8c12fce auto
 // OFFSET: 0x004CEB30
 int32_t SI2::GetTextEmoteSoundID(uint32_t emotesTextId, uint32_t race, uint32_t sex) {
@@ -31,7 +60,11 @@ int32_t SI2::GetTextEmoteSoundID(uint32_t emotesTextId, uint32_t race, uint32_t 
         return lookup->m_soundIds[race][sex];
     }
 
+#if defined(WOWDECOMP_LINUX)
+    return ExtendedTextEmoteSoundKit(emotesTextId, race, sex);
+#else
     return 0;
+#endif
 }
 
 // VERIFY: 8c9fb06d auto
@@ -43,7 +76,11 @@ int32_t SI2::GetTextEmoteSoundIndex(uint32_t emotesTextId, uint32_t race, uint32
     if (emotesTextId < s_textEmoteLookupById.Count() && (lookup = s_textEmoteLookupById[emotesTextId]) != nullptr && race < 22 && sex < 2) {
         soundKitId = lookup->m_soundIds[race][sex];
     } else {
+#if defined(WOWDECOMP_LINUX)
+        soundKitId = ExtendedTextEmoteSoundKit(emotesTextId, race, sex);
+#else
         soundKitId = 0;
+#endif
     }
 
     VSOUNDKITDEF* def = SI2::GetSoundKitDef(soundKitId);

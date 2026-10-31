@@ -255,6 +255,166 @@ interior blending, local-light placement, god-ray occlusion, frame cost and
 teleport/logout cleanup are open. `Logs/VisualEnvironment.log` records the depth
 readiness result and periodic water/atmosphere state for the first live run.
 
+### Underwear and gossip fixes (2026-10-31)
+
+**Gossip options (bug in the native client, not the add-on).** `Script_GetGossipOptions`
+(`GossipInfo_Scripts.cpp`) ended its loop at the address of `CGGossipInfo::m_gossipText`,
+assuming it follows `m_options` as it did in the Windows image. In the Linux build the linker
+places `m_gossipText` (0x10d0200) *before* `m_options` (0x10d0a00), so the loop ran zero times:
+`GetGossipOptions()` returned nothing for every NPC, for Immersion and the stock gossip frame
+alike, while quests (a separate array) still appeared. It now loops over the 32-entry array, and a
+server-defined gossip type outside the 22-entry name table reads as "gossip" instead of indexing
+past it. `Wow` builds. Not yet confirmed in game. The reported "new quests not very consistent"
+may be related or may be separate; recheck after this fix.
+
+**wxl-underwear.** `WoW/Source/Ui/Linux/WxlUnderwear.{h,cpp}` provides `WXL_UnderwearSet /
+Reset / Refresh / Ready` (the Transmogrification add-on only enables its panel when
+`WXL_UnderwearReady()` is true, which is why it did nothing). The DLL's three detours became hooks
+inside `CCharacterComponent`: `GetSectionsRecord` (underwear lookups return a per-character copy of
+the record with the chosen top/bottom textures; the shared DBC row is untouched),
+`CreateRequestTL` (torso-lower band added before equipment layers) and `RenderPrepTL` (band pasted
+only where no equipment covers the torso-lower section). Set/Refresh call `SetSkinColor` and
+`RenderPrep` like the DLL, except for stock NPC/full-skin components. Entry validation and texture
+paths are `Engine/Source/ModernAssets/WxlUnderwear/UnderwearPaths.hpp`
+(`tests/wxl_underwear_paths_test.cpp`, ASan/UBSan). The textures (`WXL_UW_*`, `WXL_RM_*`,
+`WXL_CT_*`) exist in `patch-ZB.mpq`. `WXL_UNDERWEAR=0` disables it. Not verified in game.
+
+### Character customizer: native implementation (2026-10-31)
+
+`WoW/Source/Glue/Linux/WxlCharacterCustomizer.{h,cpp}` provides the `WXL_CharacterCreate*` and
+`WXL_EyeHalo*` Lua functions the deployed GlueXML uses: `GetState` (9 returns), `GetOptions`,
+`SetPart`, `SetSkin`, `SetArmorHidden`, druid preview (`DruidPreviewReady`, `SetDruidForm`; the model
+path must be `Creature\DinkleDruid\...m2`) and eye halo (`EyeHaloReady`, `SetEyeHalo`; themes
+none/Fel/WhiteArcane/Sunfire/Twilight/Sanguine, races 10/23/25, attachment 11) plus the
+account-scoped created-character choice (`SetAccount`, `SameName`, `StageCreatedChoice`,
+`CommitCreatedChoice`, `PendingCreatedChoice`, `ConfirmCreatedChoice`, persisted atomically in
+`WTF/WarcraftXL-EyeHalo.ini` beside the executable). The Windows module detoured five client
+functions; here the creation code calls the hooks directly: `CCharacterCreation::SetCharCustomizeModel`
+(`WxlCreationBackgroundScope` releases the previews before the background changes),
+`SetCharacterFacing`, `InitCharacterComponents`, `Dress` (hidden-armor preview and the Tuskarr cape
+geoset fix via `ITEMSLOT_CAPE`) and `CCharacterComponent::FreeComponent` (preview teardown).
+Extended-race emotes (race >= 22) use `ExtendedTextEmoteSoundKit` in `SoundInterface2Emotes.cpp`.
+Portable rules are in `Engine/Source/ModernAssets/WxlCustomizer/` with ASan/UBSan tests
+`tests/wxl_customizer_{skin_face,emote_sound,eye_halo}_test.cpp`. The Windows module hard-codes the
+cape slot as 9 while the reconstructed enum has `ITEMSLOT_CAPE` = 10; the named enum is used. `Wow`
+builds and links. **Not seen in game** (creation UI, druid form, eye halo, emotes).
+
+### Character Animation Studio: native implementation (2026-10-31)
+
+`WoW/Source/Ui/Linux/WxlAnimationLab.{h,cpp}` provides the 23 `WarcraftXL_AnimationLab*` Lua functions
+used by the control add-on's `/wxlanim` window (API version 6, capability mask 511, the same
+contract as the DLL), the rule tables (race/gender substitutions, exact combat pairs, five spell
+phases, maintained leases) and the Levitate / Wraith Walk presentation (Hover body animation plus the
+`Monk2HLIdle` right-shoulder hold on key bone 3). The DLL's two core events and attack detour became:
+
+- `CGUnit_C::PlayBaseAnimation` owns a `WxlUnitAnimationScope` (outer request id, flags, a
+  per-request token); its destructor emits the completion event before the scope is popped, which
+  applies the queued sheathe/draw weapon action exactly once.
+- `CM2Model::SetBoneSequence` calls `NativeVisualHooks::m2SetBoneSequence` first; the callee may
+  replace the sequence id, and only requests made under an outer unit animation on that unit's own
+  body model are rewritten (previews, UI models and the mount model pass through).
+- `CGUnit_C::VerifyAttackIconPressed` calls `WxlAnimationLabBeforeAttackCheck`, which cancels a local
+  Wraith Walk channel through `Spell_C_StopCasting` before the native attack checks.
+- Per-frame expiry from `CGWorldFrame` and world teardown from `World::UnloadMap`.
+
+The DLL reads M2 headers and unit memory defensively and parses DBC files; the port uses the typed
+`CM2Model` / `M2Data` / `CGUnit_C` structures and the already-loaded `g_spellDB`,
+`g_spellVisualDB`, `g_spellVisualKitDB`, `g_spellDurationDB` and `g_animationDataDB` instead. The
+playable-model classifier, idle-ready and protected-motion tables and the quadratic-probe sequence
+lookup are in `Engine/Source/ModernAssets/WxlAnimationLab/AnimationLabRules.hpp`
+(`tests/wxl_animation_lab_rules_test.cpp`, ASan/UBSan, passes). `WXL_ANIMATION_LAB=0` disables it
+(the add-on then reports the API as unavailable). The module's own Wraith Walk bytes-verified
+detour and Windows `tests/verify_wraith_shoulder.py` fixture are not reproduced. `Wow` builds and
+links; the 23 Lua names are present in the binary. **Not seen in game.** Things to check first:
+`/wxlanim` opens and Diagnostics shows the active model; Preview/Play a browser row; a mapped
+spell phase or a race/gender substitution (e.g. 126 -> 824); Wraith Walk shoulder hold; attacking
+out of a Wraith Walk channel.
+
+### Gear recolor: nothing to port (2026-10-31)
+
+`wxl-gear-recolor` (checked against `scripts/wxl-gear-recolor`): the native dye/recolor pipeline
+was removed from the module upstream; what remains is the add-on's preview-camera and model
+framing: `WXL_SetModelPreviewCamera` and `WXL_ResetModelPreviewCameras` already exist in the port (`WxlModelPresentation`). No new
+native code was added; only in-game confirmation of the add-on window is outstanding.
+
+### Selection circle and combat-readability bridge (2026-10-31)
+
+**wxl-selection-circle.** The target selection circle is oriented along the unit's own forward
+direction instead of toward the camera. The Windows module detours `CGObject_C::BuildSelectionRotMatrix`
+(0x744150); the reconstructed function is a static with no object, so `WxlSelectionCircleApply`
+(`WoW/Source/Object/ObjectClient/Linux/WxlSelectionCircle.{h,cpp}`) is called right after it in
+`CGUnit_C::RenderTargetSelection` and `RenderPetTargetSelection`. The facing is the model's
+world-matrix forward row (the DLL's `VisualFacing`), falling back to `GetRawFacing`; the matrix keeps
+the stock texture convention (`pi - facing`). Pure maths in
+`Engine/Source/ModernAssets/WxlSelectionCircle/SelectionCircleMatrix.hpp`
+(`tests/wxl_selection_circle_test.cpp`, ASan/UBSan). Differences from the DLL: corpse circles stay
+stock (as in the DLL), and the ground move/attack cursor (`RenderAutoTrackCursor`) also stays
+stock, where the DLL's hook would have turned it to the player's facing as a side effect of
+`this` being in ECX; the per-frame refresh the DLL delegates to the quest-ring module is
+unnecessary because the matrix is built right before the draw. `WXL_SELECTION_CIRCLE=0` disables it.
+
+**wxl-combat-readability.** `WoW/Source/Ui/Linux/WxlCombatReadability.{h,cpp}` provides
+`WarcraftXL_ReadabilityAvailable / GetReadabilityOption / SetReadabilityOption /
+ResetReadabilityOptions` over the settings store in
+`Engine/Source/ModernAssets/WxlCombatReadability/ReadabilitySettings.hpp` (keys, ranges and defaults
+as the DLL; `tests/wxl_readability_settings_test.cpp`). It only stores values. Everything it feeds
+(outlines, the frontal guide cone, danger rings) is drawn by `wxl-unit-outline`, which
+`WXL_UNIT_OVERLAYS=0` disables and which is not ported, so the add-on's frontal-guide option has no
+visible effect, exactly as on a Windows client with overlays off. `WXL_COMBAT_READABILITY=0` hides the
+bridge. `WxlReadabilitySnapshot()` is there for a future outline renderer.
+
+**wxl-selcircle-poc** is not ported: `InstallModule` returns immediately unless
+`WXL_QUEST_RENDERING` is set, and the checked profile has it at 0 (the module draws circles on
+quest-objective mobs from the opcode-200 quest tracker).
+
+`Wow` builds and links. **Not seen in game.** To check: target a creature and turn it with the
+mouse/by walking around it; the front marker of the ring should follow the creature's facing, not
+rotate with the camera.
+
+### Game-object editor: native implementation (2026-10-31)
+
+`WoW/Source/Ui/Linux/WxlGameObjectEditor.{h,cpp}` ports `wxl-gameobject-editor` v1.4.0: a
+server-authorized translate/rotate gizmo for one existing GameObject, driven by the
+FTA control add-on through the nine `WarcraftXL_GOEditor*` Lua functions (Version, Sync,
+Clear, SetTool, SetSpace, SetAxis, SetSnap, Transform, Poll; same contract, coalesced
+`begin`/`update`/`end` polling, exact 16-digit runtime GUID). It does not pick doodads, edit
+placements, persist anything or scale; the server stays authoritative. Enabled by default
+(`WXL_GAMEOBJECT_EDITOR=0` disables it).
+
+Differences from the Windows module, all in the platform layer:
+- Dear ImGui 1.92.9 WIP, its DX9 backend and ImGuizmo (with WarcraftXL's rotation hit-area
+  patch) are vendored under `ThirdParty/imgui` (target `wxl_imgui`, MIT; see its SOURCE.md).
+  The Win32 backend is replaced by mouse events fed from SDL.
+- Overlay: `NativeVisualHooks::overlayDraw` is called from `CGxDeviceD3d9Ex::ScenePresent` after
+  the world and UI are flushed and before `EndScene` (the software cursor is drawn after it);
+  `overlayDeviceLost` runs with the existing device-loss hook. The hooks are installed on the
+  first valid `Sync`, and with nothing selected the overlay does no work.
+- Input: `NativeVisualHooks::mouseInput` is called from `Os/Linux/Input.cpp` with the engine's
+  pixel coordinates for moves, button down/up and focus loss. Moves are never swallowed; a
+  left click on the hovered handle, and its release, are swallowed so WoW does not also act on it.
+- Camera: `CWorldScene::viewMatrix` / `projMatrix` (the same globals the DLL reads).
+- Object access: the selected object is resolved through `ClntObjMgrObjectPtr` and moved
+  through the reconstructed `CGGameObject_C` fields instead of fixed addresses. M2 objects get the
+  matrix, the model transform, the world bounds and `CMap::ObjectUpdate`, mirroring
+  `UpdateWorldObject` without recomputing the matrix from the authoritative position; types that
+  own a map-object scene (`CGGameObject_C_Type_WorldObj` family) go through
+  `World::ObjectUpdate`. The portable preview lifecycle (scale preservation, restore, model reload,
+  GUID/pointer reuse) is `Engine/Source/ModernAssets/WxlGameObject/GameObjectPreviewState.hpp`,
+  unchanged apart from a C++17 `operator==`.
+- World leave: `World::UnloadMap` clears the selection and restores the local model.
+
+Verified outside the game: `tests/wxl_gameobject_preview_test.cpp` (upstream fixture, ASan/UBSan);
+`tools/wxl_gameobject_gizmo_gpu_probe.cpp` on real dxvk-native D3D9 with a D3D row-vector camera
+(gizmo draws; hover and a mouse drag along the X handle move the matrix along +X only; an isolated
+Z ring turns the matrix about Z only; depth and cull state are restored); `Wow` builds and links.
+Build the probe with the same include flags as the other probes plus `-IThirdParty/imgui` and the
+six `ThirdParty/imgui` sources, run with `DXVK_WSI_DRIVER=SDL3`.
+**Not verified:** anything in the real client. The editor needs a GM account, the matching
+protocol-4 server module and the control add-on; select an object, drag a handle, then Apply/Cancel
+and check the server accepts the placement. Untested in particular: M2 versus WMO/scene-doodad
+objects, transports, the click-swallow behavior against WoW's own mouse handling, and the overlay
+under MSAA/resolution changes.
+
 ### Weapon sidecars: native implementation (2026-10-31)
 
 `WxlWeaponSidecar.{h,cpp}` (WoW/Common/ComponentCore) parses `WXLWeaponModels.csv`
@@ -460,7 +620,8 @@ complete native Release build passes; rendered acceptance remains open.
    GPU checks (see the section above). Remaining: live appearance, waterline and
    interior transitions, frame cost, and the opt-in transparent-fog hook (implemented, unseen).
 5. **Port the remaining enabled equipment/presentation modules.** Grass motion
-   and game-object editor behavior remain open. Native weapon orientation and
+   behavior (the game-object editor is now ported, see below; it needs an in-game GM
+   test) remain open. Native weapon orientation and
    loot beams are build/fixture verified; rendered/server acceptance remains open.
    Retain the full module audit for disabled/optional extensions; they are not
    counted as implemented merely because the checked profile disables them.
@@ -674,7 +835,7 @@ and creation; broader renderer and transition acceptance remains open.
 | Collection armor | enabled | Partial: race/sex resolution, section filtering, Icon2/sidecar placement, cached and post-worker bone remapping, bounded texture readiness, owner/world replay and cached-preview polling are implemented and build/fixture-verified. Weapon sidecars are ported (user reports working in game; mirroring open); remaining policies and full runtime/transition acceptance remain open. |
 | Additional-race creation cache / capacity API | required by shipped GlueXML | Implemented with bounded 256-race/three-gender storage and full cleanup; sanitizer and native build pass. User confirms additional-race creation works; optional customization controls are separate work. |
 | Transmogrification sizing / preview camera / title API | required by shipped addon | Native local equipment sizing, registered previews, frame projection controls and corrected numeric title contract/bounds and mask enumeration implemented. Production Lua/policy fixtures and native build pass. User reports Transmogrification working without the update warning and no further title errors; individual sizing/preview/physics acceptance remains open. |
-| Game-object editor | enabled | Not yet ported |
+| Game-object editor | enabled | Ported (build + real-GPU gizmo probe + preview fixture pass); not yet run in game |
 | Back-sheath / hand rotation and reverse grip | enabled | Native local/registered-preview transforms, live eligibility, bounded nearby-player snapshots and lifecycle/profile controls implemented. Production Lua/adapter sanitizer checks and full build pass; rendered/server/physics/transition acceptance remains open. |
 | Grass motion | enabled | Implemented: offline-patched live grass vertex shaders, per-frame constants, rigid-prop marking and the sway-control Lua bridge; probe/sanitizer verified; user confirmed working in game (2026-10-31) |
 | Visual environment companion | enabled | Integrated: imported atmosphere renderer through the native D3D9Ex device with vendor-independent depth copy; synthetic real-GPU probe (no MSAA and 4x) and sanitizer config tests pass. Not yet seen in game. |
@@ -729,9 +890,15 @@ new native implementation and acceptance test.
 | `wxl-loot-beam` | Native world-pass adapter implemented; authoritative per-viewer hint policy, bounded tracks/geometry, state-safe imported D3D9 draw and map/profile lifecycle. Sanitizer fixtures/native build pass; user confirms live loot beams work; broader quality/occlusion/reset/transition coverage remains open. |
 | `wxl-render-modern` | Grass motion implemented (offline-patched shaders; see the grass section); confirmed working in game by the user (2026-10-31). |
 | `wxl-treewind` | Not ported (disabled in the checked profile). |
-| `wxl-gameobject-editor`, `wxl-character-animation-lab`, `wxl-character-customizer`, `wxl-gear-recolor` | Not ported. UI/editor behavior requires native UI/event integration. |
-| `wxl-combat-readability`, `wxl-quest-marker`, `wxl-selcircle-poc`, `wxl-selection-circle`, `wxl-unit-outline` | Not ported. Quest and outline paths are disabled in the checked profile; the others remain unavailable until separately ported. |
-| `wxl-db2`, `wxl-living-azeroth`, `wxl-underwear`, `wxl-goblin-glider`, `wxl-lone-wolf`, `wxl-npcbot-enchant`, `wxl-npcbot-targets`, `wxl-required-addons` | Not ported. These require separate native API, gameplay, or addon-contract review before they can be claimed supported. |
+| `wxl-gameobject-editor` | Ported natively (2026-10-31); see "Game-object editor" below. In-game GM acceptance pending. |
+| `wxl-character-animation-lab` | Ported natively (2026-10-31); see "Character Animation Studio" above. In-game acceptance pending. |
+| `wxl-character-customizer` | Ported natively (2026-10-31); see "Character customizer" above. In-game acceptance pending. |
+| `wxl-gear-recolor` | Nothing to port: dye was removed upstream and the preview natives already exist. See "Gear recolor" above. |
+| `wxl-selection-circle` | Ported natively (2026-10-31); see "Selection circle and combat-readability bridge" above. In-game acceptance pending. |
+| `wxl-combat-readability` | Lua settings bridge ported (2026-10-31). Stores values only: its renderer is `wxl-unit-outline`, which is not ported. |
+| `wxl-selcircle-poc`, `wxl-quest-marker`, `wxl-unit-outline` | Not ported, deliberately: disabled in the checked profile (`WXL_QUEST_RENDERING=0`, `WXL_UNIT_OVERLAYS=0`; `SelCirclePoc::InstallModule` returns immediately without `WXL_QUEST_RENDERING`). |
+| `wxl-underwear` | Ported natively (2026-10-31); see "Underwear and gossip" below. In-game acceptance pending. |
+| `wxl-db2`, `wxl-living-azeroth`, `wxl-goblin-glider`, `wxl-lone-wolf`, `wxl-npcbot-enchant`, `wxl-npcbot-targets`, `wxl-required-addons` | Not ported. These require separate native API, gameplay, or addon-contract review before they can be claimed supported. |
 | `wxl-skybox-control` | Native Lua API and DayNight application already exist (`WxlSkyboxOverride`). It needs scenario verification. |
 | `wxl-visual-time` | Native Lua API and time application already exist (`WxlVisualTimeOverride`). It needs scenario verification. |
 | `wxl-weather-control` | Native Lua API, natural-weather restoration, and weather application already exist (`WxlWeatherOverride`). It needs scenario verification. |

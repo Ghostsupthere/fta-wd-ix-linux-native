@@ -2,6 +2,7 @@
 #include "WoW/Source/WorldClient/Linux/WxlLootBeam.h"
 #include "WoW/Source/WorldClient/Linux/WxlWmoMaterials.h"
 #include "WoW/Source/WorldClient/Linux/WxlGrassMotion.h"
+#include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
 #include "WorldFrame.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "Engine/Source/Base/ConvertUTF.h"
@@ -1807,6 +1808,7 @@ void CGWorldFrame::OnWorldRender() {
     WxlDrawLootBeams();
     WxlWmoFrame();
     WxlGrassFrame();
+    WxlAnimationLabFrame();
 #endif
 #if defined(WOWDECOMP_LINUX)
     if (!WxlGlareDrawn())

@@ -4,6 +4,7 @@
 // Render-thread-only bridges. The graphics backend invokes these before releasing
 // default-pool resources, including resize, device loss and shutdown.
 class CGxShader;
+class CM2Model;
 namespace NativeVisualHooks {
 inline bool waterDepthWriteOverride=false;
 inline void (*deviceLost)()=nullptr;
@@ -20,4 +21,16 @@ inline bool (*instancedDraw)(void* device,int type,int base,unsigned minimum,uns
 // rewrite the fog range, exponent and colour in place (colour is the packed ARGB value).
 inline void (*m2BatchFog)(float* start,float* end,float* exponent,uint32_t* colour)=nullptr;
 inline bool (*replaceShaderCode)(const uint8_t* code,size_t size,const uint32_t** out,size_t* outBytes)=nullptr;
+// Game-object editor overlay. overlayDraw runs after the world and UI are flushed and before
+// EndScene (device is an IDirect3DDevice9*); overlayDeviceLost runs with deviceLost, before
+// default-pool resources are released.
+inline void (*overlayDraw)(void* device)=nullptr;
+inline void (*overlayDeviceLost)()=nullptr;
+// Mouse input before the engine sees it. kind: 0 move, 1 button down, 2 button up, 3 input focus
+// lost (an SDL button number is passed for 1 and 2); x and y are engine window coordinates.
+// Returning true from a button event swallows it; moves are never swallowed.
+inline bool (*mouseInput)(int kind,int button,int x,int y)=nullptr;
+// Character Animation Studio: called at the top of CM2Model::SetBoneSequence, before the request is
+// queued or applied. The callee may replace *sequenceId (never with the unset sentinel).
+inline void (*m2SetBoneSequence)(CM2Model* model,unsigned boneId,unsigned* sequenceId)=nullptr;
 }

@@ -1,3 +1,4 @@
+#include <iterator>
 #include "GossipInfo.h"
 #include <cstdint>
 #include "Engine/Source/FrameScript/FrameScript.h"
@@ -69,11 +70,15 @@ static int32_t Script_GetGossipText(lua_State* L) {
 static int32_t Script_GetGossipOptions(lua_State* L) {
     int32_t count = 0;
 
-    for (GossipOption* option = CGGossipInfo::m_options; option < reinterpret_cast<GossipOption*>(CGGossipInfo::m_gossipText); option++) {
+    // The original bounded this by the address of m_gossipText, which followed m_options in the
+    // Windows image. Static order is the linker's choice here (m_gossipText is placed first), so
+    // that bound ended the loop before the first option and no options were ever returned.
+    for (GossipOption* option = CGGossipInfo::m_options; option < CGGossipInfo::m_options + std::size(CGGossipInfo::m_options); option++) {
         if (option && option->m_index >= 0) {
             lua_checkstack(L, 2);
             lua_pushstring(L, option->m_text);
-            lua_pushstring(L, s_gossipTypes[option->m_type]);
+            // A server-defined type outside the table reads as plain gossip instead of past the array.
+            lua_pushstring(L, static_cast<uint32_t>(option->m_type) < std::size(s_gossipTypes) ? s_gossipTypes[option->m_type] : "gossip");
             count++;
         }
     }
