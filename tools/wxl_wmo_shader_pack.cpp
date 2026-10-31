@@ -10,7 +10,9 @@
 #include <d3dcompiler.h>
 #include "Engine/Source/ModernAssets/WxlWmo/WmoShaderPack.h"
 #include "Engine/Source/ModernAssets/WxlWmo/models/wmo/WmoShaderText.hpp"
+#include "Engine/Source/ModernAssets/WxlWmo/WmoShaderCompact.hpp"
 #include "Engine/Source/ModernAssets/WxlGrass/GrassShaderText.hpp"
+#include "Engine/Source/ModernAssets/WxlGrass/GrassInstancing.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -24,6 +26,7 @@ using wxl::wmo::PackEntry;
 typedef HRESULT(WINAPI* PFN_Assemble)(LPCVOID, SIZE_T, LPCSTR, const D3D_SHADER_MACRO*, ID3DInclude*, UINT, ID3DBlob**, ID3DBlob**);
 typedef HRESULT(WINAPI* PFN_Disassemble)(LPCVOID, SIZE_T, UINT, LPCSTR, ID3DBlob**);
 static PFN_Assemble g_assemble; static PFN_Disassemble g_disassemble;
+static bool g_quiet = false;   // the first attempt of a fallback chain reports only its final failure
 
 static bool ReadFile(const std::string& path, std::vector<uint8_t>& out) {
     FILE* f = std::fopen(path.c_str(), "rb"); if (!f) return false;
@@ -47,7 +50,7 @@ static bool Assemble(const std::string& source, const char* label, std::vector<u
     ID3DBlob *blob = nullptr, *errors = nullptr;
     const HRESULT hr = g_assemble(source.c_str(), source.size(), label, nullptr, nullptr, 0, &blob, &errors);
     if (FAILED(hr) || !blob) {
-        std::fprintf(stderr, "%s: assemble failed: %s\n", label, errors ? static_cast<const char*>(errors->GetBufferPointer()) : "?");
+        if (!g_quiet) std::fprintf(stderr, "%s: assemble failed: %s\n", label, errors ? static_cast<const char*>(errors->GetBufferPointer()) : "?");
         if (errors) errors->Release(); if (blob) blob->Release(); return false;
     }
     if (errors) errors->Release();
@@ -70,15 +73,32 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(argv[1], "--grass") == 0 && argc >= 4) {   // grass-motion vertex shaders (*.vs)
         const std::string grassDir = argv[2];
-        std::vector<PackEntry> grass; unsigned seenCount = 0, skipped = 0;
+        std::vector<PackEntry> grass, instanced; unsigned seenCount = 0, skipped = 0;
         for (const auto& name : List(grassDir, "vs")) {
             std::vector<uint8_t> code;
             if (!ReadFile(grassDir + "\\" + name, code) || code.size() < 8 || code.size() > wxl::wmo::kMaxShaderBytes) continue;
             ++seenCount;
+            // Hardware-instanced versions, keyed by the bytecode the engine will hold (its own, or the
+            // motion-patched one that replaces it): the runtime looks up what the device is using.
+            const auto addInstanced = [&](const std::string& text, const uint8_t* bytes, size_t size, const char* label) {
+                std::string derived, why; PackEntry e; e.kind = 0; e.originalHash = wxl::wmo::HashBytecode(bytes, size); e.originalSize = uint32_t(size);
+                if (!wxl::grass::instancing::MakeInstancedGrassText(text, derived, why) || !Assemble(derived, name.c_str(), e.bytecode)) {
+                    std::printf("skip instanced grass %s (%s): %s\n", name.c_str(), label, why.c_str()); return; }
+                instanced.push_back(std::move(e));
+            };
+            addInstanced(Disassemble(code), code.data(), code.size(), "stock");
             PackEntry e; e.kind = 0; e.originalHash = wxl::wmo::HashBytecode(code.data(), code.size()); e.originalSize = uint32_t(code.size());
             const std::string patched = wxl::grass::text::BuildGrassMotionText(Disassemble(code));
             if (patched.empty() || !Assemble(patched, name.c_str(), e.bytecode)) { ++skipped; std::printf("skip grass %s\n", name.c_str()); continue; }
+            addInstanced(patched, reinterpret_cast<const uint8_t*>(e.bytecode.data()), e.bytecode.size() * 4, "motion");
             grass.push_back(std::move(e));
+        }
+        if (argc >= 5) {
+            const auto packedInstanced = wxl::wmo::ShaderPack::Serialize(instanced);
+            FILE* file = std::fopen(argv[4], "wb");
+            if (!file || std::fwrite(packedInstanced.data(), 1, packedInstanced.size(), file) != packedInstanced.size()) { std::fprintf(stderr, "cannot write instanced pack\n"); return 1; }
+            std::fclose(file);
+            std::printf("instanced grass vertex shaders %zu, %zu bytes\n", instanced.size(), packedInstanced.size());
         }
         const auto packed = wxl::wmo::ShaderPack::Serialize(grass);
         FILE* file = std::fopen(argv[3], "wb");
@@ -90,6 +110,8 @@ int main(int argc, char** argv) {
     const std::string dir = argv[1];
     std::vector<PackEntry> entries;
     std::set<std::pair<int, int>> mappings;
+    std::vector<text::CompactLayout> compactLayouts;
+    unsigned compactVs = 0, compactPs = 0;
     unsigned skippedVs = 0, skippedPs = 0, vsCount = 0, psCount = 0;
     std::set<uint64_t> seen;
 
@@ -102,7 +124,27 @@ int main(int argc, char** argv) {
         text::VsMapping map{};
         const std::string patched = text::BuildLayeredVsText(Disassemble(code), map);
         PackEntry e; e.kind = 0; e.originalHash = hash; e.originalSize = uint32_t(code.size());
-        if (patched.empty() || !Assemble(patched, name.c_str(), e.bytecode)) { ++skippedVs; std::printf("skip vs %s: %s\n", name.c_str(), patched.empty() ? "shape" : "assemble"); continue; }
+        g_quiet = true;
+        const bool suppliedFits = !patched.empty() && Assemble(patched, name.c_str(), e.bytecode);
+        g_quiet = false;
+        if (!suppliedFits) {
+            // Too few output registers for the supplied layout: carry the extra floats in unused
+            // components of the stock outputs instead (a compact layout, keyed 0x80 + id).
+            text::CompactLayout layout;
+            const std::string compactText = text::BuildCompactVsText(Disassemble(code), layout);
+            e.bytecode.clear();
+            if (compactText.empty() || !Assemble(compactText, name.c_str(), e.bytecode)) {
+                ++skippedVs; std::printf("skip vs %s: %s\n", name.c_str(), compactText.empty() ? "shape" : "assemble"); continue;
+            }
+            const std::string key = layout.Key();
+            size_t id = 0;
+            while (id < compactLayouts.size() && compactLayouts[id].Key() != key) ++id;
+            if (id == compactLayouts.size()) compactLayouts.push_back(layout);
+            e.uvUsage = e.weightUsage = uint8_t(0x80 + id);
+            ++compactVs;
+            entries.push_back(std::move(e));
+            continue;
+        }
         e.uvUsage = uint8_t(map.uv[1]); e.weightUsage = uint8_t(map.weights);
         mappings.insert({map.uv[1], map.weights});
         entries.push_back(std::move(e));
@@ -136,12 +178,23 @@ int main(int argc, char** argv) {
                 entries.push_back(std::move(e));
             } else { ++skippedPs; std::printf("skip ps %s four-layer map %d/%d: %s\n", name.c_str(), uv, weights, patched.empty() ? "shape" : "assemble"); }
         }
+        for (size_t id = 0; id < compactLayouts.size(); ++id) {   // four layers on the compact vertex layouts
+            PackEntry e; e.kind = 1; e.layers = 4; e.uvUsage = e.weightUsage = uint8_t(0x80 + id);
+            e.originalHash = hash; e.originalSize = uint32_t(code.size());
+            std::array<unsigned, 8> slots{}; int tint = -1;
+            const std::string patched = text::BuildCompactLayeredPsText(source, compactLayouts[id], tint, &slots);
+            if (!patched.empty() && Assemble(patched, name.c_str(), e.bytecode)) {
+                e.tintRegister = tint;
+                for (int i = 0; i < 8; ++i) e.samplerSlots[i] = uint8_t(slots[i]);
+                entries.push_back(std::move(e)); ++compactPs;
+            }
+        }
     }
     const auto bytes = wxl::wmo::ShaderPack::Serialize(entries);
     FILE* out = std::fopen(argv[2], "wb");
     if (!out || std::fwrite(bytes.data(), 1, bytes.size(), out) != bytes.size()) { std::fprintf(stderr, "cannot write pack\n"); return 1; }
     std::fclose(out);
-    std::printf("vertex shaders %u (skipped %u), pixel shaders %u (variants skipped %u), mappings %zu, entries %zu, %zu bytes\n",
-                vsCount, skippedVs, psCount, skippedPs, mappings.size(), entries.size(), bytes.size());
+    std::printf("vertex shaders %u (skipped %u, compact layouts %u in %zu mappings), pixel shaders %u (variants skipped %u, compact variants %u), mappings %zu, entries %zu, %zu bytes\n",
+                vsCount, skippedVs, compactVs, compactLayouts.size(), psCount, skippedPs, compactPs, mappings.size(), entries.size(), bytes.size());
     return 0;
 }

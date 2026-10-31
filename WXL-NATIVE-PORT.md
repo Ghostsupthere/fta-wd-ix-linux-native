@@ -51,6 +51,26 @@ the same injected block runs through the offline pipeline used for WMO shaders:
   shader reads as "do not move". The control addon's
   `WarcraftXL_Set/GetHellfireGrassSwayDisabled` functions are registered natively.
 
+**Instanced grass (2026-10-31).** Port of the supplied `wxl-living-azeroth` grass instancing
+(Morfium's Living Azeroth, GPL-3.0-or-later; clustered surface lights and the in-game editor are not
+ported). The engine bakes every visible ground-effect batch into stream buffers and, once more than
+about 128 batches are visible (long grass distances), re-bakes the rest on the CPU every frame.
+`CDetailDoodadInstBatch::Draw` now asks `WxlGrassInstancingPlan()` first: each model's static
+vertices (position, uv) and one 64-byte record per plant (three transform rows with the scale folded
+in, the normal and the colour from the engine's own `BakeColor`) are built once per batch and drawn
+with D3D9 hardware instancing, one draw per model. The engine's vertex shader (stock or the
+motion-patched one) is derived offline (`MakeInstancedGrassText`: the baked position comes from the
+rows, the rest runs unchanged) into `grass_instanced.pack`. The engine still performs its normal
+`Draw` with three-vertex placeholder buffers so its state flush runs; `NativeVisualHooks::instancedDraw`
+in `CGxDeviceD3d9Ex::Draw` swaps in the derived shader, declaration and streams around the instanced
+draws and restores them. Any missing piece (pack, shader, model, device error) takes the stock bake.
+`WXL_GRASS_INSTANCING=0` turns it off; `Logs/GrassInstancing.log` reports batches, instances and
+fallbacks; stderr announces `instanced grass active`. The plant math is shared with the bake
+(`BakeColor`, `BuildInstanceMatrix`); the GPU probe renders baked and instanced blades with all three
+live permutations, with and without motion, repulsion and rigid alphas, and the pixels are identical
+(rotated, scaled and moved plants: 0 of 200 lit pixels differ). **Not seen in game**; no FPS gain is
+established (the original's reported gains are not measurements of this client).
+
 **Verification.** `tests/wxl_grass_rigid_test.cpp` (ASan/UBSan: classification, including
 look-alikes such as DurIbu/Bonus, and the patch anchors) and a real-GPU probe
 (`tools/wxl_grass_motion_gpu_probe.cpp`) pass. On the real backend all three live
@@ -79,9 +99,13 @@ assembler; the native client cannot, so the same text patches
   committed**. The client never loads Wine; without the pack, or with
   `WXL_MODERN_WMO_MATERIALS=0`, WMOs draw stock and `Logs/WmoVisuals.log` says so.
 - The runtime looks shaders up by a hash of the engine's own bytecode, so any
-  permutation not in the pack draws stock (22 vertex permutations at the highest
-  shadow/fog combinations exceed the 11 vertex output registers after patching, as
-  in the original, and also draw stock).
+  permutation not in the pack draws stock. The 22 vertex permutations at the highest
+  shadow tier exceeded the 11 vertex output registers with the supplied layout (as in the
+  original). `WmoShaderCompact.hpp` (native addition; the imported header is untouched)
+  packs the extra eight floats into unused components of the stock texcoord outputs, takes
+  over the COLOR1 register when that is not enough and adds at most one register. Pixel
+  shaders that read COLOR1 get no compact variant (that pairing draws stock). The pack now
+  patches all 99 vertex permutations (2 compact layouts, keys 0x80/0x81).
 - Hooks: `CMapObj::ExteriorRender`/`InteriorRender` open a leaf scope, `CullBatch`
   latches the batch's material, `CShaderEffect::SetShaders` latches the selected
   shader pair, and `CGxDeviceD3d9Ex::Draw` hands the indexed draw to the module. It
@@ -389,7 +413,7 @@ complete native Release build passes; rendered acceptance remains open.
    pack, batch latching, extra UV/weight stream, texture readiness, sampler/tint binding
    and state restoration are implemented and GPU-probe verified. The user chose not to
    test the scarce layered content in game; revisit if more modern WMOs are added or a
-   rendering problem is reported. Open: shadow-tier fit of 22 vertex permutations.
+   rendering problem is reported. The 22 high-shadow-tier vertex permutations now have compact layouts (GPU-probe verified, not seen in game).
 2. **Close remaining armor/model policies and recovery gaps.** Audit source path,
    attachment and material cases against the native implementation; cover cached
    previews, owner replacement, incomplete loads, removal and retries. Resolve the

@@ -1,6 +1,8 @@
 #include "DetailDoodad.h"
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Source/WorldClient/Linux/WxlGrassMotion.h"
+#include "WoW/Source/WorldClient/Linux/WxlGrassInstancing.h"
+#include "Engine/Source/ModernAssets/WxlGrass/GrassInstancing.hpp"
 #endif
 #include <cmath>
 #include "Engine/Source/Base/Handle.h"
@@ -23,6 +25,7 @@
 #include "Engine/Source/Tempest/C33Matrix.h"
 #include "Engine/Source/Tempest/CImVector.h"
 #include <cstring>
+#include <vector>
 #include "WoW/Source/DB/DBClient/DBClient.h"
 #include "WoW/Source/WorldClient/CDetailDoodadData.h"
 #include "WoW/Source/WorldClient/DayNight.h"
@@ -150,6 +153,9 @@ void CDetailDoodad::SetupVertexShader(const C44Matrix& world, uint32_t index) {
     }
 
     g_theGxDevicePtr->RsSet(GxRs_VertexShader, CDetailDoodad::s_vertexShader[3 * index + shadow]);
+#if defined(WOWDECOMP_LINUX)
+    WxlGrassInstancingNoteShader(index == 0 ? CDetailDoodad::s_vertexShader[shadow] : nullptr);
+#endif
 
     C44Matrix view;
     CGxMatrixStack& stack = g_theGxDevicePtr->m_xforms[GxXform_View];
@@ -340,6 +346,37 @@ void CDetailDoodadData::ModelLoadedCallback(CM2Model* model, void* arg) {
 
 // VERIFY: 69235ba2 manual
 // OFFSET: 0x007B1B50
+// The colour the bake writes into every vertex of one plant (shared by the instanced path).
+static CImVector BakeColor(const CDetailDoodadInstAdd& add, const CDetailDoodadData* data) {
+    CImVector color = add.m_color;
+#if defined(WOWDECOMP_LINUX)
+    // Rigid props (rocks, bones) get an interior alpha the patched shader reads as "no motion".
+    if (CDetailDoodad::s_bUseShaders && WxlGrassMotionActive() && data->m_record &&
+        (color.a == 0x00 || color.a == 0xFF) && WxlGrassIsRigid(add.m_doodadId, data->m_record->m_doodadpath)) {
+        color.a = color.a == 0x00 ? 0x01 : 0xFE;
+    }
+#endif
+
+    if (!CDetailDoodad::s_bUseShaders) {
+        uint32_t scale = 76 * color.a + 45874;
+        color.r = static_cast<uint8_t>((scale * color.r) >> 16);
+        color.g = static_cast<uint8_t>((scale * color.g) >> 16);
+        color.b = static_cast<uint8_t>((scale * color.b) >> 16);
+        color.a = 0xFF;
+    }
+
+    if (g_theGxDevicePtr->Caps().m_colorFormat == GxCF_rgba) {
+        CImVector swapped;
+        swapped.a = color.a;
+        swapped.g = color.g;
+        swapped.r = color.b;
+        swapped.b = color.r;
+        color = swapped;
+    }
+
+    return color;
+}
+
 void CDetailDoodadInstBatch::FillVertices() {
     CGxBuf* buf = this->m_vertexBuf;
     CGxVertexPNCT* vertex = reinterpret_cast<CGxVertexPNCT*>(g_theGxDevicePtr->BufLock(buf));
@@ -374,31 +411,7 @@ void CDetailDoodadInstBatch::FillVertices() {
 
         M2SkinProfile* skin = model->m_shared->m_skinData;
         uint32_t vertexCount = skin->m_vertices.m_count;
-        CImVector color = add.m_color;
-#if defined(WOWDECOMP_LINUX)
-        // Rigid props (rocks, bones) get an interior alpha the patched shader reads as "no motion".
-        if (CDetailDoodad::s_bUseShaders && WxlGrassMotionActive() && data->m_record &&
-            (color.a == 0x00 || color.a == 0xFF) && WxlGrassIsRigid(add.m_doodadId, data->m_record->m_doodadpath)) {
-            color.a = color.a == 0x00 ? 0x01 : 0xFE;
-        }
-#endif
-
-        if (!CDetailDoodad::s_bUseShaders) {
-            uint32_t scale = 76 * color.a + 45874;
-            color.r = static_cast<uint8_t>((scale * color.r) >> 16);
-            color.g = static_cast<uint8_t>((scale * color.g) >> 16);
-            color.b = static_cast<uint8_t>((scale * color.b) >> 16);
-            color.a = 0xFF;
-        }
-
-        if (g_theGxDevicePtr->Caps().m_colorFormat == GxCF_rgba) {
-            CImVector swapped;
-            swapped.a = color.a;
-            swapped.g = color.g;
-            swapped.r = color.b;
-            swapped.b = color.r;
-            color = swapped;
-        }
+        CImVector color = BakeColor(add, data);
 
         if (data->m_record->m_flags & 1) {
             if ((add.m_triIndex & 0xFC) != cell) {
@@ -528,6 +541,7 @@ void CDetailDoodad::Initialize() {
     } else if (CDetailDoodad::s_bUseShaders) {
 #if defined(WOWDECOMP_LINUX)
         WxlGrassInitialize();
+        WxlGrassInstancingInitialize();
 #endif
         g_theGxDevicePtr->ShaderCreate(CDetailDoodad::s_vertexShader, GxSh_Vertex, "Shaders\\Vertex", "DetailDoodad", sizeof(CDetailDoodad::s_vertexShader) / sizeof(CDetailDoodad::s_vertexShader[0]));
         g_theGxDevicePtr->ShaderCreate(CDetailDoodad::s_pixelShader, GxSh_Pixel, "Shaders\\Pixel", "DetailDoodad", sizeof(CDetailDoodad::s_pixelShader) / sizeof(CDetailDoodad::s_pixelShader[0]));
@@ -715,6 +729,9 @@ void CDetailDoodadInst::AddDoodad(uint32_t id, const C3Vector& position, float r
     }
 
     CDetailDoodadInstBatch& batch = this->m_batches[i];
+#if defined(WOWDECOMP_LINUX)
+    WxlGrassInstancingForget(&batch);
+#endif
     CDetailDoodadInstAdd* add = batch.m_adds.New();
     add->m_doodadId = id;
     add->m_position = position;
@@ -740,6 +757,37 @@ void CDetailDoodadInstBatch::Draw() {
     if (!gxTex) {
         return;
     }
+
+#if defined(WOWDECOMP_LINUX)
+    if (CDetailDoodad::s_bUseShaders) {
+        if (const void* plan = WxlGrassInstancingPlan(this)) {
+            // Hardware-instanced plants: three-vertex placeholder buffers satisfy the engine's state
+            // flush and its indexed draw is replaced by the instanced draws (WxlGrassInstancing.cpp).
+            CGxBuf* anchorVertices = g_theGxDevicePtr->BufStream(GxPoolTarget_Vertex, sizeof(CGxVertexPNCT), 3);
+            CGxBuf* anchorIndices = g_theGxDevicePtr->BufStream(GxPoolTarget_Index, sizeof(uint16_t), 3);
+            memset(g_theGxDevicePtr->BufLock(anchorVertices), 0, 3 * sizeof(CGxVertexPNCT));
+            g_theGxDevicePtr->BufUnlock(anchorVertices, 0);
+            anchorVertices->m_hasData = 1;
+            uint16_t* triangle = reinterpret_cast<uint16_t*>(g_theGxDevicePtr->BufLock(anchorIndices));
+            triangle[0] = 0; triangle[1] = 1; triangle[2] = 2;
+            g_theGxDevicePtr->BufUnlock(anchorIndices, 0);
+            anchorIndices->m_hasData = 1;
+            GxPrimVertexPtr(anchorVertices, GxVBF_PNCT);
+            g_theGxDevicePtr->PrimIndexPtr(anchorIndices);
+            g_theGxDevicePtr->RsSet(GxRs_Texture0, gxTex);
+            CGxBatch anchorBatch;
+            anchorBatch.m_primType = GxPrim_Triangles;
+            anchorBatch.m_start = 0;
+            anchorBatch.m_count = 3;
+            anchorBatch.m_minIndex = 0;
+            anchorBatch.m_maxIndex = 2;
+            WxlGrassInstancingArm(plan);
+            g_theGxDevicePtr->Draw(&anchorBatch, 1);
+            WxlGrassInstancingDisarm();
+            return;
+        }
+    }
+#endif
 
     if (!this->m_vertexBuf || this->m_vertexBuf->m_pool->m_usage == GxPoolUsage_Stream) {
         AcquireBuffers(this->m_vertexCount, &this->m_vertexBuf, this->m_indexCount, &this->m_indexBuf);
@@ -883,3 +931,140 @@ void CDetailDoodad::FreeInst(CDetailDoodadInst* inst) {
     inst->~CDetailDoodadInst();
     ObjectFree(*heap, inst->m_objectIndex);
 }
+
+#if defined(WOWDECOMP_LINUX)
+// The instanced path's view of the engine's bake. The per-plant transform is the same math as
+// FillVertices (same tilt cache per fan, same colour), expressed as three rows instead of a
+// per-vertex multiply.
+bool WxlGrassBakeInstances(const CDetailDoodadInstBatch& batch, std::vector<wxl::grass::instancing::GpuInstance>& plants, std::vector<uint32_t>& doodads) {
+    using namespace wxl::grass::instancing;
+    const uint32_t count = batch.m_adds.Count();
+    plants.assign(count, GpuInstance{});
+    doodads.assign(count, 0);
+
+    C3Vector axis(0.0f, 0.0f, 1.0f);
+    C33Matrix basis(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    uint8_t built = 0;
+    uint32_t cell = 0xFFFF;
+    C33Matrix rotation(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    C33Matrix matrices[4] = {
+        C33Matrix(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f),
+        C33Matrix(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f),
+        C33Matrix(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f),
+        C33Matrix(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f)
+    };
+
+    for (uint32_t i = 0; i < count; i++) {
+        const CDetailDoodadInstAdd& add = batch.m_adds[i];
+        if (add.m_doodadId >= CDetailDoodad::s_doodadList.Count()) {
+            return false;
+        }
+
+        CDetailDoodadData* data = CDetailDoodad::s_doodadList[add.m_doodadId];
+
+        if (!data || !data->m_model || !data->m_record) {
+            return false;
+        }
+
+        AxisImages images;
+
+        if (data->m_record->m_flags & 1) {
+            if ((add.m_triIndex & 0xFC) != cell) {
+                cell = add.m_triIndex & 0xFC;
+                built = 0;
+            }
+
+            uint32_t fan = add.m_triIndex & 3;
+
+            if (!(built & (1 << fan))) {
+                const C3Vector& normal = add.m_normal;
+                float inv = 1.0f / sqrt(-normal.y * -normal.y + normal.z * normal.z);
+                C3Vector tangent(0.0f * inv, normal.z * inv, -normal.y * inv);
+                C3Vector binormal(normal.y * tangent.z - normal.z * tangent.y, normal.z * tangent.x - tangent.z * normal.x, tangent.y * normal.x - tangent.x * normal.y);
+                basis = C33Matrix(binormal.x, binormal.y, binormal.z, tangent.x, tangent.y, tangent.z, normal.x, normal.y, normal.z);
+                BuildInstanceMatrix(matrices[fan], rotation, basis, add.m_rotation, axis);
+                built |= 1 << fan;
+            }
+
+            const C33Matrix& matrix = matrices[fan];
+            const C3Vector unit[3] = {C3Vector(1.0f, 0.0f, 0.0f), C3Vector(0.0f, 1.0f, 0.0f), C3Vector(0.0f, 0.0f, 1.0f)};
+
+            for (int axisIndex = 0; axisIndex < 3; ++axisIndex) {
+                const C3Vector image = unit[axisIndex] * matrix;
+                images.image[axisIndex][0] = image.x;
+                images.image[axisIndex][1] = image.y;
+                images.image[axisIndex][2] = image.z;
+            }
+        } else {
+            images = YawImages(add.m_rotation);
+        }
+
+        const float position[3] = {add.m_position.x, add.m_position.y, add.m_position.z};
+        GpuInstance& plant = plants[i];
+        SetPlantTransform(images, add.m_scale, position, plant);
+        plant.normal[0] = add.m_normal.x;
+        plant.normal[1] = add.m_normal.y;
+        plant.normal[2] = add.m_normal.z;
+        const CImVector color = BakeColor(add, data);
+        memcpy(&plant.color, &color, sizeof(plant.color));
+        doodads[i] = add.m_doodadId;
+    }
+
+    return true;
+}
+
+// One doodad model's vertices (position, uv) and triangle list, as the bake would append them.
+bool WxlGrassModelGeometry(uint32_t doodadId, std::vector<wxl::grass::instancing::GpuVertex>& vertices, std::vector<uint16_t>& indices) {
+    if (doodadId >= CDetailDoodad::s_doodadList.Count()) {
+        return false;
+    }
+
+    CDetailDoodadData* data = CDetailDoodad::s_doodadList[doodadId];
+
+    if (!data || !data->m_model) {
+        return false;
+    }
+
+    CM2Model* model = data->m_model;
+
+    if (!(model->m_fFlags & 1)) {
+        model->WaitForLoad(nullptr);
+    }
+
+    if (!model->m_shared || !model->m_shared->m_data || !model->m_shared->m_skinData) {
+        return false;
+    }
+
+    M2Data* m2Data = model->m_shared->m_data;
+    M2SkinProfile* skin = model->m_shared->m_skinData;
+    const uint32_t vertexCount = skin->m_vertices.m_count;
+    const uint32_t indexCount = skin->m_indices.m_count;
+
+    if (vertexCount == 0 || vertexCount > 0xFFFF || indexCount == 0 || indexCount % 3 != 0) {
+        return false;
+    }
+
+    vertices.resize(vertexCount);
+
+    for (uint32_t j = 0; j < vertexCount; j++) {
+        const M2Vertex& source = m2Data->m_vertices[skin->m_vertices[j]];
+        vertices[j].pos[0] = source.m_position.x;
+        vertices[j].pos[1] = source.m_position.y;
+        vertices[j].pos[2] = source.m_position.z;
+        vertices[j].uv[0] = source.m_texcoord[0].x;
+        vertices[j].uv[1] = source.m_texcoord[0].y;
+    }
+
+    indices.resize(indexCount);
+
+    for (uint32_t j = 0; j < indexCount; j++) {
+        indices[j] = static_cast<uint16_t>(skin->m_indices[j]);
+
+        if (indices[j] >= vertexCount) {
+            return false;
+        }
+    }
+
+    return true;
+}
+#endif

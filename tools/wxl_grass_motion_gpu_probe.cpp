@@ -2,7 +2,10 @@
 // blade with the engine's own live grass vertex shader and its generated patch on the real
 // dxvk-native backend. It does not start the game or alter client data.
 //
-//   wxl-grass-motion-gpu-probe <grass_shaders.pack> <dir with the extracted DetailDoodad_*.vs>
+//   wxl-grass-motion-gpu-probe <grass_shaders.pack> <dir with the extracted DetailDoodad_*.vs> [grass_instanced.pack]
+//
+// With the instanced pack it also draws the same blades through the hardware-instanced path
+// (model vertices + a 64-byte plant record) and compares them with the baked path.
 #include <d3d9.h>
 #include <SDL3/SDL.h>
 #include <dlfcn.h>
@@ -13,6 +16,7 @@
 #include <string>
 #include <vector>
 #include "Engine/Source/ModernAssets/WxlWmo/WmoShaderPack.h"
+#include "Engine/Source/ModernAssets/WxlGrass/GrassInstancing.hpp"
 using namespace wxl::wmo;
 
 static void Check(HRESULT r, const char* what) { if (FAILED(r)) { std::fprintf(stderr, "%s: %08x\n", what, unsigned(r)); std::exit(1); } }
@@ -49,22 +53,40 @@ struct Params {
     float phase = 0.0f;
 };
 
-struct Rig { IDirect3DDevice9* dev; IDirect3DVertexDeclaration9* decl; IDirect3DPixelShader9* ps; IDirect3DTexture9* white; };
+struct Rig { IDirect3DDevice9* dev; IDirect3DVertexDeclaration9* decl; IDirect3DPixelShader9* ps; IDirect3DTexture9* white; IDirect3DVertexDeclaration9* instancedDecl = nullptr; };
+namespace gi = wxl::grass::instancing;
+struct Placement { float rotation = 0, scale = 1, x = 0; };
+constexpr int kBladeRows = 13;
 
-static std::vector<DWORD> Render(Rig& rig, const std::vector<uint32_t>& bytecode, const Params& q) {
+static std::vector<DWORD> Render(Rig& rig, const std::vector<uint32_t>& bytecode, const Params& q, bool instanced = false, const Placement* place = nullptr) {
     IDirect3DDevice9* dev = rig.dev;
     IDirect3DVertexShader9* vs = nullptr; Check(dev->CreateVertexShader(bytecode.data(), &vs), "vertex shader");
     const DWORD white = D3DCOLOR_ARGB(q.alpha, 255, 255, 255);
     // Blade along model z (screen up): base z=0 (v=1) to tip z=1.2 (v=0), 0.12 wide, at x = bladeX.
     // Segmented so the shader's per-vertex anchor band is not blurred by interpolation.
-    constexpr int kRows = 13;
+    constexpr int kRows = kBladeRows;
+    // The model: a blade at the origin. The baked path places it on the CPU, as the engine's bake does.
+    gi::GpuInstance plant = {};
+    if (place) {
+        const float position[3] = {place->x, 0, 0};
+        gi::SetPlantTransform(gi::YawImages(place->rotation), place->scale, position, plant);
+    } else {
+        const float position[3] = {q.bladeX, 0, 0};
+        gi::SetPlantTransform(gi::YawImages(0), 1, position, plant);
+    }
+    plant.normal[0] = plant.normal[1] = 0; plant.normal[2] = 1; plant.color = white;
     Vertex blade[kRows * 2];
+    gi::GpuVertex model[kRows * 2];
     for (int row = 0; row < kRows; ++row) {
         const float z = 0.1f * row, v = 1.0f - z / 1.2f;
-        blade[row * 2] = {q.bladeX - .06f, 0, z, 0, 0, 1, white, 0, v};
-        blade[row * 2 + 1] = {q.bladeX + .06f, 0, z, 0, 0, 1, white, 1, v};
+        const float left[3] = {-.06f, 0, z}, right[3] = {.06f, 0, z};
+        model[row * 2] = {{left[0], left[1], left[2]}, {0, v}};
+        model[row * 2 + 1] = {{right[0], right[1], right[2]}, {1, v}};
+        float a[3], b[3]; gi::Transform(plant, left, a); gi::Transform(plant, right, b);
+        blade[row * 2] = {a[0], a[1], a[2], 0, 0, 1, white, 0, v};
+        blade[row * 2 + 1] = {b[0], b[1], b[2], 0, 0, 1, white, 1, v};
     }
-    Check(dev->SetVertexDeclaration(rig.decl), "declaration");
+    Check(dev->SetVertexDeclaration(instanced ? rig.instancedDecl : rig.decl), "declaration");
     Check(dev->SetVertexShader(vs), "vs"); Check(dev->SetPixelShader(rig.ps), "ps");
     Check(dev->SetTexture(0, rig.white), "texture");
     dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_POINT); dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
@@ -89,7 +111,28 @@ static std::vector<DWORD> Render(Rig& rig, const std::vector<uint32_t>& bytecode
     dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE); dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
     Check(dev->BeginScene(), "begin");
     Check(dev->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xFF000000, 1, 0), "clear");
-    Check(dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, kRows * 2 - 2, blade, sizeof(Vertex)), "draw");
+    if (!instanced) Check(dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, kRows * 2 - 2, blade, sizeof(Vertex)), "draw");
+    else {
+        IDirect3DVertexBuffer9 *geometry = nullptr, *plants = nullptr; IDirect3DIndexBuffer9* indices = nullptr;
+        std::vector<uint16_t> list;
+        for (int tri = 0; tri < kRows * 2 - 2; ++tri) { list.push_back(uint16_t(tri)); list.push_back(uint16_t(tri + 1 + (tri & 1))); list.push_back(uint16_t(tri + 2 - (tri & 1))); }
+        Check(dev->CreateVertexBuffer(sizeof model, D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &geometry, nullptr), "geometry vb");
+        Check(dev->CreateVertexBuffer(sizeof plant, D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &plants, nullptr), "instance vb");
+        Check(dev->CreateIndexBuffer(UINT(list.size() * 2), D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_DEFAULT, &indices, nullptr), "index buffer");
+        void* m = nullptr;
+        Check(geometry->Lock(0, sizeof model, &m, 0), "lock"); std::memcpy(m, model, sizeof model); geometry->Unlock();
+        Check(plants->Lock(0, sizeof plant, &m, 0), "lock"); std::memcpy(m, &plant, sizeof plant); plants->Unlock();
+        Check(indices->Lock(0, UINT(list.size() * 2), &m, 0), "lock"); std::memcpy(m, list.data(), list.size() * 2); indices->Unlock();
+        Check(dev->SetStreamSource(0, geometry, 0, sizeof(gi::GpuVertex)), "stream 0");
+        Check(dev->SetStreamSource(1, plants, 0, sizeof(gi::GpuInstance)), "stream 1");
+        Check(dev->SetStreamSourceFreq(0, D3DSTREAMSOURCE_INDEXEDDATA | 1u), "frequency 0");
+        Check(dev->SetStreamSourceFreq(1, D3DSTREAMSOURCE_INSTANCEDATA | 1u), "frequency 1");
+        Check(dev->SetIndices(indices), "indices");
+        Check(dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, kRows * 2, 0, kRows * 2 - 2), "instanced draw");
+        Check(dev->SetStreamSourceFreq(0, 1), "restore frequency 0"); Check(dev->SetStreamSourceFreq(1, 1), "restore frequency 1");
+        dev->SetStreamSource(0, nullptr, 0, 0); dev->SetStreamSource(1, nullptr, 0, 0); dev->SetIndices(nullptr);
+        geometry->Release(); plants->Release(); indices->Release();
+    }
     Check(dev->EndScene(), "end");
     auto pixels = Pixels(dev);
     vs->Release();
@@ -121,6 +164,14 @@ int main(int argc, char** argv) {
         {0, 24, D3DDECLTYPE_D3DCOLOR, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_COLOR, 0}, {0, 28, D3DDECLTYPE_FLOAT2, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_TEXCOORD, 0}, D3DDECL_END()};
     Rig rig{dev, nullptr, nullptr, nullptr};
     Check(dev->CreateVertexDeclaration(elements, &rig.decl), "declaration");
+    const D3DVERTEXELEMENT9 instancedElements[] = {   // the runtime's declaration (WxlGrassInstancing.cpp)
+        {0, 0, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0}, {0, 12, D3DDECLTYPE_FLOAT2, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_TEXCOORD, 0},
+        {1, 0, D3DDECLTYPE_FLOAT4, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_TEXCOORD, 1}, {1, 16, D3DDECLTYPE_FLOAT4, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_TEXCOORD, 2},
+        {1, 32, D3DDECLTYPE_FLOAT4, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_TEXCOORD, 3}, {1, 48, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_NORMAL, 0},
+        {1, 60, D3DDECLTYPE_D3DCOLOR, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_COLOR, 0}, D3DDECL_END()};
+    Check(dev->CreateVertexDeclaration(instancedElements, &rig.instancedDecl), "instanced declaration");
+    ShaderPack instancedPack; const bool haveInstanced = argc >= 4;
+    if (haveInstanced) { std::string why; Require(instancedPack.Load(argv[3], why), why.c_str()); Require(instancedPack.Count() == 6, "stock and motion instanced shaders for three permutations"); }
     {   // the engine's own grass pixel shader (permutation 0) and a white texture
         const auto psBytes = ReadAll(std::string(argv[2]) + "/DetailDoodad_0.ps");
         Check(dev->CreatePixelShader(reinterpret_cast<const DWORD*>(psBytes.data()), &rig.ps), "grass pixel shader");
@@ -163,9 +214,31 @@ int main(int argc, char** argv) {
         Require(std::fabs(Centroid(Render(rig, patched->bytecode, rigidLow), 20, 28) - Centroid(reference, 20, 28)) < 1.0f, "rigid prop (alpha 1) does not sway");
         Params flexible = wind; flexible.alpha = 0;
         Require(std::fabs(Centroid(Render(rig, patched->bytecode, flexible), 20, 28) - Centroid(reference, 20, 28)) > 1.5f, "endpoint alpha 0 still sways");
+        if (haveInstanced) {
+            const PackEntry* instStock = instancedPack.FindVertex(original.data(), original.size());
+            const PackEntry* instMotion = instancedPack.FindVertex(patched->bytecode.data(), patched->bytecode.size() * 4);
+            Require(instStock && instMotion, "instanced shaders for the stock and the motion-patched bytecode");
+            const auto same = [](const std::vector<DWORD>& a, const std::vector<DWORD>& b) { size_t d = 0; for (size_t i = 0; i < a.size(); ++i) d += a[i] != b[i]; return d; };
+            // Same placement: exact, with and without motion, repulsion and the rigid alpha.
+            Require(same(Render(rig, instStock->bytecode, off, true), reference) == 0, "instanced stock blade equals the baked blade");
+            const auto bakedWind = Render(rig, patched->bytecode, wind);
+            const size_t windDiff = same(Render(rig, instMotion->bytecode, wind, true), bakedWind);
+            std::printf("%-52s %zu differing pixels\n", "instanced wind vs baked wind", windDiff);
+            Require(windDiff == 0, "instanced motion shader sways exactly like the baked one");
+            Require(same(Render(rig, instMotion->bytecode, right, true), Render(rig, patched->bytecode, right)) == 0, "instanced repulsion equals baked");
+            Require(same(Render(rig, instMotion->bytecode, rigid, true), Render(rig, patched->bytecode, rigid)) == 0, "instanced rigid prop equals baked");
+            // A rotated, scaled, moved plant: positions come out of different float orders on the CPU and
+            // the GPU, so allow a sliver of edge pixels.
+            Placement placed; placed.rotation = 0.7f; placed.scale = 1.3f; placed.x = 0.15f;
+            const auto bakedPlaced = Render(rig, stock, off, false, &placed);
+            const size_t placedDiff = same(Render(rig, instStock->bytecode, off, true, &placed), bakedPlaced);
+            size_t lit = 0; for (DWORD px : bakedPlaced) lit += px != 0;
+            std::printf("%-52s %zu of %zu lit pixels differ\n", "rotated and scaled plant, instanced vs baked", placedDiff, lit);
+            Require(lit > 0 && placedDiff * 50 <= lit, "instanced placement matches the baked placement");
+        }
     }
     dev->SetTexture(0, nullptr); dev->SetPixelShader(nullptr); dev->SetVertexShader(nullptr);
-    rig.white->Release(); rig.ps->Release(); rig.decl->Release();
+    rig.white->Release(); rig.ps->Release(); rig.decl->Release(); rig.instancedDecl->Release();
     SDL_Delay(1500);
     dev->Release(); d3d->Release(); SDL_DestroyWindow(window); SDL_Delay(500);
     std::puts("PASS: patched grass shaders match stock when off, sway the tips, part around the player and spare rigid props");

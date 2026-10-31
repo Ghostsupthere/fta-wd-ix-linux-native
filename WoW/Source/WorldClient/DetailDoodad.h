@@ -10,6 +10,9 @@
 #include "Engine/Source/Tempest/C44Matrix.h"
 #include "Engine/Source/Tempest/C4Vector.h"
 #include "Engine/Source/Tempest/CImVector.h"
+#if defined(WOWDECOMP_LINUX)
+void WxlGrassInstancingForget(const class CDetailDoodadInstBatch* batch);
+#endif
 
 struct CGxPool;
 class CMapChunk;
@@ -145,6 +148,9 @@ inline void CDetailDoodadInstBatch::FreeBuffers() {
 
 // INLINED
 inline void CDetailDoodadInstBatch::Free() {
+#if defined(WOWDECOMP_LINUX)
+    WxlGrassInstancingForget(this);
+#endif
     this->m_texture = nullptr;
     this->m_vertexCount = 0;
     this->m_indexCount = 0;

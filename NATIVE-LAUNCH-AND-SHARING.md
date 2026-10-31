@@ -71,12 +71,13 @@ The installer follows the
 [Desktop Entry specification](https://specifications.freedesktop.org/desktop-entry/latest-single/)
 for Exec quoting and creates user-local shortcuts only.
 
-## Patched shader packs (WMO layered materials and grass motion)
+## Patched shader packs (WMO layered materials, grass motion and instanced grass)
 
-Modern WMO layered materials use `Utils/WarcraftXL/visuals/wmo_shaders.pack` and grass motion uses
-`Utils/WarcraftXL/visuals/grass_shaders.pack`, both generated
+Modern WMO layered materials use `Utils/WarcraftXL/visuals/wmo_shaders.pack`, grass motion uses
+`Utils/WarcraftXL/visuals/grass_shaders.pack` and instanced grass uses
+`Utils/WarcraftXL/visuals/grass_instanced.pack`, all generated
 per install by `tools/build-wmo-shader-pack.py` (needs Wine, mingw and the pinned
 `d3dcompiler_47.dll`; see `Engine/Source/ModernAssets/WxlVisuals/SOURCE.md`). It is derived
 from the client's own shader files, so it is not committed or redistributed. A shared
-folder without it still runs; those WMOs draw stock. Regenerate it if the client's shader
+folder without it still runs; those WMOs draw stock, and grass draws the stock way without the instanced pack (`WXL_GRASS_INSTANCING=0` also turns it off). Regenerate it if the client's shader
 files change.

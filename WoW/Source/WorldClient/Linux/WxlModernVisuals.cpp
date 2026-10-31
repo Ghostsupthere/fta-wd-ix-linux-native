@@ -16,6 +16,7 @@
 #include "Engine/Source/Model2/M2Light.h"
 #include "Engine/Source/ModernAssets/NativeVisualHooks.h"
 #include "WxlWmoMaterials.h"
+#include "WxlGrassInstancing.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/renderer.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/transparent_fog.h"
 #include "WoW/Source/WorldClient/DayNight.h"
@@ -248,6 +249,7 @@ void RestoreWaterDepthWrite() {
 }
 void WxlReleaseModernVisuals() {
     WxlWmoRelease();
+    WxlGrassInstancingRelease();
     if(device){NativeVisualHooks::waterDepthWriteOverride=false;water.Abort(device);}
     DisarmTransparentFog();
     water.ReleaseAll();atmosphere.ReleaseAll();depthCopy.Detach();

@@ -1,5 +1,6 @@
 #if defined(WOWDECOMP_LINUX)
 #include "WxlGrassMotion.h"
+#include "WxlGrassInstancing.h"
 #include "WxlVisualEnvironment.h"
 #include "Engine/Source/ModernAssets/NativeVisualHooks.h"
 #include "Engine/Source/ModernAssets/WxlGrass/GrassShaderText.hpp"
@@ -111,7 +112,7 @@ void WxlGrassFillConstants(float* block36) {
     std::memcpy(block36, cached, sizeof(cached));
 }
 
-void WxlGrassFrame() { frameDirty = true; }
+void WxlGrassFrame() { frameDirty = true; WxlGrassInstancingFrame(); }
 
 bool WxlGrassIsRigid(uint32_t doodadId, const char* modelPath) {
     if (!modelPath || !*modelPath) return false;

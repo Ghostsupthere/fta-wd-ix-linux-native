@@ -6,10 +6,13 @@
 #include <d3d9.h>
 #include <SDL3/SDL.h>
 #include <dlfcn.h>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 #include "Engine/Source/ModernAssets/WxlWmo/WmoShaderPack.h"
@@ -32,6 +35,12 @@ static IDirect3DTexture9* Solid(IDirect3DDevice9* dev, DWORD argb) {
     for (int y = 0; y < 4; ++y) for (int x = 0; x < 4; ++x) reinterpret_cast<DWORD*>(static_cast<uint8_t*>(r.pBits) + y * r.Pitch)[x] = argb;
     t->UnlockRect(0); return t;
 }
+static IDirect3DTexture9* Split(IDirect3DDevice9* dev, DWORD left, DWORD right) {   // 2x1: u<0.5 left, u>0.5 right
+    IDirect3DTexture9* t = nullptr; Check(dev->CreateTexture(2, 1, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &t, nullptr), "split texture");
+    D3DLOCKED_RECT r = {}; Check(t->LockRect(0, &r, nullptr, 0), "lock split texture");
+    reinterpret_cast<DWORD*>(r.pBits)[0] = left; reinterpret_cast<DWORD*>(r.pBits)[1] = right;
+    t->UnlockRect(0); return t;
+}
 static DWORD CentrePixel(IDirect3DDevice9* dev) {
     IDirect3DSurface9 *target = nullptr, *cpu = nullptr;
     Check(dev->GetRenderTarget(0, &target), "target");
@@ -52,13 +61,16 @@ struct Rig {
     IDirect3DVertexBuffer9 *vb0 = nullptr, *vb1 = nullptr; IDirect3DIndexBuffer9* ib = nullptr;
 };
 
-static DWORD Render(Rig& rig, const PackEntry& vs, const PackEntry& ps, const DWORD* diffuse, const DWORD* height, DWORD weights, const float tint[4]) {
+// uvU / diffuseRight (optional): each layer samples a 2x1 texture at u = uvU[layer], so a wrongly routed
+// interpolant shows up as the wrong colour.
+static DWORD Render(Rig& rig, const PackEntry& vs, const PackEntry& ps, const DWORD* diffuse, const DWORD* height, DWORD weights, const float tint[4],
+                    const float* uvU = nullptr, const DWORD* diffuseRight = nullptr) {
     IDirect3DDevice9* dev = rig.dev;
     IDirect3DVertexShader9* v = nullptr; IDirect3DPixelShader9* p = nullptr;
     Check(dev->CreateVertexShader(vs.bytecode.data(), &v), "patched vertex shader");
     Check(dev->CreatePixelShader(ps.bytecode.data(), &p), "patched pixel shader");
     const Vertex0 s0[4] = {{-1, -1, .5f, 0, 0, 1, 0x80808080}, {-1, 1, .5f, 0, 0, 1, 0x80808080}, {1, -1, .5f, 0, 0, 1, 0x80808080}, {1, 1, .5f, 0, 0, 1, 0x80808080}};
-    Vertex1 s1[4] = {}; for (auto& vertex : s1) { for (auto& uv : vertex.uv) uv[0] = uv[1] = .5f; vertex.weights = weights; }
+    Vertex1 s1[4] = {}; for (auto& vertex : s1) { for (auto& uv : vertex.uv) uv[0] = uv[1] = .5f; vertex.weights = weights; if (uvU) for (int i = 0; i < 4; ++i) vertex.uv[i][0] = uvU[i]; }
     void* mem = nullptr;
     Check(rig.vb0->Lock(0, sizeof s0, &mem, 0), "lock vb0"); std::memcpy(mem, s0, sizeof s0); rig.vb0->Unlock();
     Check(rig.vb1->Lock(0, sizeof s1, &mem, 0), "lock vb1"); std::memcpy(mem, s1, sizeof s1); rig.vb1->Unlock();
@@ -66,7 +78,7 @@ static DWORD Render(Rig& rig, const PackEntry& vs, const PackEntry& ps, const DW
     const unsigned stages = ps.layers == 4 ? 8 : 2;
     for (unsigned s = 0; s < stages; ++s) {
         const DWORD colour = ps.layers == 4 ? (s < 4 ? diffuse[s] : height[s - 4]) : diffuse[s];
-        textures.push_back(Solid(dev, colour));
+        textures.push_back(uvU && ps.layers == 4 && s < 4 ? Split(dev, colour, diffuseRight[s]) : Solid(dev, colour));
         Check(dev->SetTexture(ps.samplerSlots[s], textures.back()), "bind texture");
         dev->SetSamplerState(ps.samplerSlots[s], D3DSAMP_MINFILTER, D3DTEXF_POINT);
         dev->SetSamplerState(ps.samplerSlots[s], D3DSAMP_MAGFILTER, D3DTEXF_POINT);
@@ -83,6 +95,11 @@ static DWORD Render(Rig& rig, const PackEntry& vs, const PackEntry& ps, const DW
     dev->SetVertexShaderConstantF(2, identity[0], 4);
     const float fog[4] = {0, 1, 1, 0}; dev->SetVertexShaderConstantF(30, fog, 1);   // fog factor stays 1
     const float fogColour[4] = {0, 0, 0, 1}; dev->SetPixelShaderConstantF(2, fogColour, 1);
+    if (uvU) {   // the lit permutations: unit w, ambient and sun colour, sun direction
+        const float c0[4] = {1, 0, 0, 0}, ambient[4] = {1, 1, 1, 0}, sun[4] = {0, 0, 0, 0}, direction[4] = {0, 0, -1, 0};
+        dev->SetVertexShaderConstantF(0, c0, 1); dev->SetVertexShaderConstantF(10, ambient, 1);
+        dev->SetVertexShaderConstantF(11, sun, 1); dev->SetVertexShaderConstantF(12, direction, 1);
+    }
     if (ps.tintRegister >= 0) dev->SetPixelShaderConstantF(ps.tintRegister, tint, 1);
     dev->SetRenderState(D3DRS_ZENABLE, FALSE); dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
     dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE); dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
@@ -175,6 +192,54 @@ int main(int argc, char** argv) {
     const float blueTint[4] = {0, 0, 1, 1};
     EXPECT(Render(rig, *vs, *four, diffuse, equal, weights(255, 0, 0, 255), blueTint), 0, 0, 255, "four layers, enabled tint at full strength");
     EXPECT(Render(rig, *vs, *four, diffuse, equal, weights(255, 0, 0, 255), noTint), 255, 0, 0, "four layers, disabled tint leaves the blend");
+    // Compact vertex layouts (the high shadow tiers whose outputs leave no room for the supplied
+    // layout). Each layer samples a 2x1 texture at its own u, so a misrouted UV or weight shows as
+    // the wrong colour. Lighting differs per permutation, so only the hue pattern is compared:
+    // A red, B magenta, C yellow, D white.
+    {
+        const DWORD left[4] = {0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFFFF}, right[4] = {0xFF00FFFF, 0xFFFF00FF, 0xFFFFFF00, 0xFF000000};
+        const float u[4] = {.25f, .75f, .75f, .25f};
+        const int expected[4] = {0b100, 0b101, 0b110, 0b111};
+        const auto pattern = [](DWORD p) { const int r = Channel(p, 16), g = Channel(p, 8), b = Channel(p, 0), m = std::max({r, g, b});
+                                           return m < 24 ? -1 : int((r * 2 > m ? 4 : 0) | (g * 2 > m ? 2 : 0) | (b * 2 > m ? 1 : 0)); };
+        const char* const vsNames[] = {"MapObjSpecular_T1_060", "MapObjSpecular_T1_061", "MapObjSpecular_T1_069", "MapObjDiffuse_T1_Refl_060",
+                                       "MapObjDiffuse_T1_Refl_061", "MapObjDiffuse_T1_Refl_069", "MapObjUDiffuse_T1_Refl_061", "MapObjUSpecular_T1_061"};
+        std::vector<std::string> pixelFiles;
+        for (const auto& entry : std::filesystem::directory_iterator(dir))
+            if (entry.path().extension() == ".ps") pixelFiles.push_back(entry.path().string());
+        std::sort(pixelFiles.begin(), pixelFiles.end());
+        unsigned compactVertex = 0;
+        for (const char* name : vsNames) {
+            const auto code = ReadAll(dir + "/" + name + ".vs");
+            const PackEntry* compactVs = pack.FindVertex(code.data(), code.size());
+            Require(compactVs != nullptr, name);
+            Require(compactVs->uvUsage >= 0x80, "the former overflow permutation now has a compact layout");
+            ++compactVertex;
+            unsigned paired = 0, correct = 0; std::map<std::string, unsigned> families;
+            for (const std::string& file : pixelFiles) {
+                const auto psCode = ReadAll(file);
+                const PackEntry* compactPs = pack.FindPixel(psCode.data(), psCode.size(), 4, *compactVs);
+                if (!compactPs) continue;
+                ++paired;
+                bool ok = true;
+                const DWORD wts[4] = {DWORD(255 << 16), DWORD(255 << 8), DWORD(255), 0};
+                for (int layer = 0; layer < 4 && ok; ++layer)
+                    ok = pattern(Render(rig, *compactVs, *compactPs, left, equal, wts[layer], noTint, u, right)) == expected[layer];
+                if (ok) { ++correct; const std::string base = std::filesystem::path(file).filename().string(); ++families[base.substr(0, base.rfind('_'))]; }
+                else if (std::getenv("WMO_PROBE_VERBOSE") && paired <= 6) {
+                    std::printf("  %s:", std::filesystem::path(file).filename().c_str());
+                    for (int layer = 0; layer < 4; ++layer) { const DWORD q = Render(rig, *compactVs, *compactPs, left, equal, wts[layer], noTint, u, right);
+                        std::printf(" %06x", q); }
+                    std::printf("\n");
+                }
+            }
+            std::printf("%-30s layout %02x: %u pixel shaders have a compact variant, %u route all four layers correctly (", name, compactVs->uvUsage, paired, correct);
+            for (const auto& [family, count] : families) std::printf(" %s x%u", family.c_str(), count);
+            std::printf(" )\n");
+            Require(correct > 0, "compact layout routes UV C/D and the weights to a pixel shader");
+        }
+        std::printf("compact vertex layouts checked: %u\n", compactVertex);
+    }
     // Let DXVK's background shader compiles finish, then release everything in order.
     dev->SetStreamSource(0, nullptr, 0, 0); dev->SetStreamSource(1, nullptr, 0, 0); dev->SetIndices(nullptr);
     dev->SetVertexShader(nullptr); dev->SetPixelShader(nullptr);

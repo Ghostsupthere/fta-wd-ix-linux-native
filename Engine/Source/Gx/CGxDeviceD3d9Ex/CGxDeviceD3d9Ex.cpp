@@ -3257,7 +3257,9 @@ void CGxDeviceD3d9Ex::Draw(CGxBatch* batch, int32_t count) {
     if (count) {
         uint32_t primCount = this->PrimCalcCount(batch->m_primType, batch->m_count);
         const uint32_t startIndex = batch->m_start + (this->m_primIndexBuf->m_index >> 1);
-        if (!NativeVisualHooks::wmoDraw || !NativeVisualHooks::wmoDraw(this->m_d3dDevice, s_primitiveConversion[batch->m_primType], baseVertexIndex, batch->m_minIndex, batch->m_maxIndex - batch->m_minIndex + 1, startIndex, primCount)) {
+        if (NativeVisualHooks::instancedDraw && NativeVisualHooks::instancedDraw(this->m_d3dDevice, s_primitiveConversion[batch->m_primType], baseVertexIndex, batch->m_minIndex, batch->m_maxIndex - batch->m_minIndex + 1, startIndex, primCount)) {
+            // drawn with hardware instancing
+        } else if (!NativeVisualHooks::wmoDraw || !NativeVisualHooks::wmoDraw(this->m_d3dDevice, s_primitiveConversion[batch->m_primType], baseVertexIndex, batch->m_minIndex, batch->m_maxIndex - batch->m_minIndex + 1, startIndex, primCount)) {
             this->m_d3dDevice->DrawIndexedPrimitive(s_primitiveConversion[batch->m_primType], baseVertexIndex, batch->m_minIndex, batch->m_maxIndex - batch->m_minIndex + 1, startIndex, primCount);
         }
     } else {

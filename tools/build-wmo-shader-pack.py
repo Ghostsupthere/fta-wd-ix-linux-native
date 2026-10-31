@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generate the native client's patched shader packs for this install: the WMO layered-material
-pack (wmo_shaders.pack) and the grass-motion pack (grass_shaders.pack).
+pack (wmo_shaders.pack) the grass-motion pack (grass_shaders.pack) and the instanced-grass pack (grass_instanced.pack).
 
 Reads the MapObj shader permutations from the client's own MPQs (StormLib via
 ctypes), patches them with the supplied WarcraftXL shader-text transforms through
@@ -85,6 +85,10 @@ def main():
     (work / 'grass').mkdir()
     for index, code in enumerate(permutations(grass_blob)[:GRASS_LIVE_PERMUTATIONS]):
         (work / 'grass' / f'{GRASS}_{index}.vs').write_bytes(code)
+    grass_pixel = mpq.read(f'Shaders\\Pixel\\ps_3_0\\{GRASS}.bls')   # kept for the GPU probes
+    if grass_pixel is not None:
+        for index, code in enumerate(permutations(grass_pixel)[:GRASS_LIVE_PERMUTATIONS]):
+            (work / 'grass' / f'{GRASS}_{index}.ps').write_bytes(code)
     compiler = work / 'd3dcompiler_47.dll'; shutil.copy2(args.compiler_dll, compiler)
     exe = work / 'wmo_pack.exe'
     subprocess.run(['x86_64-w64-mingw32-g++', '-std=c++20', '-O2', '-static', '-I', str(ROOT),
@@ -98,9 +102,13 @@ def main():
     print('wrote', args.out)
     grass_out = args.out.parent / 'grass_shaders.pack'
     grass_temporary = grass_out.with_suffix('.pack.tmp')
-    subprocess.run(['wine', str(exe), '--grass', 'Z:' + str(work / 'grass'), 'Z:' + str(grass_temporary)], env=env, cwd=work, check=True)
+    instanced_out = args.out.parent / 'grass_instanced.pack'
+    instanced_temporary = instanced_out.with_suffix('.pack.tmp')
+    subprocess.run(['wine', str(exe), '--grass', 'Z:' + str(work / 'grass'), 'Z:' + str(grass_temporary), 'Z:' + str(instanced_temporary)], env=env, cwd=work, check=True)
     grass_temporary.replace(grass_out)
+    instanced_temporary.replace(instanced_out)
     print('wrote', grass_out)
+    print('wrote', instanced_out)
 
 if __name__ == '__main__':
     main()
