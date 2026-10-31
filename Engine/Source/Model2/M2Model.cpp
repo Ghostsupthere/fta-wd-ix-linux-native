@@ -5951,6 +5951,12 @@ void CM2Model::Animate() {
         return;
     }
 
+#if defined(WOWDECOMP_LINUX)
+    if (this->m_attachmentId == 19 && NativeVisualHooks::gliderUpdate) {
+        NativeVisualHooks::gliderUpdate(this);
+    }
+#endif
+
     if (this->m_attachParent) {
         this->m_attachParent->Animate();
     } else if (this->m_fFlags & 0x1000) {
@@ -6265,6 +6271,12 @@ void CM2Model::AttachToParent(CM2Model* parent, uint32_t id, const C3Vector* pos
     }
 
     this->m_refCount++;
+
+#if defined(WOWDECOMP_LINUX)
+    if (id == 19 && NativeVisualHooks::gliderForget) {
+        NativeVisualHooks::gliderForget(this);
+    }
+#endif
 }
 
 // VERIFY: c5304a4f auto

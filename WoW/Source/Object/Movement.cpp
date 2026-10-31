@@ -1,3 +1,6 @@
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/Object/Linux/WxlGoblinGlider.h"
+#endif
 #include "Movement.h"
 #include <cmath>
 #include <cstddef>
@@ -5181,6 +5184,15 @@ int32_t CMovement_C::UpdatePlayerMovement(uint32_t time) {
     return this->m_moveQueue.Head() || (this->m_flags & 0xC010FF);
 }
 
+#if defined(WOWDECOMP_LINUX)
+// wxl-goblin-glider: the server-granted steering runs around the stock movement step.
+void CMovement_C::ApplyMovement(uint32_t time, uint32_t elapsed) {
+    WxlGliderStepScope glider(this, time, elapsed);
+    ApplyMovementStock(time, elapsed);
+}
+
+#define ApplyMovement ApplyMovementStock
+#endif
 // VERIFY: 18abb990 manual
 // OFFSET: 0x006EAC40
 void CMovement_C::ApplyMovement(uint32_t time, uint32_t elapsed) {
@@ -5260,6 +5272,9 @@ void CMovement_C::ApplyMovement(uint32_t time, uint32_t elapsed) {
         }
     }
 }
+#if defined(WOWDECOMP_LINUX)
+#undef ApplyMovement
+#endif
 
 // VERIFY: d4ff9c2f manual
 // OFFSET: 0x006F09F0

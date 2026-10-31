@@ -780,6 +780,10 @@ class CGUnit_C : public CGObject_C, public CGUnit {
     bool AffectedByAura(int32_t auraType, const SpellRec* spell) const;
     bool IsInMyPartyOrRaid(const CGUnit_C* unit) const;
     bool IsInMyParty(const CGUnit_C* unit) const;
+#if defined(WOWDECOMP_LINUX)
+    bool IsInMyPartyStock(const CGUnit_C* unit) const;
+    bool IsInMyPartyOrRaidStock(const CGUnit_C* unit) const;
+#endif
     static uint8_t GetThreatSituation(const WOWGUID& guid);
     bool CalculateThreat(const WOWGUID& guid, uint8_t* status, uint8_t* rawPercent, float* percent, int32_t* threat);
     UnitThreat* CreateThreatEntry(const WOWGUID& guid);

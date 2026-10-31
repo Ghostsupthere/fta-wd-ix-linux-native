@@ -371,6 +371,56 @@ quest-objective mobs from the opcode-200 quest tracker).
 mouse/by walking around it; the front marker of the ring should follow the creature's facing, not
 rotate with the camera.
 
+### Required add-ons, NPCBot targeting, NPCBot enchant, Lone Wolf, Goblin Glider (2026-10-31)
+
+Ported from the supplied modules; all build and link, their pure logic has ASan/UBSan tests, **none is
+seen in game**. Each has a `WXL_<NAME>=0` profile switch.
+
+- **wxl-required-addons** (`WxlRequiredAddons.{h,cpp}`): the module's Lua policy script, unchanged, runs
+  in the GlueXML context right after GlueXML loads (so character select enforces it before the world
+  loads) and in the in-world context after FrameXML/add-ons load (ACP). Add-ons whose TOC has
+  `## X-WarcraftXL-Required: 1` (ten or more in the FTA client: ACP, AIO_Client, Transmogrification,
+  NPCBotPaperdoll, ...) are force-enabled and their checkboxes locked. `WXL_REQUIRED_ADDONS=0` disables.
+- **wxl-npcbot-targets** and **wxl-npcbot-resurrection** (`WxlNpcBotTargets.{h,cpp}`, rules in
+  `Engine/Source/ModernAssets/WxlNpcBot/NpcBotTargetRules.hpp`, `tests/wxl_npcbot_targets_test.cpp`): a
+  server-grouped creature (HighGuid::Unit, in the native party/raid roster, the other side being the
+  active player) passes the party/raid membership checks (`CGUnit_C::IsInMyPartyOrRaid` 0x718CA0 and
+  `IsInMyParty` 0x718D70 - the reconstructed names are the reverse of what the README says, the
+  addresses and roster callees are what matter), and a dead grouped bot is a valid target of the 36
+  class resurrection spell IDs (range check view, click and hover paths). `WXL_NPCBOT_TARGETS=0` /
+  `WXL_NPCBOT_RESURRECTION=0` disable.
+- **wxl-npcbot-enchant** (`WxlNpcBotEnchant.{h,cpp}`): `WarcraftXL_GetPendingItemEnchant` and
+  `WarcraftXL_CancelPendingItemEnchant` for the NPCBot Paperdoll add-on, on the typed
+  `PendingSpellCast`; the cancel calls `Spell_C_CancelSpell` directly because `SpellStopTargeting`
+  rejects tainted callers. The server half (`.botenchant`) is not part of this client port.
+- **wxl-lone-wolf** (`WxlLoneWolf.{h,cpp}`, `LoneWolfIntent.hpp`, `tests/wxl_lone_wolf_intent_test.cpp`):
+  with aura 601666, ranged hunter spells (family 9, damage class 3) get a zero minimum range
+  (`Spell_C_GetMinMaxRange`, `SpellRec::GetMinRange`), Auto Shot no longer switches to melee at
+  point-blank (`CGUnit_C::IsInMeleeRange`), and an accepted ranged shot hands back to Auto Shot. The
+  handoff is the module's own state machine; its seven register-ABI gateways became observers in
+  `SendPendingCast`, `OnSpellGo` (normal vs early finish), `ReleasePendingSpellCast` and the two
+  auto-repeat setters. The aura watcher is registered as a game script (below). Needs the matching
+  server `Spell::CheckRange` change.
+- **wxl-goblin-glider** (`WxlGoblinGlider.{h,cpp}`, `GlidePolicy.hpp` with the module's 61,505-check
+  policy test plus new velocity/visual checks, `tests/wxl_goblin_glider_test.cpp`): `CMovement_C::ApplyMovement`
+  runs a `WxlGliderStepScope` around the stock step (steering rebase + heading, terminal-speed
+  override), `CMovementShared::CalcFallDistance` takes the tuned terminal through the module's exact
+  curve transform, and the glider attachment (attachment 19, `Creature\DinkleGlider\DinkleGlider*.m2`)
+  plays Open then Opened through `NativeVisualHooks::gliderUpdate/gliderForget` called from
+  `CM2Model::Animate/AttachToParent`. The `WXLGLIDE` self-whisper handshake needs the server
+  `mod-goblin-glider` (present in `AzerothCore_Windows/modules`). Native stack-copy of the movement for
+  the tuned velocity became `ScaledFeatherVelocity`, the safe-fall branch of the same accessor.
+- **Game scripts** (`WxlGameScripts.{h,cpp}`): the Windows core runs each module's Lua watcher once in
+  every new in-world Lua state; here `WxlRegisterGameScript` stores it and `WxlRunGameScripts` runs it
+  after the in-world UI has loaded.
+
+**Not ported:** `wxl-db2` publishes the `wxl.db2` v1 C API for out-of-core extension DLLs and decodes
+WDC tables through the x64 asset host; nothing in the supplied tree consumes it and the native client
+has neither the host nor an extension loader, so there is nothing to attach it to. `wxl-living-azeroth`'s
+grass instancing is already ported; its clustered surface lights (terrain/model/WMO shader patching,
+doodad light tables, the Environment page settings, obstruction rays) are a separate renderer-sized
+project and are not started.
+
 ### Game-object editor: native implementation (2026-10-31)
 
 `WoW/Source/Ui/Linux/WxlGameObjectEditor.{h,cpp}` ports `wxl-gameobject-editor` v1.4.0: a
@@ -898,7 +948,9 @@ new native implementation and acceptance test.
 | `wxl-combat-readability` | Lua settings bridge ported (2026-10-31). Stores values only: its renderer is `wxl-unit-outline`, which is not ported. |
 | `wxl-selcircle-poc`, `wxl-quest-marker`, `wxl-unit-outline` | Not ported, deliberately: disabled in the checked profile (`WXL_QUEST_RENDERING=0`, `WXL_UNIT_OVERLAYS=0`; `SelCirclePoc::InstallModule` returns immediately without `WXL_QUEST_RENDERING`). |
 | `wxl-underwear` | Ported natively (2026-10-31); see "Underwear and gossip" below. In-game acceptance pending. |
-| `wxl-db2`, `wxl-living-azeroth`, `wxl-goblin-glider`, `wxl-lone-wolf`, `wxl-npcbot-enchant`, `wxl-npcbot-targets`, `wxl-required-addons` | Not ported. These require separate native API, gameplay, or addon-contract review before they can be claimed supported. |
+| `wxl-required-addons`, `wxl-npcbot-targets` (+ resurrection), `wxl-npcbot-enchant`, `wxl-lone-wolf`, `wxl-goblin-glider` | Ported natively (2026-10-31); see "Required add-ons, NPCBot targeting, ..." above. In-game acceptance pending. |
+| `wxl-living-azeroth` | Grass instancing ported earlier; clustered surface lights, doodad light tables and the Environment settings are not ported (renderer-sized). |
+| `wxl-db2` | Not ported: an extension-DLL service with no consumer in this tree and no host/extension loader on the native client. |
 | `wxl-skybox-control` | Native Lua API and DayNight application already exist (`WxlSkyboxOverride`). It needs scenario verification. |
 | `wxl-visual-time` | Native Lua API and time application already exist (`WxlVisualTimeOverride`). It needs scenario verification. |
 | `wxl-weather-control` | Native Lua API, natural-weather restoration, and weather application already exist (`WxlWeatherOverride`). It needs scenario verification. |

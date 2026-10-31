@@ -1,4 +1,8 @@
 #include "Spell_C.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/Magic/MagicClient/Linux/WxlNpcBotTargets.h"
+#include "WoW/Source/Magic/MagicClient/Linux/WxlLoneWolf.h"
+#endif
 #include "WoW/Source/Magic/MagicClient/SpellEnums.h"
 #include "WoW/Source/Magic/Types.h"
 #include "Engine/Source/Base/CDataStore.h"
@@ -228,6 +232,9 @@ int32_t Spell_C_GetAutoRepeatingSpell() {
 // VERIFY: e95a2641 auto
 // OFFSET: 0x007FE140
 void Spell_C_SetAutoRangedCombatSpell(int32_t spellId) {
+#if defined(WOWDECOMP_LINUX)
+    WxlLoneWolfObserveSelect();
+#endif
     if (s_autoRangedCombatSpell != spellId) {
         s_autoRangedCombatSpell = spellId;
 
@@ -779,6 +786,9 @@ PendingSpellCast* CreatePendingSpellCast(bool assignCastCount) {
 // VERIFY: e1f3a7c3 manual
 // OFFSET: 0x00805100
 void ReleasePendingSpellCast(PendingSpellCast* cast) {
+#if defined(WOWDECOMP_LINUX)
+    WxlLoneWolfObserveRelease(cast);
+#endif
     for (PendingSpellCast* node = s_pendingSpellCasts.Head(); node; node = s_pendingSpellCasts.Next(node)) {
         if (node == cast) {
             s_freePendingSpellCasts.LinkToTail(cast);
@@ -1743,6 +1753,9 @@ void SpellHistory::GarbageCollect(uint32_t time) {
 // VERIFY: 67dd3e6d manual
 // OFFSET: 0x0080E1B0
 void PendingSpellCast::OnSpellGo(CDataStore* msg) {
+#if defined(WOWDECOMP_LINUX)
+    WxlLoneWolfGoScope loneWolfGo(this);
+#endif
     WOWGUID castItem = this->m_data.m_castItem;
     WOWGUID caster = this->m_data.m_caster;
     int32_t spellId = this->m_data.m_spellId;
@@ -1883,6 +1896,9 @@ void PendingSpellCast::OnSpellGo(CDataStore* msg) {
 
     if (!this->HasValidTransports()) {
         if (!(this->m_data.m_castFlags & 0x1) && unit) {
+#if defined(WOWDECOMP_LINUX)
+            WxlLoneWolfObserveFinish(this, false, this->m_data.m_objectTarget.m_guid);
+#endif
             FinishPendingSpellCast(this, &spell, unit);
         } else {
             ReleasePendingSpellCast(this);
@@ -2392,6 +2408,9 @@ void PendingSpellCast::OnSpellGo(CDataStore* msg) {
     }
 
     if (!(this->m_data.m_castFlags & 0x1) && unit) {
+#if defined(WOWDECOMP_LINUX)
+        WxlLoneWolfObserveFinish(this, true, this->m_data.m_objectTarget.m_guid);
+#endif
         FinishPendingSpellCast(this, &spell, unit);
     } else {
         ReleasePendingSpellCast(this);
@@ -2677,6 +2696,31 @@ void Spell_C::GetSpellRange(CGUnit_C* caster, int32_t spellId, float* minRange, 
     }
 }
 
+#if defined(WOWDECOMP_LINUX)
+// wxl-npcbot-resurrection: hover/SpellCanTargetUnit is a query, so the mask is always restored.
+bool Spell_C::HandleSpriteRay(const WOWGUID& guid, bool checkRange) {
+    PendingSpellCast* const previous = s_targetingSpell;
+    const uint32_t original = s_needTargets;
+    const uint32_t presented = WxlNpcBotResurrectionMaskFor(original, ClntObjMgrObjectPtr(guid, TYPE_OBJECT, __FILE__, __LINE__), previous);
+
+    if (presented == original) {
+        return HandleSpriteRayStock(guid, checkRange);
+    }
+
+    s_needTargets = presented;
+    bool result = HandleSpriteRayStock(guid, checkRange);
+
+    if (s_targetingSpell == previous) {
+        s_needTargets = original;
+    }
+
+    return result;
+}
+#endif
+
+#if defined(WOWDECOMP_LINUX)
+#define HandleSpriteRay HandleSpriteRayStock
+#endif
 // VERIFY: e951a560 manual
 // OFFSET: 0x00803A50
 bool Spell_C::HandleSpriteRay(const WOWGUID& guid, bool checkRange) {
@@ -2822,6 +2866,9 @@ bool Spell_C::HandleSpriteRay(const WOWGUID& guid, bool checkRange) {
 
     return true;
 }
+#if defined(WOWDECOMP_LINUX)
+#undef HandleSpriteRay
+#endif
 
 // VERIFY: 402f8659 auto
 // OFFSET: 0x007FD950
@@ -3543,6 +3590,9 @@ void SpellRec::GetMinRange(const SpellRec* spell, float* range) {
     SpellRangeRec* rec = g_spellRangeDB.GetRecord(spell->m_rangeIndex);
 
     if (!rec) {
+#if defined(WOWDECOMP_LINUX)
+        WxlLoneWolfAdjustDisplayMinimum(spell, range);
+#endif
         return;
     }
 
@@ -3556,8 +3606,23 @@ void SpellRec::GetMinRange(const SpellRec* spell, float* range) {
     } else {
         *range = rec->m_rangeMin[friendly];
     }
+
+#if defined(WOWDECOMP_LINUX)
+    WxlLoneWolfAdjustDisplayMinimum(spell, range);
+#endif
 }
 
+#if defined(WOWDECOMP_LINUX)
+// wxl-lone-wolf: zero minimum range for ranged hunter spells while the Lone Wolf aura is active.
+static void Spell_C_GetMinMaxRangeStock(CGUnit_C* caster, const SpellRec* spell, float* minRange, float* maxRange, int32_t friendly, CGObject_C* target);
+
+void Spell_C_GetMinMaxRange(CGUnit_C* caster, const SpellRec* spell, float* minRange, float* maxRange, int32_t friendly, CGObject_C* target) {
+    Spell_C_GetMinMaxRangeStock(caster, spell, minRange, maxRange, friendly, target);
+    WxlLoneWolfAdjustMinimum(caster, spell, minRange);
+}
+
+#define Spell_C_GetMinMaxRange Spell_C_GetMinMaxRangeStock
+#endif
 // VERIFY: 823383e2 manual
 // OFFSET: 0x007FF480
 void Spell_C_GetMinMaxRange(CGUnit_C* caster, const SpellRec* spell, float* minRange, float* maxRange, int32_t friendly, CGObject_C* target) {
@@ -3637,6 +3702,9 @@ void Spell_C_GetMinMaxRange(CGUnit_C* caster, const SpellRec* spell, float* minR
 
     *maxRange = *maxRange + bonus;
 }
+#if defined(WOWDECOMP_LINUX)
+#undef Spell_C_GetMinMaxRange
+#endif
 
 // VERIFY: ac5e661b manual
 // OFFSET: 0x007FF770
@@ -4883,6 +4951,9 @@ bool SpellAppliesNonStanceShapeshift(const SpellRec* spell) {
 // VERIFY: 28d55e5b manual
 // OFFSET: 0x00800A00
 void Spell_C_SetAutoRepeatingSpell(int32_t spellId) {
+#if defined(WOWDECOMP_LINUX)
+    WxlLoneWolfObserveRepeat();
+#endif
     if (s_autoRepeatingSpell == spellId) {
         return;
     }
@@ -7028,6 +7099,11 @@ bool Spell_C_HaveEquippedSpellItems(CGUnit_C* unit, const SpellRec* spell, bool 
 // VERIFY: 66bd63ba manual
 // OFFSET: 0x00809610
 bool Spell_C_RangeCheckSelected(CGUnit_C* caster, const SpellRec* spell, WOWGUID target, uint8_t* inRange, bool report, PendingSpellCast* cast) {
+#if defined(WOWDECOMP_LINUX)
+    SpellRec resurrectionView;
+    spell = WxlNpcBotResurrectionRangeView(caster, spell, target, resurrectionView);
+#endif
+
     if (!target) {
         target = CGGameUI::m_lockedTarget;
     }
@@ -7625,6 +7701,9 @@ int32_t Spell_C_PrepareMissileTrajectoryCast(CGUnit_C* caster, PendingSpellCast*
 // VERIFY: 1c2888dd auto
 // OFFSET: 0x0080AC90
 void Spell_C::SendPendingCast(PendingSpellCast* cast, bool hideVisuals) {
+#if defined(WOWDECOMP_LINUX)
+    WxlLoneWolfSendScope loneWolfSend(cast);
+#endif
     WOWGUID castItem = cast->m_data.m_castItem == cast->m_data.m_caster ? WOWGUID{ 0 } : cast->m_data.m_castItem;
 
     if (s_spellWorldObject) {
@@ -7847,7 +7926,14 @@ void Spell_C::SendPendingCast(PendingSpellCast* cast, bool hideVisuals) {
     }
 
     msg.Finalize();
+#if defined(WOWDECOMP_LINUX)
+    // Only the plain CMSG_CAST_SPELL (not an item use or a pet cast) can carry a Lone Wolf handoff.
+    const WxlLoneWolfCastSend loneWolfCast = WxlLoneWolfBeforeCastSend(cast, !castItem && caster->IsActivePlayer() && !(spell.m_attributesExF & 0x40000));
+#endif
     ClientServices::Send2(&msg);
+#if defined(WOWDECOMP_LINUX)
+    WxlLoneWolfAfterCastSend(loneWolfCast);
+#endif
     s_targetingSpell = nullptr;
     CGInputControl* input = CGInputControl::GetActive();
     input->m_mouseModeFlags &= ~0x10u;
@@ -8549,6 +8635,39 @@ bool Spell_C::CastSpell(int32_t spellId, const CGItem_C* item, WOWGUID target, b
     return Spell_C_CastSpell(ClntObjMgrGetActivePlayerObj(), spellId, item, target, nullptr, confirmed);
 }
 
+#if defined(WOWDECOMP_LINUX)
+// wxl-npcbot-resurrection: a dead grouped NPCBot is a valid corpse target for the class resurrections.
+static bool Spell_C_HandleSpriteClickStock(CGObject_C* object, PendingSpellCast* cast);
+
+bool Spell_C_HandleSpriteClick(CGObject_C* object, PendingSpellCast* cast) {
+    PendingSpellCast* const previous = s_targetingSpell;
+
+    if (!cast) {
+        cast = previous;
+    }
+
+    const uint32_t original = s_needTargets;
+    const uint32_t presented = WxlNpcBotResurrectionMaskFor(original, object, cast);
+
+    if (presented == original) {
+        return Spell_C_HandleSpriteClickStock(object, cast);
+    }
+
+    // Native success consumes the mask; a failure restores it.
+    s_needTargets = presented;
+    bool result = Spell_C_HandleSpriteClickStock(object, cast);
+
+    if (!result && s_targetingSpell == previous) {
+        s_needTargets = original;
+    }
+
+    return result;
+}
+#endif
+
+#if defined(WOWDECOMP_LINUX)
+#define Spell_C_HandleSpriteClick Spell_C_HandleSpriteClickStock
+#endif
 // VERIFY: e8a1babb manual
 // OFFSET: 0x0080BC80
 bool Spell_C_HandleSpriteClick(CGObject_C* object, PendingSpellCast* cast) {
@@ -8769,6 +8888,9 @@ bool Spell_C_HandleSpriteClick(CGObject_C* object, PendingSpellCast* cast) {
 
     return result;
 }
+#if defined(WOWDECOMP_LINUX)
+#undef Spell_C_HandleSpriteClick
+#endif
 
 // VERIFY: 0d56c0f6 manual
 // OFFSET: 0x0080C3E0

@@ -25,6 +25,9 @@ class CMovementShared : public CPassenger {
     static float s_twoPi;
 
     static float __stdcall CalcFallDistance(float time, int32_t safeFall, float velocity);
+#if defined(WOWDECOMP_LINUX)
+    static float __stdcall CalcFallDistanceStock(float time, int32_t safeFall, float velocity);
+#endif
     static void StopAllLogging();
     static float TimeToFallDistance(float distance, int32_t safeFall);
 

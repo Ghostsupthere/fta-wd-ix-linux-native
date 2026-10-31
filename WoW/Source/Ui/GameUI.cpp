@@ -1,3 +1,8 @@
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/Ui/Linux/WxlRequiredAddons.h"
+#include "WoW/Source/Ui/Linux/WxlGameScripts.h"
+#include "WoW/Source/Magic/MagicClient/Linux/WxlLoneWolf.h"
+#endif
 #include "GameUI.h"
 #include "WoW/Source/DB/Rec/FileDataRec.h"
 #include "WoW/Source/DB/Rec/MovieFileDataRec.h"
@@ -1826,6 +1831,10 @@ void CGGameUI::InitializeFrameXML() {
     sizeEvent.m_data.m_h = static_cast<int32_t>(windowRect.maxY - windowRect.minY);
     CGGameUI::HandleDisplaySizeChanged(sizeEvent);
 
+#if defined(WOWDECOMP_LINUX)
+    WxlRunRequiredAddonsPolicy();
+    WxlRunGameScripts();
+#endif
     CGGameUI::m_initialized = 1;
     EventRegister(EVENT_ID_IDLE, CGGameUI::Idle);
     g_theGxDevicePtr->AddDeviceRestoredCallback(UpdateAllPortraits);
@@ -2726,6 +2735,9 @@ void CGGameUI::ClearTarget(WOWGUID guid, int32_t a2) {
         ClientServices::Send2(&msg);
         CGSpellBook::UpdateUsable();
         FrameScript_SignalEvent(SCRIPT_EVENT_PLAYER_TARGET_CHANGED, nullptr);
+#if defined(WOWDECOMP_LINUX)
+        WxlLoneWolfTargetChanged();
+#endif
     }
 }
 
@@ -2864,6 +2876,9 @@ void CGGameUI::Target(WOWGUID guid) {
     CGGameUI::SendTarget(guid);
     CGSpellBook::UpdateUsable();
     FrameScript_SignalEvent(SCRIPT_EVENT_PLAYER_TARGET_CHANGED, nullptr);
+#if defined(WOWDECOMP_LINUX)
+    WxlLoneWolfTargetChanged();
+#endif
 
     if (g_stopAutoAttackOnTargetChangeCVar->m_intValue) {
         if (Spell_C_GetAutoRepeatingSpell()) {

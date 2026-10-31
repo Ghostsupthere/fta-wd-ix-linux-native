@@ -50,6 +50,8 @@
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
 #include "WoW/Source/Object/ObjectClient/Linux/WxlSelectionCircle.h"
+#include "WoW/Source/Magic/MagicClient/Linux/WxlNpcBotTargets.h"
+#include "WoW/Source/Magic/MagicClient/Linux/WxlLoneWolf.h"
 #endif
 #include "WoW/Source/Object/CMoveSpline.h"
 #include "WoW/Source/Object/CreatureStats.h"
@@ -6737,6 +6739,12 @@ uint32_t CGUnit_C::GetCanFly() const {
 // VERIFY: 54d048fe manual
 // OFFSET: 0x0071B820
 int32_t CGUnit_C::IsInMeleeRange(CGUnit_C* target) const {
+#if defined(WOWDECOMP_LINUX)
+    if (WxlLoneWolfSuppressMeleeSwitch(this, target)) {
+        return 0;
+    }
+#endif
+
     CGUnit* targetUnit = target ? static_cast<CGUnit*>(target) : nullptr;
     float range = this->m_unit->m_unitFieldCombatreach + targetUnit->m_unit->m_unitFieldCombatreach + 1.3333334f;
 
@@ -15251,6 +15259,14 @@ int32_t Packet_SMSG_POWER_UPDATE(void* param, NETMESSAGE msgId, uint32_t time, C
     return 1;
 }
 
+#if defined(WOWDECOMP_LINUX)
+// wxl-npcbot-targets: a server-grouped NPCBot passes the player's roster check.
+bool CGUnit_C::IsInMyParty(const CGUnit_C* unit) const {
+    return IsInMyPartyStock(unit) || WxlNpcBotGroupedMember(this, unit, true);
+}
+
+#define IsInMyParty IsInMyPartyStock
+#endif
 // VERIFY: 62c28594 manual
 // OFFSET: 0x00718D70
 bool CGUnit_C::IsInMyParty(const CGUnit_C* unit) const {
@@ -15291,6 +15307,9 @@ bool CGUnit_C::IsInMyParty(const CGUnit_C* unit) const {
 
     return false;
 }
+#if defined(WOWDECOMP_LINUX)
+#undef IsInMyParty
+#endif
 
 // VERIFY: 9ca6f0b9 manual
 // OFFSET: 0x0072CCA0
@@ -15320,6 +15339,14 @@ void CGUnit_C::ExecuteClientControlUpdate(WOWGUID guid, uint8_t state) {
     }
 }
 
+#if defined(WOWDECOMP_LINUX)
+// wxl-npcbot-targets: a server-grouped NPCBot passes the player's roster check.
+bool CGUnit_C::IsInMyPartyOrRaid(const CGUnit_C* unit) const {
+    return IsInMyPartyOrRaidStock(unit) || WxlNpcBotGroupedMember(this, unit, false);
+}
+
+#define IsInMyPartyOrRaid IsInMyPartyOrRaidStock
+#endif
 // VERIFY: 05cda30d manual
 // OFFSET: 0x00718CA0
 bool CGUnit_C::IsInMyPartyOrRaid(const CGUnit_C* unit) const {
@@ -15356,6 +15383,9 @@ bool CGUnit_C::IsInMyPartyOrRaid(const CGUnit_C* unit) const {
 
     return false;
 }
+#if defined(WOWDECOMP_LINUX)
+#undef IsInMyPartyOrRaid
+#endif
 
 // VERIFY: 0de3c03c auto
 // OFFSET: 0x0073C830

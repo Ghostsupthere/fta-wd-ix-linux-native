@@ -45,6 +45,9 @@
 #include "WoW/Source/Ui/Linux/WxlUnderwear.h"
 #include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
 #include "WoW/Source/Ui/Linux/WxlCombatReadability.h"
+#include "WoW/Source/Ui/Linux/WxlNpcBotEnchant.h"
+#include "WoW/Source/Magic/MagicClient/Linux/WxlLoneWolf.h"
+#include "WoW/Source/Object/Linux/WxlGoblinGlider.h"
 #include "WoW/Source/Ui/Linux/WxlWeatherOverride.h"
 #include "WoW/Source/WorldClient/Linux/WxlSkyboxOverride.h"
 #include "WoW/Source/Ui/RaidInfo.h"
@@ -4664,6 +4667,9 @@ void ScriptEventsRegisterFunctions() {
     WxlRegisterUnderwearLua();
     WxlRegisterAnimationLabLua();
     WxlRegisterCombatReadabilityLua();
+    WxlRegisterNpcBotEnchantLua();
+    WxlRegisterLoneWolfLua();
+    WxlRegisterGoblinGliderLua();
 #endif
 }
 

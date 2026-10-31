@@ -1,4 +1,7 @@
 #include "CGlueMgr.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/Ui/Linux/WxlRequiredAddons.h"
+#endif
 #include <cmath>
 #include <cstdarg>
 #include <cstring>
@@ -758,6 +761,9 @@ void CGlueMgr::Resume() {
             }
 #endif
 
+#if defined(WOWDECOMP_LINUX)
+            WxlRunRequiredAddonsPolicy();
+#endif
             FrameScript_SignalEvent(GLUE_EVENT_FRAMES_LOADED, nullptr);
             CGlueMgr::InitializeFFX();
 

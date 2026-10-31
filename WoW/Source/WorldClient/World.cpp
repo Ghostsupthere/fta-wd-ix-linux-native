@@ -8,6 +8,8 @@
 #include "WoW/Source/Ui/Linux/WxlGameObjectEditor.h"
 #include "WoW/Source/Ui/Linux/WxlUnderwear.h"
 #include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
+#include "WoW/Source/Magic/MagicClient/Linux/WxlLoneWolf.h"
+#include "WoW/Source/Object/Linux/WxlGoblinGlider.h"
 #endif
 #include <cfloat>
 #include "WoW/Source/WorldClient/WorldConstants.h"
@@ -1504,6 +1506,8 @@ void World::UnloadMap() {
     WxlGameObjectEditorWorldLeave();
     WxlUnderwearWorldLeave();
     WxlAnimationLabWorldLeave();
+    WxlLoneWolfWorldLeave();
+    WxlGoblinGliderWorldReset();
     WxlReleaseModernVisuals();
 #endif
     CWorldScene::ClearObjectFadeoutList();

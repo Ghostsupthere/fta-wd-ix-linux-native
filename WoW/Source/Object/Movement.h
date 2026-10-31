@@ -294,6 +294,9 @@ class CMovement_C : public CMovementShared {
     uint32_t RequestMove(uint32_t time, uint32_t elapsed, const C3Vector& move);
     int32_t PlotUnitSplineMovement(uint32_t time, uint32_t elapsed, C3Vector* position);
     void ApplyMovement(uint32_t time, uint32_t elapsed);
+#if defined(WOWDECOMP_LINUX)
+    void ApplyMovementStock(uint32_t time, uint32_t elapsed);
+#endif
     void ExecuteMovement(uint32_t time, uint32_t lastTime);
     int32_t IsSlopeFallable(uint32_t facet, const C3Vector& move) const;
     C3Vector GetSteepSurfacePushNormal(uint32_t facet, const C4Plane* planes, uint32_t count);

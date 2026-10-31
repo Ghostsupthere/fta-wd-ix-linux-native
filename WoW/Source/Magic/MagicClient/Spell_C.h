@@ -141,6 +141,9 @@ class Spell_C {
     static void SendPendingCast(PendingSpellCast* cast, bool hideVisuals);
     static void GetSpellRange(CGUnit_C* caster, int32_t spellId, float* minRange, float* maxRange, CGObject_C* target);
     static bool HandleSpriteRay(const WOWGUID& guid, bool checkRange);
+#if defined(WOWDECOMP_LINUX)
+    static bool HandleSpriteRayStock(const WOWGUID& guid, bool checkRange);
+#endif
     static bool CastSpell(int32_t spellId, const CGItem_C* item, WOWGUID target, bool confirmed);
 };
 

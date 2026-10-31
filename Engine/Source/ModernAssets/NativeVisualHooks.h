@@ -33,4 +33,8 @@ inline bool (*mouseInput)(int kind,int button,int x,int y)=nullptr;
 // Character Animation Studio: called at the top of CM2Model::SetBoneSequence, before the request is
 // queued or applied. The callee may replace *sequenceId (never with the unset sentinel).
 inline void (*m2SetBoneSequence)(CM2Model* model,unsigned boneId,unsigned* sequenceId)=nullptr;
+// Goblin glider attachment: gliderUpdate runs once per frame for a model attached at attachment 19;
+// gliderForget when such a model is (re)attached.
+inline void (*gliderUpdate)(CM2Model* model)=nullptr;
+inline void (*gliderForget)(CM2Model* model)=nullptr;
 }

@@ -1,3 +1,7 @@
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/ModernAssets/WxlGoblinGlider/GlidePolicy.hpp"
+#include "WoW/Source/Object/Linux/WxlGoblinGlider.h"
+#endif
 #include "MovementShared.h"
 #include <cmath>
 #include <cstdio>
@@ -23,6 +27,16 @@ float CMovementShared::s_safeFallTerminalVelocity = 7.0f;
 // STATIC: 0x00B2D9F0
 float CMovementShared::s_twoPi = 6.2831855f;
 
+#if defined(WOWDECOMP_LINUX)
+// wxl-goblin-glider: a tuned terminal speed for the authorized local step, evaluated on the client's
+// own fall curve (the native curve is scaled, no shared constant is patched).
+float __stdcall CMovementShared::CalcFallDistance(float time, int32_t safeFall, float velocity) {
+    return wxl::glider::FallDistance(time, safeFall, velocity, WxlGliderTerminalSink(),
+                                     [](float t, int s, float v) { return CMovementShared::CalcFallDistanceStock(t, s, v); });
+}
+
+#define CalcFallDistance CalcFallDistanceStock
+#endif
 // VERIFY: d453c161 auto
 // OFFSET: 0x00986F00
 float __stdcall CMovementShared::CalcFallDistance(float time, int32_t safeFall, float velocity) {
@@ -39,6 +53,9 @@ float __stdcall CMovementShared::CalcFallDistance(float time, int32_t safeFall, 
 
     return time * (velocity + time * 9.6455526f);
 }
+#if defined(WOWDECOMP_LINUX)
+#undef CalcFallDistance
+#endif
 
 // VERIFY: dde025a2 auto
 // OFFSET: 0x00987680
