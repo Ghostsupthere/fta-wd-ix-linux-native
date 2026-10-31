@@ -4,7 +4,10 @@
 // (register limits, vertex texture fetch, loops and the 'rep'/'break' constructs). It does not start
 // the game or alter client data.
 //
-//   wxl-surface-lights-gpu-probe <light_shaders.pack>
+//   wxl-surface-lights-gpu-probe <light_shaders.pack> [wmo_shaders.pack]
+//
+// With the WMO layered-material pack it also creates every one of its shaders, including the layered
+// variants of the light-patched WMO vertex shaders.
 #include <d3d9.h>
 #include <SDL3/SDL.h>
 #include <dlfcn.h>
@@ -12,6 +15,7 @@
 #include <cstdlib>
 #include <string>
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/LightShaderPack.hpp"
+#include "Engine/Source/ModernAssets/WxlWmo/WmoShaderPack.h"
 
 namespace sl = wxl::surfacelights;
 static void Require(bool v, const char* what) { if (!v) { std::fprintf(stderr, "FAILED: %s\n", what); std::exit(1); } }
@@ -58,6 +62,26 @@ int main(int argc, char** argv) {
     for (unsigned g = 1; g <= 3; ++g) {
         std::printf("%-8s vertex %4u created, %u rejected; pixel %4u created, %u rejected\n", names[g], created[g][0], failed[g][0], created[g][1], failed[g][1]);
         bad += failed[g][0] + failed[g][1];
+    }
+    unsigned wmoVertex = 0, wmoPixel = 0, wmoBad = 0;
+    if (argc >= 3) {
+        wxl::wmo::ShaderPack wmoPack;
+        Require(wmoPack.Load(argv[2], error), error.c_str());
+        for (const wxl::wmo::PackEntry& e : wmoPack.Entries()) {
+            HRESULT hr;
+            if (e.kind == 0) { IDirect3DVertexShader9* vs = nullptr; hr = dev->CreateVertexShader(reinterpret_cast<const DWORD*>(e.bytecode.data()), &vs); if (vs) vs->Release(); ++wmoVertex; }
+            else { IDirect3DPixelShader9* ps = nullptr; hr = dev->CreatePixelShader(reinterpret_cast<const DWORD*>(e.bytecode.data()), &ps); if (ps) ps->Release(); ++wmoPixel; }
+            if (FAILED(hr)) { ++wmoBad; std::fprintf(stderr, "reject: WMO layered entry kind %u hash %016llx hr %08x\n", e.kind, (unsigned long long)e.originalHash, unsigned(hr)); }
+        }
+        std::printf("WMO layered pack: %u vertex and %u pixel shaders created, %u rejected\n", wmoVertex - wmoBad, wmoPixel, wmoBad);
+        // Each light-patched WMO vertex shader has a layered variant under the bytecode the engine will hold.
+        unsigned covered = 0, total = 0;
+        for (const sl::LightPackEntry& e : pack.Entries())
+            if (e.group == sl::kGroupWmo && e.kind == 0) { ++total; covered += wmoPack.FindVertex(e.bytecode.data(), e.bytecode.size() * 4) != nullptr; }
+        std::printf("light-patched WMO vertex shaders with a layered variant: %u of %u\n", covered, total);
+        bad += wmoBad;
+        Require(argc < 4 || covered == total, "every light-patched WMO shader has a layered variant");
+        if (covered != total) std::printf("note: %u light-patched WMO shaders have no layered variant\n", total - covered);
     }
     dev->Release(); d3d->Release(); SDL_DestroyWindow(window);
     Require(bad == 0, "the backend rejected a patched shader");

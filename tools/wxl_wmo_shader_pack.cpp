@@ -185,11 +185,20 @@ int main(int argc, char** argv) {
     unsigned skippedVs = 0, skippedPs = 0, vsCount = 0, psCount = 0;
     std::set<uint64_t> seen;
 
-    for (const auto& name : List(dir, "vs")) {
-        std::vector<uint8_t> code;
-        if (!ReadFile(dir + "\\" + name, code) || code.size() < 8 || code.size() > wxl::wmo::kMaxShaderBytes) continue;
+    // Optional: the surface-light pack (argv[3]). WMO vertex shaders it replaces change the engine's own
+    // bytecode, and the layered-material module looks its shaders up by that current bytecode, so the
+    // layered variant of each light-patched shader is added under the light-patched bytecode's hash.
+    wxl::surfacelights::LightShaderPack lightPack;
+    bool haveLightPack = false;
+    if (argc >= 4) {
+        std::string lightWhy;
+        haveLightPack = lightPack.Load(argv[3], lightWhy);
+        std::printf("surface-light pack %s: %s\n", argv[3], haveLightPack ? "loaded" : lightWhy.c_str());
+    }
+    unsigned lightVariants = 0, lightVariantsSkipped = 0;
+    const auto addVertex = [&](const std::vector<uint8_t>& code, const std::string& name, bool lightVariant) {
         const uint64_t hash = wxl::wmo::HashBytecode(code.data(), code.size());
-        if (!seen.insert(hash).second) continue;
+        if (!seen.insert(hash).second) return;
         ++vsCount;
         text::VsMapping map{};
         const std::string patched = text::BuildLayeredVsText(Disassemble(code), map);
@@ -203,8 +212,13 @@ int main(int argc, char** argv) {
             text::CompactLayout layout;
             const std::string compactText = text::BuildCompactVsText(Disassemble(code), layout);
             e.bytecode.clear();
-            if (compactText.empty() || !Assemble(compactText, name.c_str(), e.bytecode)) {
-                ++skippedVs; std::printf("skip vs %s: %s\n", name.c_str(), compactText.empty() ? "shape" : "assemble"); continue;
+            g_quiet = lightVariant;
+            const bool compactOk = !compactText.empty() && Assemble(compactText, name.c_str(), e.bytecode);
+            g_quiet = false;
+            if (!compactOk) {
+                if (lightVariant) ++lightVariantsSkipped; else ++skippedVs;
+                std::printf("skip vs %s%s: %s\n", name.c_str(), lightVariant ? " (light-patched)" : "", compactText.empty() ? "shape" : "assemble");
+                return;
             }
             const std::string key = layout.Key();
             size_t id = 0;
@@ -212,12 +226,25 @@ int main(int argc, char** argv) {
             if (id == compactLayouts.size()) compactLayouts.push_back(layout);
             e.uvUsage = e.weightUsage = uint8_t(0x80 + id);
             ++compactVs;
+            if (lightVariant) ++lightVariants;
             entries.push_back(std::move(e));
-            continue;
+            return;
         }
         e.uvUsage = uint8_t(map.uv[1]); e.weightUsage = uint8_t(map.weights);
         mappings.insert({map.uv[1], map.weights});
+        if (lightVariant) ++lightVariants;
         entries.push_back(std::move(e));
+    };
+    for (const auto& name : List(dir, "vs")) {
+        std::vector<uint8_t> code;
+        if (!ReadFile(dir + "\\" + name, code) || code.size() < 8 || code.size() > wxl::wmo::kMaxShaderBytes) continue;
+        addVertex(code, name, false);
+        if (haveLightPack)
+            if (const auto* lit = lightPack.Find(0, code.data(), code.size()); lit && lit->group == wxl::surfacelights::kGroupWmo) {
+                std::vector<uint8_t> patchedCode(lit->bytecode.size() * 4);
+                std::memcpy(patchedCode.data(), lit->bytecode.data(), patchedCode.size());
+                addVertex(patchedCode, name, true);
+            }
     }
     seen.clear();
     for (const auto& name : List(dir, "ps")) {
@@ -264,6 +291,7 @@ int main(int argc, char** argv) {
     FILE* out = std::fopen(argv[2], "wb");
     if (!out || std::fwrite(bytes.data(), 1, bytes.size(), out) != bytes.size()) { std::fprintf(stderr, "cannot write pack\n"); return 1; }
     std::fclose(out);
+    if (haveLightPack) std::printf("light-patched WMO vertex shaders with a layered variant: %u (skipped %u)\n", lightVariants, lightVariantsSkipped);
     std::printf("vertex shaders %u (skipped %u, compact layouts %u in %zu mappings), pixel shaders %u (variants skipped %u, compact variants %u), mappings %zu, entries %zu, %zu bytes\n",
                 vsCount, skippedVs, compactVs, compactLayouts.size(), psCount, skippedPs, compactPs, mappings.size(), entries.size(), bytes.size());
     return 0;

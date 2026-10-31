@@ -44,6 +44,7 @@ void Apply() {
     const env::Motion motion = env::MotionOf(values);
     WxlGrassSetMotion(motion.strength, motion.speed, motion.interaction);
     WxlGrassInstancingSetEnabled(values.v[env::kGrassInstanced] != 0.0);
+    WxlGrassInstancingSetLimits(static_cast<float>(values.v[env::kGrassMemoryMB]), static_cast<float>(values.v[env::kGrassBuildMs]));
     WxlSurfaceLightsApply(values.v, env::kCount);
 }
 
@@ -127,14 +128,16 @@ int32_t Script_VerifyPlacement(lua_State* L) {
 
 std::string GrassStatus() {
     const WxlGrassInstancingStats stats = WxlGrassInstancingGetStats();
-    char text[640];
+    char text[900];
     const char* state = !stats.loaded ? "unavailable (no grass_instanced.pack, or WXL_GRASS_INSTANCING=0)"
                         : stats.problem ? "stopped after a device problem; stock grass until graphics reset"
                         : stats.enabled ? "on" : "off in settings";
     std::snprintf(text, sizeof(text),
-                  "Grass: optimized rendering %s. %zu cached batches, %zu models; last interval drew %llu, fell back %llu, failed %llu.",
-                  state, stats.batches, stats.models, (unsigned long long)stats.drawn,
-                  (unsigned long long)stats.fallbacks, (unsigned long long)stats.failures);
+                  "Grass: optimized rendering %s. %zu cached batches (%.1f of %.0f MB), %zu models; last interval drew %llu, fell back %llu, failed %llu; "
+                  "%llu batches dropped for room, %llu builds deferred by the frame budget, %llu too large for the cache.",
+                  state, stats.batches, stats.cacheBytes / 1048576.0, stats.limitBytes / 1048576.0, stats.models, (unsigned long long)stats.drawn,
+                  (unsigned long long)stats.fallbacks, (unsigned long long)stats.failures, (unsigned long long)stats.evicted,
+                  (unsigned long long)stats.deferredBuilds, (unsigned long long)stats.refusedTooLarge);
     std::string out = text;
     if (sampling) {
         std::snprintf(text, sizeof(text), "\nPerformance sample running: %.0f of %.0f seconds.",
@@ -147,8 +150,7 @@ std::string GrassStatus() {
                       lastSummary.p99Ms, lastSummary.worstMs);
         out += text;
     }
-    out += "\nWind and grass interaction apply immediately. Grass cache and rebuild budget are saved but unused: the native "
-           "instancing keeps static buffers.";
+    out += "\nWind, grass interaction, the cache size and the rebuild budget apply immediately.";
     return out;
 }
 

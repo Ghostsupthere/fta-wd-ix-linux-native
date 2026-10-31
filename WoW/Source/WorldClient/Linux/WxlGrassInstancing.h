@@ -30,7 +30,12 @@ void WxlGrassInstancingForget(const CDetailDoodadInstBatch* batch);
 void WxlGrassInstancingFrame();
 // Environment page switch ("Optimized grass rendering"). Off drops the cached buffers and draws stock.
 void WxlGrassInstancingSetEnabled(bool on);
-struct WxlGrassInstancingStats { bool loaded; bool enabled; bool problem; size_t batches; size_t models; uint64_t drawn, fallbacks, failures; };
+struct WxlGrassInstancingStats {
+    bool loaded; bool enabled; bool problem; size_t batches; size_t models; uint64_t drawn, fallbacks, failures;
+    uint64_t cacheBytes, limitBytes, evicted, deferredBuilds, refusedTooLarge;
+};
+// Environment page: cache size (MB) and the soft per-frame build budget (ms).
+void WxlGrassInstancingSetLimits(float memoryMB, float buildMs);
 WxlGrassInstancingStats WxlGrassInstancingGetStats();
 // Device loss, world leave and shutdown.
 void WxlGrassInstancingRelease();

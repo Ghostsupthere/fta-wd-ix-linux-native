@@ -21,6 +21,10 @@ struct WxlWmoContext {
     uint32_t material = UINT32_MAX;
 };
 
+// Whether the loaded layered-material pack holds a layered variant for this exact vertex bytecode
+// (the surface-light module asks about its light-patched WMO shaders).
+bool WxlWmoPackHasVertexVariant(const uint32_t* code, size_t bytes);
+
 // Marks one WMO group's render leaf; nested leaves restore the outer context.
 class WxlWmoLeafScope {
 public:

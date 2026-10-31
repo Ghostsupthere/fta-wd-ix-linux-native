@@ -112,6 +112,14 @@ void Initialise() {
     Log("wmo materials: shader pack loaded, %zu patched shaders", pack.Count());
 }
 
+}  // namespace
+
+bool WxlWmoPackHasVertexVariant(const uint32_t* code, size_t bytes) {
+    Initialise();
+    return enabled && code && bytes && pack.FindVertex(code, bytes) != nullptr;
+}
+
+namespace {
 void ClearGpu() {
     RestoreTextures();
     pairs.clear(); meshes.clear(); textureSets.clear(); declaration.reset();

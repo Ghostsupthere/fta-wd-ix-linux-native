@@ -8,6 +8,8 @@
 #include "Engine/Source/Gx/Gx.h"
 #include "Engine/Source/ModernAssets/NativeVisualHooks.h"
 #include "Engine/Source/ModernAssets/WxlGrass/GrassInstancing.hpp"
+#include "Engine/Source/ModernAssets/WxlGrass/GrassBudget.hpp"
+#include <chrono>
 #include "Engine/Source/ModernAssets/WxlWmo/WmoShaderPack.h"
 #include "WoW/Source/WorldClient/DetailDoodad.h"
 #include <cstdarg>
@@ -31,6 +33,10 @@ template<class T> using Com = std::unique_ptr<T, Release<T>>;
 
 ShaderPack pack;
 bool initialised = false, enabled = false, userOn = true;
+// Environment page limits (WxlGrassInstancingSetLimits): the cache size and the per-frame build budget.
+uint64_t cacheLimitBytes = wxl::grass::budget::LimitBytes(64);
+wxl::grass::budget::BuildBudget buildBudget;
+uint64_t evictedForRoom = 0, budgetDeferred = 0, tooLarge = 0;
 IDirect3DDevice9* device = nullptr;
 Com<IDirect3DVertexDeclaration9> declaration;
 std::unordered_map<const PackEntry*, Com<IDirect3DVertexShader9>> shaders;
@@ -64,6 +70,7 @@ struct Entry {
     std::vector<Range> ranges;
     uint32_t adds = 0;
     uint64_t lastUse = 0;
+    uint64_t bytes = 0;
     IDirect3DVertexShader9* shader = nullptr;
 };
 // Never destroyed: batches are freed during shutdown, after static destruction would have run.
@@ -185,6 +192,15 @@ Entry* Build(IDirect3DDevice9* dev, const CDetailDoodadInstBatch& batch, IDirect
     for (size_t i = 0; i < plants.size(); ++i) sorted[fill[slot[doodads[i]]]++] = plants[i];
 
     const UINT bytes = UINT(sorted.size() * sizeof(GpuInstance));
+    // The cache limit: least recently used batches make room; one that cannot fit at all is refused.
+    {
+        std::vector<wxl::grass::budget::CachedItem> items;
+        items.reserve(entries.size());
+        for (const auto& [key, cached] : entries) items.push_back({key, cached->bytes, cached->lastUse});
+        const auto plan = wxl::grass::budget::PlanEvictions(std::move(items), bytes, cacheLimitBytes);
+        if (!plan.fits) { ++tooLarge; return nullptr; }
+        for (const void* key : plan.evict) { entries.erase(static_cast<const CDetailDoodadInstBatch*>(key)); ++evictedForRoom; }
+    }
     IDirect3DVertexBuffer9* vb = nullptr;
     void* mapped = nullptr;
     if (FAILED(dev->CreateVertexBuffer(bytes, D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &vb, nullptr)) || !vb) return nullptr;
@@ -196,6 +212,7 @@ Entry* Build(IDirect3DDevice9* dev, const CDetailDoodadInstBatch& batch, IDirect
     auto entry = std::make_unique<Entry>();
     entry->vb = std::move(guard);
     entry->adds = batch.m_adds.Count();
+    entry->bytes = bytes;
     for (size_t g = 0; g < order.size(); ++g) entry->ranges.push_back({order[g], start[g], counts[g]});
     ++builds;
     Entry* raw = entry.get();
@@ -285,7 +302,10 @@ void WxlGrassInstancingSetEnabled(bool on) {
 }
 
 WxlGrassInstancingStats WxlGrassInstancingGetStats() {
-    return {enabled, enabled && userOn, problem, entries.size(), geometry.size(), drawn, fallbacks, failures};
+    uint64_t bytes = 0;
+    for (const auto& [key, cached] : entries) bytes += cached->bytes;
+    return {enabled, enabled && userOn, problem, entries.size(), geometry.size(), drawn, fallbacks, failures,
+            bytes, cacheLimitBytes, evictedForRoom, budgetDeferred, tooLarge};
 }
 
 void WxlGrassInstancingNoteShader(CGxShader* vertex) { noted = vertex; }
@@ -303,7 +323,12 @@ const void* WxlGrassInstancingPlan(const CDetailDoodadInstBatch* batch) {
     if (!entry) {
         const auto no = refused.find(batch);
         if (no != refused.end() && no->second == batch->m_adds.Count()) { ++fallbacks; return nullptr; }
+        // The soft per-frame build budget: once it is spent, later batches draw the stock way this frame
+        // and are built on a later one (not marked refused).
+        if (!buildBudget.MayStart()) { ++budgetDeferred; ++fallbacks; return nullptr; }
+        const auto started = std::chrono::steady_clock::now();
         entry = Build(gx->m_d3dDevice, *batch, shader);
+        buildBudget.Spend(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count());
         if (!entry) refused[batch] = batch->m_adds.Count();
     }
     if (!entry) { ++fallbacks; return nullptr; }
@@ -327,7 +352,18 @@ void WxlGrassInstancingForget(const CDetailDoodadInstBatch* batch) {
     if (!refused.empty()) refused.erase(batch);
 }
 
+void WxlGrassInstancingSetLimits(float memoryMB, float buildMs) {
+    cacheLimitBytes = wxl::grass::budget::LimitBytes(memoryMB);
+    buildBudget.SetMilliseconds(buildMs);
+    // A smaller cache takes effect at once: drop the least recently used batches over the new limit.
+    std::vector<wxl::grass::budget::CachedItem> items;
+    for (const auto& [key, cached] : entries) items.push_back({key, cached->bytes, cached->lastUse});
+    const auto plan = wxl::grass::budget::PlanEvictions(std::move(items), 0, cacheLimitBytes);
+    for (const void* key : plan.evict) { entries.erase(static_cast<const CDetailDoodadInstBatch*>(key)); ++evictedForRoom; }
+}
+
 void WxlGrassInstancingFrame() {
+    buildBudget.NewFrame();
     if (!enabled) return;
     ++frame;
     if (frame % kSweepEvery) return;

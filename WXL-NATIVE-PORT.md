@@ -97,8 +97,13 @@ Saves go through a temporary file and a rename.
 - **Live:** `grass.instanced` (`WxlGrassInstancingSetEnabled`; off drops the cached buffers and draws stock),
   `grass.windStrength` / `windSpeed` / `interaction` (`WxlGrassSetMotion`, the supplied `compat::SetMotion`
   scaling: amplitudes by strength, zero strength turns wind off, speed by speed, interaction on/off).
-- **Saved but not wired:** `grass.memoryMB` / `buildMs` (the native instancing has no pool or build budget). The
-  `lights.*` options drive the surface lights below (off by default, see that section); with the profile gate off
+- **Grass cache and rebuild budget (live):** `grass.memoryMB` caps the instance data the cached batches may hold
+  (the least recently used batches make room; a batch bigger than the whole cache is refused and draws stock) and
+  `grass.buildMs` is the soft per-frame build budget (a build may start while the frame's spent time is under the
+  budget; later batches draw stock that frame and are built on a later one). Pure policy in
+  `WxlGrass/GrassBudget.hpp` (tests in `tests/wxl_environment_options_test.cpp`); the page's status line shows cache
+  MB, batches dropped for room, builds deferred and batches too large. Not seen in game.
+- The `lights.*` options drive the surface lights below (off by default, see that section); with the profile gate off
   they are saved and change nothing, and the page's status text says so.
 - **Native default differs from Windows:** `lights.enabled` and `lights.models` default to 0 here (Windows: 1), so
   "Restore environment defaults" cannot switch surface lights on.
@@ -146,18 +151,23 @@ here, 0 rejected) add lights to models by path. Model pointers kept between 4 Hz
 `NativeVisualHooks::modelDestroyed` call in `~CM2Model`.
 
 **WMO lights and the layered-material pack.** The WMO layered module finds its shaders by hashing the engine's
-current bytecode, which light-patching would change. So WMO lights are **off by default whenever
-`wmo_shaders.pack` is installed (it is here)**; `WXL_SURFACE_LIGHTS_WMO=1` overrides. Terrain and M2 lights are
-unaffected.
+current bytecode, which light-patching changes. `tools/build-wmo-shader-pack.py` therefore adds, when
+`light_shaders.pack` sits beside its output, a layered variant of each light-patched WMO vertex shader keyed by
+the light-patched bytecode (build order: `build-light-shader-pack.py`, then `build-wmo-shader-pack.py`). On this
+install all 99 got one (198 WMO vertex shaders, 238 pixel shaders, all accepted by the real backend). At run time
+WMO lights are **on** when there is no layered pack or it carries those variants, otherwise off;
+`WXL_SURFACE_LIGHTS_WMO=1/0` forces it either way. The layered draws then also light, because their shader is
+built from the light-patched one. Rendering of lit layered WMOs is not seen.
 
 **In use on this install (2026-10-31):** the user ran it, turned on "Dynamic lights" and "Light characters and
 buildings", saw the lighting change and judged it good, and chose to keep it enabled. `WarcraftXL.cfg` now has
 `WXL_SURFACE_LIGHTS=1` and `WTF/WXL/Environment.ini` has `lights.enabled=1`, `lights.models=1`. The code defaults
-stay off. WMO (building) lights are still off here because `wmo_shaders.pack` is installed, so "buildings"
-means M2 doodads such as torches and lamp posts, not WMO walls.
+stay off. That test ran with WMO lights off (the old layered pack was installed), so it covered the terrain and M2
+doodads such as torches and lamp posts. The combined WMO pack was installed afterwards, which turns WMO (building)
+lights on by default; that part is not yet user-tested (`WXL_SURFACE_LIGHTS_WMO=0` turns it off).
 
-**Not ported:** the supplied in-game table editor, the debug views' panel and the runtime-assembler
-shader patcher (replaced by the offline pack); WMO lights alongside layered materials; `grass.memoryMB/buildMs`.
+**Not ported:** the supplied in-game table editor (already removed in the supplied integration), the debug views'
+panel and the runtime-assembler shader patcher (replaced by the offline pack).
 
 **Verification (no in-game test yet).**
 - `tests/wxl_surface_lights_test.cpp` (ASan/UBSan): WDBC parsing and every rejection path, the real client's

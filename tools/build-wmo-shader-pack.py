@@ -97,7 +97,10 @@ def main():
     env = dict(os.environ, WINEPREFIX=str(work / 'wine'), WINEDEBUG='-all', WINEDLLOVERRIDES='d3dcompiler_47=n;mscoree,mshtml=')
     args.out.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.out.with_suffix('.pack.tmp')
-    subprocess.run(['wine', str(exe), 'Z:' + str(work / 'in'), 'Z:' + str(temporary)], env=env, cwd=work, check=True)
+    # If the surface-light pack exists beside the output, add layered variants of the light-patched WMO shaders.
+    light_pack = args.out.parent / 'light_shaders.pack'
+    extra = ['Z:' + str(light_pack)] if light_pack.is_file() else []
+    subprocess.run(['wine', str(exe), 'Z:' + str(work / 'in'), 'Z:' + str(temporary)] + extra, env=env, cwd=work, check=True)
     temporary.replace(args.out)
     print('wrote', args.out)
     grass_out = args.out.parent / 'grass_shaders.pack'

@@ -1,5 +1,6 @@
 // Option table, clamping and Environment.ini round-trip for the control add-on's Environment page.
 #include "Engine/Source/ModernAssets/WxlGrass/EnvironmentOptions.hpp"
+#include "Engine/Source/ModernAssets/WxlGrass/GrassBudget.hpp"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -73,6 +74,38 @@ int main() {
     Require(f.frames == 100 && f.medianMs == 50 && f.p95Ms == 95 && f.p99Ms == 99 && f.worstMs == 100, "percentiles");
     Require(Summarize({}).frames == 0 && Summarize({NAN}).frames == 0, "empty summary");
     Require(Summarize({7.0}).medianMs == 7.0 && Summarize({7.0}).p99Ms == 7.0, "single sample");
+    // Grass cache and build budget.
+    {
+        namespace gb = wxl::grass::budget;
+        Require(gb::LimitBytes(64) == 64ull * 1024 * 1024 && gb::LimitBytes(0) == 0 && gb::LimitBytes(-5) == 0 && gb::LimitBytes(NAN) == 0, "limit bytes");
+        int a = 0, b = 0, c = 0;
+        std::vector<gb::CachedItem> items = {{&a, 400, 5}, {&b, 300, 1}, {&c, 200, 3}};
+        auto roomy = gb::PlanEvictions(items, 100, 1000);
+        Require(roomy.fits && roomy.evict.empty(), "under the limit: nothing evicted");
+        auto plan = gb::PlanEvictions(items, 300, 1000);   // 900 + 300 = 1200 > 1000
+        Require(plan.fits && plan.evict.size() == 1 && plan.evict[0] == &b, "oldest evicted first");
+        plan = gb::PlanEvictions(items, 800, 1000);        // needs 700 freed: b (300) + c (200) + a (400)
+        Require(plan.fits && plan.evict.size() == 3 && plan.evict[0] == &b && plan.evict[1] == &c && plan.evict[2] == &a, "evicts in least-recently-used order until it fits");
+        plan = gb::PlanEvictions(items, 1001, 1000);
+        Require(!plan.fits && plan.evict.empty(), "a batch bigger than the whole limit is refused");
+        plan = gb::PlanEvictions({}, 10, 0);
+        Require(!plan.fits, "zero limit refuses everything");
+        plan = gb::PlanEvictions({}, 0, 0);
+        Require(plan.fits, "nothing to add fits");
+        std::vector<gb::CachedItem> tie = {{&c, 10, 7}, {&a, 10, 7}};
+        Require(gb::PlanEvictions(tie, 10, 20).evict.size() == 1, "ties are resolved deterministically");
+        gb::BuildBudget budget;
+        budget.SetMilliseconds(2.0);
+        Require(budget.MayStart(), "first build may start");
+        budget.Spend(5.0);
+        Require(!budget.MayStart(), "an overrun build blocks later ones this frame (soft budget)");
+        budget.NewFrame();
+        Require(budget.MayStart() && budget.Spent() == 0.0, "new frame resets");
+        budget.Spend(-3.0); budget.Spend(NAN);
+        Require(budget.Spent() == 0.0, "negative and NaN samples are ignored");
+        budget.SetMilliseconds(-1);
+        Require(!budget.MayStart(), "zero budget blocks all builds");
+    }
     std::puts("ok");
     return 0;
 }

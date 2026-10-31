@@ -24,6 +24,7 @@
 #include "WoW/Source/WorldClient/MapObj.h"
 #include "WoW/Source/WorldClient/MapObjDef.h"
 #include "WoW/Source/WorldClient/World.h"
+#include "WoW/Source/WorldClient/Linux/WxlWmoMaterials.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -46,9 +47,11 @@ namespace {
 sl::LightShaderPack pack;
 bool packTried = false, packLoaded = false, profileOn = false;
 // The WMO layered-material module finds its shaders by hashing the engine's CURRENT bytecode, so a
-// light-patched WMO vertex shader would no longer match it. With that pack on the install, WMO lights
-// stay off unless WXL_SURFACE_LIGHTS_WMO=1 says otherwise.
-bool wmoLights = true, wmoPackPresent = false;
+// light-patched WMO vertex shader only keeps its layered materials if the layered pack carries a variant
+// for the light-patched bytecode (tools/build-wmo-shader-pack.py adds them when light_shaders.pack exists
+// beside it). WMO lights are on when there is no layered pack, or it has those variants; otherwise off
+// unless WXL_SURFACE_LIGHTS_WMO=1 says otherwise.
+bool wmoLights = true, wmoPackPresent = false, wmoPackCombined = false;
 unsigned replaced[4] = {};
 std::string packProblem;
 
@@ -65,7 +68,7 @@ void EnsurePack() {
     if (!profileOn) return;
     std::error_code exists;
     wmoPackPresent = std::filesystem::exists(ClientDirectory() / "Utils/WarcraftXL/visuals/wmo_shaders.pack", exists);
-    wmoLights = WxlProfileEnabled("WXL_SURFACE_LIGHTS_WMO", !wmoPackPresent);
+    // (the check below needs the pack loaded first, so the default is settled after the load)
     std::string why;
     packLoaded = pack.Load((ClientDirectory() / "Utils/WarcraftXL/visuals/light_shaders.pack").string(), why);
     if (!packLoaded) {
@@ -73,9 +76,17 @@ void EnsurePack() {
         std::fprintf(stderr, "WarcraftXL: surface lights pack unavailable (%s); stock lighting. Run tools/build-light-shader-pack.py\n", why.c_str());
         return;
     }
+    if (wmoPackPresent)
+        for (const sl::LightPackEntry& e : pack.Entries())
+            if (e.group == sl::kGroupWmo && e.kind == 0) {
+                wmoPackCombined = WxlWmoPackHasVertexVariant(e.bytecode.data(), e.bytecode.size() * 4);
+                break;
+            }
+    wmoLights = WxlProfileEnabled("WXL_SURFACE_LIGHTS_WMO", !wmoPackPresent || wmoPackCombined);
     std::fprintf(stderr, "WarcraftXL: surface lights enabled in the profile (%zu patched shader(s): terrain %zu, M2 %zu, WMO %zu%s)\n",
                  pack.Count(), pack.Count(sl::kGroupTerrain), pack.Count(sl::kGroupModel), pack.Count(sl::kGroupWmo),
-                 wmoLights ? "" : "; WMO lights off because the WMO layered-material pack is installed, set WXL_SURFACE_LIGHTS_WMO=1 to override");
+                 wmoLights ? (wmoPackCombined ? "; WMO lights on, layered materials kept" : "")
+                           : "; WMO lights off: the WMO layered-material pack has no light variants (rerun tools/build-light-shader-pack.py then tools/build-wmo-shader-pack.py), or set WXL_SURFACE_LIGHTS_WMO=1 to override");
 }
 
 bool Replace(const uint8_t* code, size_t size, const uint32_t** out, size_t* outBytes) {
@@ -815,7 +826,7 @@ std::string WxlSurfaceLightsStatus() {
                   "Terrain lights %s; shaders replaced: terrain %u, M2 %u, WMO %u%s; occlusion %u/%u baked, %u cached; %u indoor.",
                   condition, stats.active, stats.modelsInRange, stats.modelLights, stats.tableLights, stats.merged, tableStatus.c_str(),
                   terrainLightsOn ? "on" : "off", replaced[sl::kGroupTerrain], replaced[sl::kGroupModel], replaced[sl::kGroupWmo],
-                  wmoLights ? "" : " (buildings not lit: WMO lights are off, the WMO layered-material pack is installed)",
+                  wmoLights ? "" : " (buildings not lit: WMO lights are off, the WMO layered-material pack has no light variants)",
                   stats.bakeDone, stats.bakeWanted, stats.bakeCached, stats.indoor);
     return text;
 }
