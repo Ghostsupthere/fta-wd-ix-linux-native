@@ -10,7 +10,8 @@
 
 #if defined(WOWDECOMP_LINUX)
 
-void WxlRunRequiredAddonsPolicy();
+// `glue` is true for the GlueXML (character select) context, which lacks GetAddOnMetadata.
+void WxlRunRequiredAddonsPolicy(bool glue);
 
 #endif  // WOWDECOMP_LINUX
 

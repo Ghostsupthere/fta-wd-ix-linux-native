@@ -5,10 +5,28 @@
 #if defined(WOWDECOMP_LINUX)
 
 #include "Engine/Source/FrameScript/FrameScript.h"
+#include "Engine/Source/lua-5.1/src/lauxlib.h"
+#include "Engine/Source/lua-5.1/src/lua.h"
+#include "WoW/Source/Ui/AddOns.h"
 #include "Engine/Source/ModernAssets/NativeDiagnostic.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 
 namespace {
+
+// The stock in-world UI has GetAddOnMetadata, the GlueXML context does not, but both read the same
+// parsed add-on catalog. The policy needs it at character select, where add-ons are chosen.
+int GlueGetAddOnMetadata(lua_State* L) {
+    const char* name = nullptr;
+    if (lua_isnumber(L, 1)) {
+        name = GetAddOnByIndex(static_cast<uint32_t>(lua_tonumber(L, 1)) - 1);
+        if (!name) return luaL_error(L, "AddOn index must be in the range of 1 to %d", GetNumAddOns());
+    } else if (!lua_isstring(L, 1) || !(name = lua_tolstring(L, 1, nullptr))) {
+        return luaL_error(L, "Usage: GetAddOnMetadata(index or \"name\", \"variable\")");
+    }
+    if (!lua_isstring(L, 2)) return luaL_error(L, "Usage: GetAddOnMetadata(index or \"name\", \"variable\")");
+    lua_pushstring(L, GetAddOnMetadata(name, lua_tolstring(L, 2, nullptr)));
+    return 1;
+}
 
 constexpr char kPolicyScript[] = R"lua(
 do
@@ -300,9 +318,10 @@ end
 
 }  // namespace
 
-void WxlRunRequiredAddonsPolicy() {
+void WxlRunRequiredAddonsPolicy(bool glue) {
     static const bool enabled = WxlProfileEnabled("WXL_REQUIRED_ADDONS", true);
     if (!enabled) return;
+    if (glue) FrameScript_RegisterFunction("GetAddOnMetadata", &GlueGetAddOnMetadata);
     // Runs in the current FrameScript context, which is the one that just finished loading its XML.
     // The script is idempotent: a context that already holds the policy table only re-checks it.
     FrameScript_Execute(kPolicyScript, "wxl-required-addons", nullptr);

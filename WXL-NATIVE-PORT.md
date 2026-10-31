@@ -381,6 +381,9 @@ seen in game**. Each has a `WXL_<NAME>=0` profile switch.
   loads) and in the in-world context after FrameXML/add-ons load (ACP). Add-ons whose TOC has
   `## X-WarcraftXL-Required: 1` (ten or more in the FTA client: ACP, AIO_Client, Transmogrification,
   NPCBotPaperdoll, ...) are force-enabled and their checkboxes locked. `WXL_REQUIRED_ADDONS=0` disables.
+  The stock GlueXML context has no `GetAddOnMetadata`, so the policy could not read the tag at
+  character select (first in-game test: tagged add-on stayed unchecked and unlocked); the glue context
+  now gets a `GetAddOnMetadata` over the same parsed catalog before the policy runs.
 - **wxl-npcbot-targets** and **wxl-npcbot-resurrection** (`WxlNpcBotTargets.{h,cpp}`, rules in
   `Engine/Source/ModernAssets/WxlNpcBot/NpcBotTargetRules.hpp`, `tests/wxl_npcbot_targets_test.cpp`): a
   server-grouped creature (HighGuid::Unit, in the native party/raid roster, the other side being the

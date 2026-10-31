@@ -762,7 +762,7 @@ void CGlueMgr::Resume() {
 #endif
 
 #if defined(WOWDECOMP_LINUX)
-            WxlRunRequiredAddonsPolicy();
+            WxlRunRequiredAddonsPolicy(true);
 #endif
             FrameScript_SignalEvent(GLUE_EVENT_FRAMES_LOADED, nullptr);
             CGlueMgr::InitializeFFX();

@@ -1832,7 +1832,7 @@ void CGGameUI::InitializeFrameXML() {
     CGGameUI::HandleDisplaySizeChanged(sizeEvent);
 
 #if defined(WOWDECOMP_LINUX)
-    WxlRunRequiredAddonsPolicy();
+    WxlRunRequiredAddonsPolicy(false);
     WxlRunGameScripts();
 #endif
     CGGameUI::m_initialized = 1;
