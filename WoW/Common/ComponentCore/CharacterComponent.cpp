@@ -46,6 +46,7 @@
 #include "Engine/Source/Tempest/CRandom.h"
 #include "WoW/Common/ComponentCore/ComponentUtils.h"
 #include "WoW/Common/ComponentCore/WxlCollectionSidecar.h"
+#include "WoW/Common/ComponentCore/WxlWeaponSidecar.h"
 #include "WoW/Common/ComponentCore/WxlWaistModel.h"
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
@@ -2218,12 +2219,26 @@ static void ReplaceParticleColor(int32_t particleColorID, CM2Model* model) {
 
 // VERIFY: a5287802 manual
 // OFFSET: 0x004EAA70
-void CCharacterComponent::AddLink(CM2Model* parent, GEOCOMPONENTLINKS link, const char* modelPath, const char* texturePath, int32_t itemVisual, const ItemDisplayInfoRec* displayRec) {
+void CCharacterComponent::AddLink(CM2Model* parent, GEOCOMPONENTLINKS link, const char* modelPath, const char* texturePath, int32_t itemVisual, const ItemDisplayInfoRec* displayRec, const WxlWeaponSidecar::Resolution* weaponSidecar) {
     if (!parent) {
         return;
     }
 
+#if defined(WOWDECOMP_LINUX)
+    CM2Model* model = nullptr;
+    if (weaponSidecar && !weaponSidecar->model.empty()) {
+        model = parent->m_scene->CreateModel(weaponSidecar->model.c_str(), 0);
+        if (!model) {
+            WxlNativeDiagnostic("weapon-sidecar: missing model %s", weaponSidecar->model.c_str());
+            weaponSidecar = nullptr;
+        }
+    }
+    if (!model) {
+        model = parent->m_scene->CreateModel(modelPath, 0);
+    }
+#else
     CM2Model* model = parent->m_scene->CreateModel(modelPath, 0);
+#endif
 
     if (!model) {
         return;
@@ -2231,13 +2246,47 @@ void CCharacterComponent::AddLink(CM2Model* parent, GEOCOMPONENTLINKS link, cons
 
     CTexture* texture = CreateTexture(texturePath, &s_status);
 
+#if defined(WOWDECOMP_LINUX)
+    // A sidecar that supplies the object skin does not need the stock texture to exist.
+    const bool sidecarSkin = weaponSidecar && std::any_of(weaponSidecar->textures.begin(), weaponSidecar->textures.end(),
+                                                         [](const WxlWeaponSidecar::Texture& t) { return t.type == M2TEX_OBJECT_SKIN; });
+    if (!texture && !sidecarSkin) {
+#else
     if (!texture) {
+#endif
         model->Release();
         return;
     }
 
-    model->ReplaceTexture(M2TEX_OBJECT_SKIN, texture);
-    HandleClose(reinterpret_cast<HOBJECT>(texture));
+    if (texture) {
+        model->ReplaceTexture(M2TEX_OBJECT_SKIN, texture);
+        HandleClose(reinterpret_cast<HOBJECT>(texture));
+    }
+
+#if defined(WOWDECOMP_LINUX)
+    if (weaponSidecar) {
+        for (const WxlWeaponSidecar::Texture& replacement : weaponSidecar->textures) {
+            if (!SFile::FileExists(replacement.path.c_str())) {
+                WxlNativeDiagnostic("weapon-sidecar: missing texture %s", replacement.path.c_str());
+                continue;
+            }
+            if (CTexture* extra = CreateTexture(replacement.path.c_str(), &s_status)) {
+                model->ReplaceTexture(replacement.type, extra);
+                HandleClose(reinterpret_cast<HOBJECT>(extra));
+            }
+        }
+        if (weaponSidecar->geoset.filter) {
+            model->SetGeometryVisible(0, 0xFFFF, 0);
+            for (uint16_t id : weaponSidecar->geoset.ids) {
+                model->SetGeometryVisible(id, id, 1);
+            }
+        }
+        if (weaponSidecar->mirror) {
+            // Geometry and triangle-winding mirroring of an attached model is not ported yet.
+            WxlNativeDiagnostic("weapon-sidecar: offhand mirror requested for %s, rendering unmirrored", weaponSidecar->model.c_str());
+        }
+    }
+#endif
 
     if (itemVisual > 0) {
         CCharacterComponent::ComponentUtilAddItemVisual(model, itemVisual);
@@ -2351,7 +2400,16 @@ GEOCOMPONENTLINKS CCharacterComponent::AddHandItem(CM2Model* model, const ItemDi
     strcat(s_buffer, ".blp");
     strcpy(s_pathEnd2, s_buffer);
 
+#if defined(WOWDECOMP_LINUX)
+    // WXLWeaponModels.csv / WXLWeaponTextures.csv: only the offhand slot is the offhand; ranged
+    // weapons use the mainhand rows even when held in the left hand.
+    WxlWeaponSidecar::Resolution weaponSidecar;
+    const bool hasWeaponSidecar = WxlWeaponSidecar::Resolve(displayRec->m_id, invSlot == INVSLOT_OFFHAND, weaponSidecar);
+    CCharacterComponent::AddLink(model, link, s_path, s_path2, itemVisual ? itemVisual : displayRec->m_itemVisual, displayRec,
+                                 hasWeaponSidecar ? &weaponSidecar : nullptr);
+#else
     CCharacterComponent::AddLink(model, link, s_path, s_path2, itemVisual ? itemVisual : displayRec->m_itemVisual, displayRec);
+#endif
 
     return link;
 }

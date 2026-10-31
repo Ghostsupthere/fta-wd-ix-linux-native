@@ -17,7 +17,7 @@ different completion gates.
 | Workstream | Current implementation | Remaining work |
 | --- | --- | --- |
 | M2/BLP assets | Native conversion, skeleton merge, single AFM2 unwrap, eligible v264 repairs, material/batch rebuild, packed wide index offsets and 75-bone subdivision | Split-animation rebasing; remaining format limits and real rendered acceptance |
-| Collection armor and waist models | Slot filtering/ownership, Icon2 and sidecar policies, texture-readiness queues, attachment-53 buckles, owner/world replay, cached and post-worker palette copying | Remaining source-policy/weapon-side contracts, remaining missing armor and full transition/retry acceptance; reported wisps/Human Female deformation are resolved |
+| Collection armor and waist models | Slot filtering/ownership, Icon2 and sidecar policies, texture-readiness queues, attachment-53 buckles, owner/world replay, cached and post-worker palette copying | Remaining source-policy cases, weapon offhand mirroring, remaining missing armor and full transition/retry acceptance; reported wisps/Human Female deformation are resolved |
 | Item physics | PHYS companions and PFDC/PFID associations, skeleton binding, native-pose restoration, post-worker simulation and model lifecycle cleanup | Private virtual-source associations, rendered motion, live lifecycle and frame-cost acceptance |
 | WMO assets and materials | Conversion, scoped visibility handling, immutable layered texture/UV/weight snapshots, and GPU layered-material draws (two-layer overlays, four-layer height blends) through offline-patched native shaders | In-game acceptance on a layered WMO, frame cost; WMO modern emissive/parallax and the unified-render lighting extras are not implemented |
 | Native environment/renderer | Distance/profile controls and scoped fog-range handling; imported water (FFT, ripples, contacts), atmosphere, god-ray and local-light renderers drawing through the native D3D9Ex device with vendor-independent depth copy and 56 verified precompiled shaders | In-game acceptance and frame cost; transparent fog is implemented but unseen in game (opt-in); grading/postprocess modules are not imported |
@@ -255,6 +255,30 @@ interior blending, local-light placement, god-ray occlusion, frame cost and
 teleport/logout cleanup are open. `Logs/VisualEnvironment.log` records the depth
 readiness result and periodic water/atmosphere state for the first live run.
 
+### Weapon sidecars: native implementation (2026-10-31)
+
+`WxlWeaponSidecar.{h,cpp}` (WoW/Common/ComponentCore) parses `WXLWeaponModels.csv`
+and `WXLWeaponTextures.csv` (archive root, `DBFilesClient`, loose
+`Data/*.mpq/DBFilesClient`; first row per display wins) and `Resolve()` returns what
+the upstream `WeaponExtension` bakes: the model, the geoset filter (geoset 0 is
+always kept; sections not listed are hidden) and the column-0 texture replacements
+keyed on the M2 texture type. The DLL points the hand-item record at a baked virtual
+file; the native client applies the same decision directly in `AddHandItem` /
+`AddLink` (`CharacterComponent.cpp`). Rules: mainhand and ranged use the row only
+when it changes something (a texture row or a geoset filter); the offhand prefers
+`Model1OffhandPath` (with `Geoset1Offhand`), then the mirrored mainhand model, then
+the mainhand result (shields). A missing sidecar model falls back to the stock model;
+a missing sidecar texture is skipped; a stock texture that is missing no longer drops
+the weapon when the sidecar supplies the object skin. Column 1 (Model2) is parsed but
+unused, as upstream never applies it to hand items.
+
+Verified: `tests/wxl_weapon_sidecar_test.cpp` (upstream sample layout, ragged rows,
+first-seen dedup, all four offhand cases, malformed tables) passes; `Wow` builds.
+**In game:** the user reports it "appears to work" (2026-10-31; which weapons, sides and tables they used was not recorded, so mainhand/offhand/shield and geoset-filter cases are not individually confirmed). The FTA client ships no weapon sidecar tables, so nothing changes without them. Offhand Y-mirroring (`NoAutoMirror` column)
+is not ported: the model is drawn unmirrored and a diagnostic is logged
+(`WXL_NATIVE_DIAGNOSTICS=1`). `WXLExtendedEquipment.ini` `[Memory] MaxWeaponCacheMB`
+and `[EagerPreload]` have no native equivalent because nothing is baked.
+
 ### Weapon orientation: native implementation (2026-10-30)
 
 Back-sheath rotation, main/off-hand rotation and reverse grip now have native
@@ -416,8 +440,10 @@ complete native Release build passes; rendered acceptance remains open.
    rendering problem is reported. The 22 high-shadow-tier vertex permutations now have compact layouts (GPU-probe verified, not seen in game).
 2. **Close remaining armor/model policies and recovery gaps.** Audit source path,
    attachment and material cases against the native implementation; cover cached
-   previews, owner replacement, incomplete loads, removal and retries. Resolve the
-   weapon-side sidecar contract/source gap and private physics source associations.
+   previews, owner replacement, incomplete loads, removal and retries. The
+   weapon-side sidecars are ported (below; user reports it appears to work in
+   game; offhand mirroring still open). Private physics
+   source associations remain.
    Continue diagnosing remaining missing armor without treating successful
    bone-ID matching as proof of full appearance parity. The reported wisps and
    Human Female deformation are resolved by the accepted HD index-window fix.
@@ -449,8 +475,10 @@ complete native Release build passes; rendered acceptance remains open.
 
 - The supplied WarcraftXL tree references `WeaponExtension.cpp`,
   `WXLWeaponModels.csv` and `WXLWeaponTextures.csv` but does not include that
-  provider implementation. Exact weapon-side parity needs recovered contracts or
-  a separately verified native implementation.
+  provider. It was found upstream (2026-10-31) at
+  github.com/Atraxian123/WXL-Equip-Creature-Extension-CSV-WXL11 (core 1.1) and
+  .../WXL-Equip-Extension-CSV (older core); the source headers are
+  GPL-3.0-or-later. The native sidecar module follows the 1.1 variant.
 - The supplied animation provider also rejects split AFSA/AFSB streams. Complete
   split-animation support requires additional rebasing work beyond copying its
   existing behavior.
@@ -616,11 +644,9 @@ lifecycle coverage is not yet complete or verified.
   native API stubs and compiles in the client. Glue idle now polls loaded selection
   and creation components so cached previews can recover without fresh UI events.
   The complete integration builds; live material/transition acceptance is deferred.
-- Weapon-side comments reference `WeaponExtension.cpp`, `WXLWeaponModels.csv`
-  and `WXLWeaponTextures.csv`, but the shipped WarcraftXL source contains only
-  those references, not that implementation. Exact provider parity therefore
-  needs additional source/contracts or a separately verified implementation.
-- Still open: weapon-side sidecars, full path and
+- Weapon-side sidecars: the provider source is upstream (see Source and content
+  gaps) and is now ported; see "Weapon sidecars" below.
+- Still open: weapon offhand mirroring, full path and
   attachment policy parity, complete transition/retry behavior, and
   the native renderer passes listed below. The user requested deferring the next
   client test until the renderer and collection-sidecar dependencies are ready.
@@ -645,7 +671,7 @@ and creation; broader renderer and transition acceptance remains open.
 | Windows feature / source | Profile state | Native status |
 | --- | --- | --- |
 | Modern Assets + asset host | enabled | Partial: direct M2/BLP/WMO conversion, checked material/batch rebuilding and palette subdivision, WMO visibility handling and layered source-data preservation are compiled. WMO layered GPU draws are implemented (probe-verified, not yet seen in game); unsupported M2 formats and M3 remain open. |
-| Collection armor | enabled | Partial: race/sex resolution, section filtering, Icon2/sidecar placement, cached and post-worker bone remapping, bounded texture readiness, owner/world replay and cached-preview polling are implemented and build/fixture-verified. Weapon-side contracts, remaining policies and full runtime/transition acceptance remain open. |
+| Collection armor | enabled | Partial: race/sex resolution, section filtering, Icon2/sidecar placement, cached and post-worker bone remapping, bounded texture readiness, owner/world replay and cached-preview polling are implemented and build/fixture-verified. Weapon sidecars are ported (user reports working in game; mirroring open); remaining policies and full runtime/transition acceptance remain open. |
 | Additional-race creation cache / capacity API | required by shipped GlueXML | Implemented with bounded 256-race/three-gender storage and full cleanup; sanitizer and native build pass. User confirms additional-race creation works; optional customization controls are separate work. |
 | Transmogrification sizing / preview camera / title API | required by shipped addon | Native local equipment sizing, registered previews, frame projection controls and corrected numeric title contract/bounds and mask enumeration implemented. Production Lua/policy fixtures and native build pass. User reports Transmogrification working without the update warning and no further title errors; individual sizing/preview/physics acceptance remains open. |
 | Game-object editor | enabled | Not yet ported |
@@ -696,7 +722,7 @@ new native implementation and acceptance test.
 | `WarcraftXL.dll`: modern-assets | Partial; see the direct-asset table. Native material/batch rebuilding, palette subdivision, WMO visibility handling and layered source-data preservation are implemented. WMO layered GPU draws are implemented (probe-verified, not yet seen in game); unsupported M2 formats and M3 remain open. |
 | `WarcraftXLVisuals.dll`: renderer wrapper | Partial: water, multisample depth, atmosphere, god rays and local lights run in-process through dxvk-native D3D9 (precompiled, hash-verified shaders; vendor-independent depth copy patch). Synthetic real-GPU and sanitizer tests pass. Grading/postprocess modules, transparent-draw fog fitting is not ported; nothing is accepted in game yet. |
 | `WarcraftXL.dll`: cast-failure sound filter | Native `SI2::PlaySoundKit` filters SoundEntries 1424–1428 when `WXL_MUTE_CAST_FAILURE_SOUNDS` is enabled, returns success and clears the optional sound handle like the Windows hook. The existing profile/environment reader supplies the option; a one-time stderr diagnostic records actual suppression. Build verified; gameplay and diagnostic verification pending. |
-| `wxl-collection-armor` | Partial: direct `CCharacterComponent` integration provides race/sex resolution, section filtering, independent slot ownership, Icon2/sidecar placement, bounded texture readiness, owner/world replay, cached-preview polling and cached/post-worker semantic bone copying. Model/material CSV and loose overlays are supported. Weapon-side contracts and remaining policy cases are open. Production cache/copy and lifecycle fixtures pass; rendered appearance, full transition recovery and performance remain unverified. |
+| `wxl-collection-armor` | Partial: direct `CCharacterComponent` integration provides race/sex resolution, section filtering, independent slot ownership, Icon2/sidecar placement, bounded texture readiness, owner/world replay, cached-preview polling and cached/post-worker semantic bone copying. Model/material CSV and loose overlays are supported. Weapon sidecars are ported (user reports working in game; offhand mirroring open) and remaining policy cases are open. Production cache/copy and lifecycle fixtures pass; rendered appearance, full transition recovery and performance remain unverified. |
 | `wxl-waist-models` | Native attachment-53 buckle path implemented with nonblocking texture readiness, bounded retries, slot cleanup and owner identity checks. Path/name/retry fixture and native build pass; appearance and lifecycle acceptance remain unverified. |
 | `wxl-item-physics` | Partial: portable PHYS/Domino core and native scene/model adapter are implemented and compile/fixture-verified. Private virtual-source association and rendered/lifecycle/performance acceptance remain open. |
 | `wxl-back-sheath-flip` | Native animation/Lua adapter implemented for back/hand rotations, reverse grip, previews and nearby-player snapshots. Source eligibility and profile gate preserved; sanitizer/native build verified. Live rendered/server/transition acceptance remains open. |

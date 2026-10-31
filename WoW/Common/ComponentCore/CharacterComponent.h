@@ -27,6 +27,7 @@ class ChrRacesRec;
 class CreatureDisplayInfoRec;
 class CreatureModelDataRec;
 class CTexture;
+namespace WxlWeaponSidecar { struct Resolution; }
 struct CVar;
 class ItemDisplayInfoRec;
 #if defined(WOWDECOMP_LINUX)
@@ -105,7 +106,7 @@ class CCharacterComponent {
     static MipBits* s_textureBuffer;
 
     static GEOCOMPONENTLINKS AddHandItem(CM2Model* model, const ItemDisplayInfoRec* displayRec, INVENTORY_SLOTS invSlot, SHEATHE_TYPE sheatheType, bool sheathed, bool shield, bool mainHand, int32_t itemVisual);
-    static void AddLink(CM2Model* parent, GEOCOMPONENTLINKS link, const char* modelPath, const char* texturePath, int32_t itemVisual, const ItemDisplayInfoRec* displayRec);
+    static void AddLink(CM2Model* parent, GEOCOMPONENTLINKS link, const char* modelPath, const char* texturePath, int32_t itemVisual, const ItemDisplayInfoRec* displayRec, const WxlWeaponSidecar::Resolution* weaponSidecar = nullptr);
     static CCharacterComponent* AllocComponent();
     static CComponentMipBits* AllocComponentMipBits(EGxTexFormat format);
     static CComponentRequest* AllocComponentRequest();
