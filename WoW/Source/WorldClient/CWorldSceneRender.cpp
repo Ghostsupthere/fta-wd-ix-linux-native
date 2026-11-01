@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include <cfloat>
 #include "Engine/Source/ModernAssets/NativeDiagnostic.h"
 #include "CWorldSceneRender.h"
@@ -75,6 +76,7 @@ void CWorldScene::RenderCollisionDebug() {
 // VERIFY: cd492c82 manual
 // OFFSET: 0x0079A870
 void CWorldScene::Render(const C3Vector& cameraPos, float time) {
+    Profiler::Scope profileScope(Profiler::WorldScene);
     if (!CWorldScene::s_viewerMapObjDef) {
         CWorldScene::ComputeExteriorSortDistances();
     }

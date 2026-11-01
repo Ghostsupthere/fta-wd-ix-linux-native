@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include "WoW/Source/WorldClient/Linux/WxlModernVisuals.h"
 #include "WoW/Source/WorldClient/Linux/WxlLootBeam.h"
 #include "WoW/Source/WorldClient/Linux/WxlQuestTracker.h"
@@ -1673,6 +1674,7 @@ void CGWorldFrame::UpdateObject(CGObject_C* object, uint32_t flags) {
 // VERIFY: 2ea40d3b manual
 // OFFSET: 0x004F8EA0
 void CGWorldFrame::OnWorldRender() {
+    Profiler::Scope profileScope(Profiler::WorldRender);
     CRect window = { 0.0f, 0.0f, 0.0f, 0.0f };
     g_theGxDevicePtr->CapsWindowSize(window);
 

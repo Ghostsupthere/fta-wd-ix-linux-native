@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include "WoW/Source/WorldClient/Linux/WxlModernVisuals.h"
 #include "World.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
@@ -3751,6 +3752,7 @@ void CWorldScene::RenderChunksSinglePass() {
 // VERIFY: 981a5585 manual
 // OFFSET: 0x00798DA0
 void CWorldScene::RenderChunks() {
+    Profiler::Scope profileScope(Profiler::Terrain);
 #if defined(WOWDECOMP_LINUX)
     WxlSurfaceLightsBeforeTerrain();
 #endif

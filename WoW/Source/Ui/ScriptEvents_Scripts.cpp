@@ -46,6 +46,7 @@
 #include "WoW/Source/Ui/Linux/WxlUnderwear.h"
 #include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
 #include "WoW/Source/Ui/Linux/WxlCombatReadability.h"
+#include "WoW/Source/Ui/Linux/WxlProfiler.h"
 #include "WoW/Source/WorldClient/Linux/WxlQuestTracker.h"
 #include "WoW/Source/WorldClient/Linux/WxlUnitOutline.h"
 #include "WoW/Source/Ui/Linux/WxlNpcBotEnchant.h"
@@ -4671,6 +4672,7 @@ void ScriptEventsRegisterFunctions() {
     WxlRegisterUnderwearLua();
     WxlRegisterAnimationLabLua();
     WxlRegisterCombatReadabilityLua();
+    WxlRegisterProfilerLua();
     WxlRegisterQuestTrackerLua();
     WxlUnitOutlineInstall();
     WxlRegisterNpcBotEnchantLua();

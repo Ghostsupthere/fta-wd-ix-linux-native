@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include <cfloat>
 #include <cmath>
 #include <cstdint>
@@ -1720,6 +1721,7 @@ M2Element* CM2Scene::AddParticleElement(CParticleEmitter2* emitter, CM2Model* mo
 // VERIFY: d0feeb6c manual
 // OFFSET: 0x00821A20
 int32_t CM2Scene::Animate(const C3Vector& cameraPos) {
+    Profiler::Scope profileScope(Profiler::M2Animate);
 #if defined(WOWDECOMP_LINUX)
     RefreshNativeEquipmentOwner();
     RestoreNativeItemPhysics(this);
@@ -2259,6 +2261,7 @@ void CM2Scene::Release() {
 // VERIFY: 610b7e45 manual
 // OFFSET: 0x00823CB0
 void CM2Scene::Draw(M2PASS pass) {
+    Profiler::Scope profileScope(Profiler::M2Draw);
     if (!((1 << pass) & this->m_passMask)) {
         return;
     }

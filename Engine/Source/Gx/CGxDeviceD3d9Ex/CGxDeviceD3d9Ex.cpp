@@ -6,6 +6,7 @@
 #endif
 
 #include "Engine/Source/ModernAssets/NativeVisualHooks.h"
+#include "Engine/Source/Base/Profiler.h"
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -3183,6 +3184,9 @@ void CGxDeviceD3d9Ex::ISceneBegin() {
 // VERIFY: 7954dea7 auto
 // OFFSET: 0x006A7610
 void CGxDeviceD3d9Ex::ScenePresent() {
+    // Destroyed in reverse order: the Present zone closes first, then the frame ends.
+    struct FrameEnd { ~FrameEnd() { Profiler::EndFrame(); } } frameEnd;
+    Profiler::Scope profilePresent(Profiler::Present);
     if (this->m_context) {
         int32_t scrShotClick = this->m_scrShotClick;
 
@@ -3260,6 +3264,7 @@ void CGxDeviceD3d9Ex::Draw(CGxBatch* batch, int32_t count) {
 
     if (count) {
         uint32_t primCount = this->PrimCalcCount(batch->m_primType, batch->m_count);
+        Profiler::CountDraw(primCount);
         const uint32_t startIndex = batch->m_start + (this->m_primIndexBuf->m_index >> 1);
         if (NativeVisualHooks::instancedDraw && NativeVisualHooks::instancedDraw(this->m_d3dDevice, s_primitiveConversion[batch->m_primType], baseVertexIndex, batch->m_minIndex, batch->m_maxIndex - batch->m_minIndex + 1, startIndex, primCount)) {
             // drawn with hardware instancing
@@ -3270,6 +3275,7 @@ void CGxDeviceD3d9Ex::Draw(CGxBatch* batch, int32_t count) {
         }
     } else {
         uint32_t primCount = this->PrimCalcCount(batch->m_primType, batch->m_count);
+        Profiler::CountDraw(primCount);
         this->m_d3dDevice->DrawPrimitive(s_primitiveConversion[batch->m_primType], baseVertexIndex, primCount);
     }
 }
