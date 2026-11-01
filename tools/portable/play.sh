@@ -6,6 +6,13 @@ set -euo pipefail
 
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 client=$(dirname -- "$here")
+
+# Running the copy inside the unpacked archive (fta-linux-install/payload/FTA-Linux) instead of the installed one.
+if [[ -f $client/../install.sh && $(basename -- "$client") == payload ]]; then
+    printf 'FTA Linux: this is the unpacked installer, not the installed client.\nRun %s first (from your From The Ashes client folder), then start the game with ./FTA-Linux/play.sh from that folder.\n' "$(cd -- "$client/.." && pwd -P)/install.sh" >&2
+    if command -v notify-send >/dev/null; then notify-send 'FTA Linux Client' 'This is the unpacked installer. Run install.sh from your client folder first, then use ./FTA-Linux/play.sh there.' 2>/dev/null || true; fi
+    exit 1
+fi
 cd -- "$client"
 
 fail() {
@@ -22,7 +29,7 @@ esac
 
 [[ -x ./Wow64 ]] || fail "Wow64 is missing from $client (run install.sh again)"
 for name in Data Interface; do
-    [[ -d $name ]] || fail "$client has no $name folder: install into the From The Ashes base client"
+    [[ -d $name ]] || fail "$client has no $name folder. FTA-Linux must be installed inside your From The Ashes client folder (the one with Wow.exe): run install.sh there, then ./FTA-Linux/play.sh"
 done
 mkdir -p -- Logs Cache WTF Errors
 
