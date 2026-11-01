@@ -4,7 +4,7 @@
 // GPL-3.0-or-later) without changes to the assembly text or the edit rules; only the wrapper
 // differs: the code lives in a header and its former file-level state is below. The native client
 // cannot run the Microsoft assembler at run time, so tools/build-wmo-shader-pack.py applies these
-// edits offline (see WXL-NATIVE-PORT.md, "Surface lights").
+// edits offline (see docs/WXL-NATIVE-PORT.md, "Surface lights").
 //
 // The per-frame data is one A32B32G32R32F texture on vertex sampler 0, laid out by the header
 // comment of the native light texture (SurfaceLightTexture.hpp).

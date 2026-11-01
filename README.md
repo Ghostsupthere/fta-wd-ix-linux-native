@@ -14,7 +14,7 @@ Join the Discord for other clients and to show off what you build: https://disco
 
 > **Status.** The client builds, links, logs in and runs in the game world, and its maintainer plays on it. It is not at proven parity with the Windows client: each feature below is marked as confirmed in
 > game, implemented but not yet checked in game, or off by default. The full, honest ledger is
-> [WXL-NATIVE-PORT.md](WXL-NATIVE-PORT.md).
+> [docs/WXL-NATIVE-PORT.md](docs/WXL-NATIVE-PORT.md).
 
 ## Install (players)
 
@@ -105,13 +105,13 @@ Linux (native client):
 nix-shell shell-native.nix            # compiler, CMake, SDL3, Vulkan headers
 ./fetch-dxvk.sh                       # builds the pinned dxvk-native into .deps/dxvk
 DXVK_NATIVE_DIR=$PWD/.deps/dxvk/build-native-sdl3 ./build-native-cmake.sh Wow   # -> bin/Linux/Wow64
-./launch-native.sh --check            # needs a game folder: see NATIVE-LAUNCH-AND-SHARING.md
+./launch-native.sh --check            # needs a game folder: see docs/NATIVE-LAUNCH-AND-SHARING.md
 tools/make-linux-portable.sh          # gather the payload and build the release files (needs the fta-linux-client checkout)
 ```
 
 `tests/` holds sanitizer-built fixtures for the ported modules and `tools/` the offline shader builders and
 GPU probes. How the launcher works, and its development-checkout assumptions, are in
-[NATIVE-LAUNCH-AND-SHARING.md](NATIVE-LAUNCH-AND-SHARING.md).
+[docs/NATIVE-LAUNCH-AND-SHARING.md](docs/NATIVE-LAUNCH-AND-SHARING.md).
 
 Windows (the original wowdecomp target; Visual Studio 2022 with the C++ desktop workload, CMake 3.10+):
 

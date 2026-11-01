@@ -66,5 +66,5 @@ liquid surface, using the world position for transported units.
 
 Nothing is forced off any more. Transparent-draw fog fitting (`transparent_fog.cpp`) is
 driven by `WxlBeginTransparentFog` and `NativeVisualHooks::m2BatchFog` (see
-`WXL-NATIVE-PORT.md`); it stays opt-in through `WXL_TRANSPARENT_FOG` together with
+`docs/WXL-NATIVE-PORT.md`); it stays opt-in through `WXL_TRANSPARENT_FOG` together with
 `WXL_DISTANCE_FOG`.
