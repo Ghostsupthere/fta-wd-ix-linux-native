@@ -153,3 +153,10 @@ FMOD Ex).
 - WarcraftXL, whose modules are ported here (imported files keep their GPL-3.0-or-later headers)
 - **The World of Warcraft community**: the modders, server developers, tool authors and players whose years of work
   and documentation make projects like this possible. Thank you.
+
+## License
+
+Different parts of this tree have different licenses, and none has been changed: the WarcraftXL ports are
+GPL-3.0-or-later, the bundled libraries keep their own licenses, and the wowdecomp reconstruction is credited as
+published by its authors, who declare no license. See [LICENSING.md](LICENSING.md). The installer repository
+(`fta-linux-client`) is GPL-3.0-or-later. Game data is not included and belongs to Blizzard Entertainment.
