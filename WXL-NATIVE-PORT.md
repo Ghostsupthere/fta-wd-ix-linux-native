@@ -1242,14 +1242,13 @@ Only then can the native profile be described as WarcraftXL-parity ready.
 
 ## Portable overlay for other machines (2026-11-01)
 
-`tools/make-linux-portable.sh` builds `Client-Files/wd-ix-linux-native-portable/`: the `Wow64` executable,
-its own glibc and loader, the C++ runtime, xvidcore, dxvk-native, `FTA-Linux/play.sh`, `install.sh`, a
-README and the offline shader packs. No symlinks and no game data (the 19 GB `Data` is not copied): it is
-installed into an existing From The Ashes base client (`./install.sh /path/to/client`) and started with
-`FTA-Linux/play.sh`. The executable was linked against the Nix glibc, so its interpreter is rewritten to a
-path relative to the client folder and the launcher starts it from there; `LD_LIBRARY_PATH` is applied to
-the game process only. SDL3, libcurl, ALSA, PulseAudio client libraries and the Vulkan driver come from the
-system (`play.sh --check` lists what is missing).
+The portable client lives in its own repository, `fta-linux-client` (installer, launcher, README, release
+packaging). `tools/make-linux-portable.sh` here gathers its binary payload: the `Wow64` executable, its own glibc and
+loader, the C++ runtime, xvidcore, dxvk-native and the offline shader packs, with no symlinks and no game data (the
+19 GB `Data` is not copied). It is installed into an existing From The Ashes base client and started with
+`FTA-Linux/play.sh`. The executable was linked against the Nix glibc, so its interpreter is rewritten to a path
+relative to the client folder and the launcher starts it from there; `LD_LIBRARY_PATH` is applied to the game
+process only. SDL3, libcurl, ALSA, PulseAudio client libraries and the Vulkan driver come from the system.
 
 Verified: the install and `--check` outside nix on the build machine; a real launch to the login render
 (dxvk initialised, swap chain, surface-light packs loaded) from a scratch folder that borrowed the real game

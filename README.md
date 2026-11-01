@@ -18,66 +18,19 @@ Join the Discord for other clients and to show off what you build: https://disco
 
 ## Install (players)
 
-You need a From The Ashes base client folder (the one with `Wow.exe`, `Data`, `Interface`, `WTF`) and a
-Linux x86-64 machine with a Vulkan GPU. The native client installs **into that folder**, uses its game data
-and leaves the Windows files untouched. There is no game data in this repository or in the overlay.
+The installer, launcher and install instructions live in their own repository,
+**[fta-linux-client](https://github.com/Ghostsupthere/fta-linux-client)**. Download `FTA-Linux-Installer.run` from its
+Releases page and double-click it: it finds your From The Ashes client folder (the one with `Wow.exe`), installs the
+Linux client into it, installs any missing system libraries and adds a menu shortcut. The Windows client is not
+touched, and no game data is included.
 
-### One-click install
+You need a From The Ashes client folder and a Linux x86-64 machine with a Vulkan GPU. The client bundles its own
+glibc and dxvk-native; SDL3, libcurl, ALSA and the PulseAudio client libraries come from the system (the installer
+handles this on Arch/CachyOS, Debian/Ubuntu, Fedora and openSUSE; Ubuntu 24.04 and older need SDL3 built from
+source, which that repository's README walks through). Only Arch/CachyOS has been used to play; the other
+distributions were checked in containers without a GPU.
 
-Download `FTA-Linux-Installer.run` and **double-click it** (if your file manager asks, choose *Run*; if it
-only opens it as text, right-click, *Properties*, *Permissions*, tick *Allow executing*, or just run
-`bash FTA-Linux-Installer.run`). It opens a terminal, finds your From The Ashes client folder (the one with
-`Wow.exe`, or it asks you to pick it), installs into it, offers to install any missing system libraries
-(it asks for your password), adds **From The Ashes (Linux)** to your applications menu and offers to start the
-game. Run it again at any time to update. The installer checks its own integrity; `FTA-Linux-SHA256SUMS.txt`
-lists the checksums if you want to compare a download.
-
-### Manual install
-
-1. Get the overlay `wd-ix-linux-native-portable.tar.gz` (from the maintainer or the repository's Releases
-   page), or build it from a built source tree with `tools/make-linux-portable.sh`.
-2. Open a terminal **in your client folder** (the one containing `Wow.exe`, `Data` and `Interface`; in most file
-   managers, right-click an empty spot and choose *Open Terminal Here*), then unpack and install. Change the
-   first path if the archive is not in `~/Downloads`:
-
-   ```
-   mkdir fta-linux-install && tar -xzf ~/Downloads/wd-ix-linux-native-portable.tar.gz -C fta-linux-install && ./fta-linux-install/install.sh
-   ```
-
-   That one line unpacks the archive **and runs the installer**; unpacking alone installs nothing. When it
-   finishes, an `FTA-Linux` folder exists in your client folder (the later steps need it).
-
-3. Install any missing system libraries (SDL3, libcurl, ALSA, PulseAudio client libraries, a Vulkan driver).
-   The first command only reports; the second installs, asking first and using sudo:
-
-   ```
-   ./FTA-Linux/install-deps.sh
-   ./FTA-Linux/install-deps.sh --install
-   ```
-
-4. Verify and play, still from the client folder:
-
-   ```
-   ./FTA-Linux/play.sh --check
-   ./FTA-Linux/play.sh
-   ```
-
-5. Optional: `rm -r fta-linux-install`.
-
-The overlay carries its own glibc, C++ runtime, xvidcore and dxvk-native, so it does not depend on your
-distribution's glibc. Logs go to `Logs/native-launch-*.log` in the client folder. To remove it, delete
-`Wow64` and `FTA-Linux/` from the client folder.
-
-| Distribution | Notes |
-|---|---|
-| Arch, CachyOS, Manjaro | Everything is in the repositories. Tested. NVIDIA: add `nvidia-utils`. |
-| Debian 13, Ubuntu 25.04+ | Everything is in the repositories (`libsdl3-0`). Tested on Debian 13. |
-| Ubuntu 22.04 / 24.04, Debian 12 | No SDL3 package: upgrade, or build SDL 3.2+ into `/usr/local` (steps in [tools/portable/README.md](tools/portable/README.md)). Tested on 24.04 up to `--check`. |
-| Fedora | SDL3 from Fedora 42 (`SDL3`); NVIDIA via RPM Fusion. Package names not yet run. |
-| openSUSE | Tumbleweed has `libSDL3-0`. Package names not yet run. |
-
-Only Arch/CachyOS has been used to actually play. The other rows were checked in containers without a GPU, up
-to the point where the libraries resolve and the engine starts.
+To build the release files yourself, see "Building from source" below.
 
 ### Settings
 
@@ -153,7 +106,7 @@ nix-shell shell-native.nix            # compiler, CMake, SDL3, Vulkan headers
 ./fetch-dxvk.sh                       # builds the pinned dxvk-native into .deps/dxvk
 DXVK_NATIVE_DIR=$PWD/.deps/dxvk/build-native-sdl3 ./build-native-cmake.sh Wow   # -> bin/Linux/Wow64
 ./launch-native.sh --check            # needs a game folder: see NATIVE-LAUNCH-AND-SHARING.md
-tools/make-linux-portable.sh          # package the portable overlay
+tools/make-linux-portable.sh          # gather the payload and build the release files (needs the fta-linux-client checkout)
 ```
 
 `tests/` holds sanitizer-built fixtures for the ported modules and `tools/` the offline shader builders and
@@ -180,7 +133,7 @@ NASM; the options are `WOWDECOMP_DISABLE_SIGNATURE_CHECKS`, `WOWCLIENT_CRASH_LOG
 | `Engine/Source/ModernAssets/` | WarcraftXL asset and renderer ports (M3, DDS, physics, visuals, quest tracker, loot beam, ...) |
 | `WoW/Source/`, `WoW/Common/` | Game modules: objects, world rendering, UI, networking, database, glue screens, and the `Linux/` WarcraftXL adapters |
 | `ThirdParty/` | Libraries linked from their upstream sources |
-| `tools/`, `tests/` | Shader pack builders, GPU probes, the portable overlay builder, sanitizer fixtures |
+| `tools/`, `tests/` | Shader pack builders, GPU probes, the payload builder for the portable client, sanitizer fixtures |
 
 ## Decompilation progress (wowdecomp, measured 2026-10-15)
 
