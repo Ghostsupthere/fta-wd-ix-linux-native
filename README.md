@@ -159,4 +159,11 @@ FMOD Ex).
 Different parts of this tree have different licenses, and none has been changed: the WarcraftXL ports are
 GPL-3.0-or-later, the bundled libraries keep their own licenses, and the wowdecomp reconstruction is credited as
 published by its authors, who declare no license. See [LICENSING.md](LICENSING.md). The installer repository
-(`fta-linux-client`) is GPL-3.0-or-later. Game data is not included and belongs to Blizzard Entertainment.
+(`fta-linux-client`) is GPL-3.0-or-later.
+
+This project is free to use, share and build on. **No Blizzard game assets or game data are included** in this
+repository or in the release files: no MPQ archives, models, textures, sounds, databases or interface files. You need
+your own From The Ashes client folder, and the game data in it remains Blizzard's. The one kind of derived file the
+releases carry is the optional offline shader packs (`Utils/WarcraftXL/visuals/*.pack`): they are generated from shader
+code in a client's own files with WarcraftXL's patches, and without them the features that use them (surface lights,
+layered WMO materials, grass motion) stay off.
