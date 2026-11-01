@@ -144,9 +144,12 @@ FMOD Ex).
 
 ## Credits
 
-- wowdecomp and its contributors, for the reconstruction this is built on
-- WarcraftXL, whose modules are ported here (imported files keep their GPL-3.0-or-later headers)
-- [binana](https://github.com/thunderbrewhq/binana), [thunderbrew](https://github.com/thunderbrewhq/thunderbrew), [whoa](https://github.com/whoahq/whoa)
-- [dxvk](https://github.com/doitsujin/dxvk) and SDL3
+- **[From The Ashes](https://discord.gg/DsZMGUD8aT)** is the server this client is made for.
+- **wowdecomp**, the C++ reconstruction of the 3.3.5a client this is built on, and the forks of it.
+- [binana](https://github.com/thunderbrewhq/binana), [thunderbrew](https://github.com/thunderbrewhq/thunderbrew) and
+  [whoa](https://github.com/whoahq/whoa), which wowdecomp credits as well
+- [dxvk](https://github.com/doitsujin/dxvk) and SDL3, which the Linux client renders and runs through
 - Everyone who reported bugs
-- The WoW modding community
+- WarcraftXL, whose modules are ported here (imported files keep their GPL-3.0-or-later headers)
+- **The World of Warcraft community**: the modders, server developers, tool authors and players whose years of work
+  and documentation make projects like this possible. Thank you.
