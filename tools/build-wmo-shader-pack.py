@@ -61,10 +61,11 @@ def permutations(blob):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--client', type=Path, default=ROOT.parent.parent / 'From_The_Ashes_Client', help='client directory with Data/*.mpq')
-    parser.add_argument('--storm', default=os.environ.get('STORMLIB', '/home/shawn/Documents/AzerothCore/Build/tools/stormlib/libstorm.so'))
+    parser.add_argument('--storm', default=os.environ.get('STORMLIB'), help='path to the StormLib shared library (or set STORMLIB)')
     parser.add_argument('--out', type=Path, default=ROOT / 'bin/Linux/Utils/WarcraftXL/visuals/wmo_shaders.pack')
     parser.add_argument('--compiler-dll', type=Path, default=ROOT / '.deps/visual-shader-tools/d3dcompiler_47.dll')
     args = parser.parse_args()
+    if not args.storm: raise SystemExit('Give --storm /path/to/libstorm.so or set STORMLIB (the StormLib shared library)')
     expected = json.loads(MANIFEST.read_text())['compiler_sha256']
     if not args.compiler_dll.is_file() or hashlib.sha256(args.compiler_dll.read_bytes()).hexdigest() != expected:
         raise SystemExit('Missing or mismatched offline compiler DLL (see Engine/Source/ModernAssets/WxlVisuals/SOURCE.md)')
