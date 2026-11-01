@@ -9,6 +9,7 @@
 #include "Engine/Source/ModernAssets/NativeItemPhysics.h"
 #include "Engine/Source/ModernAssets/NativeModelPresentation.h"
 #include "Engine/Source/Model2/WxlSceneModels.h"
+#include "Engine/Source/Model2/WxlModelMirror.h"
 #endif
 #include "Engine/Source/Base/ObjectAlloc.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
@@ -1548,6 +1549,10 @@ CM2Model* CM2Scene::CreateModel(const char* fileName, uint32_t flags) {
     if (!shared) {
         shared = this->m_cache->CreateShared("Spells\\ErrorCube.mdx", 0);
     }
+
+#if defined(WOWDECOMP_LINUX)
+    flags &= ~WxlModelMirror::kCreateFlag;
+#endif
 
     CM2Model* model = nullptr;
 

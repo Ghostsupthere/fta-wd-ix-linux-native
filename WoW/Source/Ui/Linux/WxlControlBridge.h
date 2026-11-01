@@ -5,11 +5,10 @@
 // Server/From_The_Ashes_Source/WarcraftXL/scripts/wxl-control-panel in the
 // FTA-Project tree). The real WarcraftXL.dll/d3d9-proxy pair that originally
 // answered these calls isn't part of the available source (only the Lua
-// bridge and the options-storage ABI are) -- in particular, the "chevron"
-// facing-marker renderer that the stored options describe has no known
-// implementation anywhere in the checked-out WarcraftXL source tree, so
-// those specific options (outline/facing/normal/elite/boss/tail.*) round-trip
-// correctly but currently drive no renderer. This bridge exists so
+// bridge and the options-storage ABI are). The "chevron" facing-marker
+// renderer those options describe is wxl-unit-outline, ported natively in
+// WoW/Source/WorldClient/Linux/WxlUnitOutline; it reads them back through
+// WxlGetControlSettings and only draws when WXL_UNIT_OVERLAYS is on. This bridge exists so
 // WXL.DetectBridge() in the installed WarcraftXLControl addon reports
 // available=true at all, which unblocks every OTHER extension's own
 // NativeFunction gate (skybox, weather, visual-time, etc.) -- those are
@@ -21,7 +20,11 @@
 
 #if defined(WOWDECOMP_LINUX)
 
+#include <cstddef>
+
 void WxlRegisterControlBridgeLua();
+// Snapshot of the stored outline/facing options in the supplied 200-byte layout; false for a wrong size.
+bool WxlGetControlSettings(void* out, size_t size);
 
 #endif  // WOWDECOMP_LINUX
 

@@ -2,12 +2,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <utility>
 #include "Engine/Source/Model2/M2Cache.h"
 #include "Engine/Source/Base/ObjectAlloc.h"
 #include "Engine/Source/BlizzardCore/SFile2-Core.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
 #include "Engine/Source/Model2/M2Model.h"
 #include "Engine/Source/Model2/M2Scene.h"
+#include "Engine/Source/Model2/WxlModelMirror.h"
 #include "Engine/Source/Os/Processor.h"
 #include "Engine/Source/Os/System.h"
 #include "Engine/Source/Os/TimeManager.h"
@@ -291,6 +293,17 @@ CM2Shared* CM2Cache::CreateShared(const char* name, uint32_t flags) {
         hash = *c + 19 * hash;
     }
 
+#if defined(WOWDECOMP_LINUX)
+    // A mirrored copy (weapon sidecar offhand) is a separate cache entry of the same file.
+    const bool mirrorY = (flags & WxlModelMirror::kCreateFlag) != 0;
+    if (mirrorY) {
+        hash = hash * 31 + 0x6d69;
+        boundingBox.b.y = -boundingBox.b.y;
+        boundingBox.t.y = -boundingBox.t.y;
+        std::swap(boundingBox.b.y, boundingBox.t.y);
+    }
+#endif
+
     CM2Shared** link = &this->m_shared[hash % (sizeof(this->m_shared) / sizeof(this->m_shared[0]))];
     int32_t cmp = 1;
 
@@ -310,6 +323,12 @@ CM2Shared* CM2Cache::CreateShared(const char* name, uint32_t flags) {
         }
     }
 
+#if defined(WOWDECOMP_LINUX)
+    if (*link && cmp == 0 && (((*link)->m_flags & WxlModelMirror::kSharedFlag) != 0) != mirrorY) {
+        cmp = 1;
+    }
+#endif
+
     if (*link && cmp == 0) {
         (*link)->AddRef();
         return *link;
@@ -328,6 +347,13 @@ CM2Shared* CM2Cache::CreateShared(const char* name, uint32_t flags) {
         SFileCloseFile(file);
         return nullptr;
     }
+
+#if defined(WOWDECOMP_LINUX)
+    // Set before Load: the asynchronous load may finish before CreateShared returns.
+    if (mirrorY) {
+        shared->m_flags |= WxlModelMirror::kSharedFlag;
+    }
+#endif
 
     if (!shared->Load(file, flags & 4, &boundingBox)) {
         SFileCloseFile(file);

@@ -2733,6 +2733,7 @@ int32_t CGxDeviceD3d9Ex::ICreateD3dDevice(const CGxFormat& format) {
 void CGxDeviceD3d9Ex::IReleaseD3dResources(int32_t freeTextures) {
     if (NativeVisualHooks::deviceLost) NativeVisualHooks::deviceLost();
     if (NativeVisualHooks::overlayDeviceLost) NativeVisualHooks::overlayDeviceLost();
+    if (NativeVisualHooks::outlineDeviceLost) NativeVisualHooks::outlineDeviceLost();
     this->ITexForceRecreation(freeTextures);
     this->IReleaseD3dShaders(freeTextures);
     this->IReleaseD3dPools(freeTextures);
@@ -3186,6 +3187,7 @@ void CGxDeviceD3d9Ex::ScenePresent() {
         int32_t scrShotClick = this->m_scrShotClick;
 
         CGxDevice::ScenePresent();
+        if (NativeVisualHooks::outlineOverlay) NativeVisualHooks::outlineOverlay(this->m_d3dDevice);
         if (NativeVisualHooks::overlayDraw) NativeVisualHooks::overlayDraw(this->m_d3dDevice);
         this->ISceneEnd();
         this->ICursorDraw();
@@ -3263,6 +3265,8 @@ void CGxDeviceD3d9Ex::Draw(CGxBatch* batch, int32_t count) {
             // drawn with hardware instancing
         } else if (!NativeVisualHooks::wmoDraw || !NativeVisualHooks::wmoDraw(this->m_d3dDevice, s_primitiveConversion[batch->m_primType], baseVertexIndex, batch->m_minIndex, batch->m_maxIndex - batch->m_minIndex + 1, startIndex, primCount)) {
             this->m_d3dDevice->DrawIndexedPrimitive(s_primitiveConversion[batch->m_primType], baseVertexIndex, batch->m_minIndex, batch->m_maxIndex - batch->m_minIndex + 1, startIndex, primCount);
+            if (NativeVisualHooks::m2BatchDrawn && NativeVisualHooks::currentM2Model)
+                NativeVisualHooks::m2BatchDrawn(NativeVisualHooks::currentM2Model, this->m_d3dDevice, s_primitiveConversion[batch->m_primType], baseVertexIndex, batch->m_minIndex, batch->m_maxIndex - batch->m_minIndex + 1, startIndex, primCount);
         }
     } else {
         uint32_t primCount = this->PrimCalcCount(batch->m_primType, batch->m_count);

@@ -37,6 +37,15 @@ inline void (*m2SetBoneSequence)(CM2Model* model,unsigned boneId,unsigned* seque
 // gliderForget when such a model is (re)attached.
 inline void (*gliderUpdate)(CM2Model* model)=nullptr;
 inline void (*gliderForget)(CM2Model* model)=nullptr;
+// Unit outline (wxl-unit-outline). Separate slots from the editor overlay and the modern-visuals device-loss
+// hook so no module overwrites another. outlineOverlay runs just before overlayDraw, after the world and UI
+// are flushed; outlineDeviceLost runs with deviceLost. currentM2Model is set only around the engine's single-
+// model M2 batch draw, and m2BatchDrawn is called right after that draw's indexed D3D call with its parameters,
+// while the batch's vertex and index buffers are still bound (device is an IDirect3DDevice9*).
+inline void (*outlineOverlay)(void* device)=nullptr;
+inline void (*outlineDeviceLost)()=nullptr;
+inline CM2Model* currentM2Model=nullptr;
+inline void (*m2BatchDrawn)(CM2Model* model,void* device,int type,int base,unsigned minimum,unsigned count,unsigned start,unsigned primitives)=nullptr;
 // Called from ~CM2Model, before the model is torn down, so modules that keep model pointers between
 // frames (surface lights) can drop them.
 inline void (*modelDestroyed)(const CM2Model* model)=nullptr;

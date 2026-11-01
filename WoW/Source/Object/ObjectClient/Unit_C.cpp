@@ -50,6 +50,7 @@
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
 #include "WoW/Source/Object/ObjectClient/Linux/WxlSelectionCircle.h"
+#include "WoW/Source/WorldClient/Linux/WxlQuestTracker.h"
 #include "WoW/Source/Magic/MagicClient/Linux/WxlNpcBotTargets.h"
 #include "WoW/Source/Magic/MagicClient/Linux/WxlLoneWolf.h"
 #endif
@@ -2260,6 +2261,9 @@ void CGUnit_C::RenderAutoTrackCursor() {
 // OFFSET: 0x0072B7E0
 void CGUnit_C::Render() {
     this->RenderAutoTrackCursor();
+#if defined(WOWDECOMP_LINUX)
+    WxlObjectiveRingDraw(this);
+#endif
 }
 
 // VERIFY: e73a5793 manual

@@ -7,6 +7,7 @@
 #include "Engine/Source/Model2/M2Shared.h"
 #if defined(WOWDECOMP_LINUX)
 #include "Engine/Source/Model2/WxlBoneBudget.h"
+#include "Engine/Source/Model2/WxlModelMirror.h"
 #endif
 #include "Engine/Source/Base/Handle.h"
 #include "Engine/Source/Base/SIMD.h"
@@ -1148,6 +1149,9 @@ int32_t CM2Shared::FinishLoadingSkinProfile(uint32_t size) {
 
 #if defined(WOWDECOMP_LINUX)
     if (!RebuildModernM2Skin(data, skinData, this->m_fileName)) return 0;
+    if ((this->m_flags & WxlModelMirror::kSharedFlag) && !WxlModelMirror::MirrorSkin(*skinData)) {
+        WxlNativeDiagnostic("weapon-sidecar: mirrored skin has partial triangles: %s", this->m_fileName);
+    }
 #endif
 
     if (!this->InitializeSkinProfile()) {
@@ -1443,10 +1447,20 @@ int32_t CM2Shared::FinishLoadingLowPrioritySequence(uint32_t sequenceIndex, CAsy
         return 0;
     }
 
+#if defined(WOWDECOMP_LINUX)
+    // Aliases share the buffer, so a mirrored copy mirrors each key array once.
+    WxlModelMirror::Seen mirrored;
+    const bool mirror = (this->m_flags & WxlModelMirror::kSharedFlag) != 0;
+    if (mirror) WxlModelMirror::MirrorLoadedSequence(*this->m_data, sequenceIndex, mirrored);
+#endif
+
     for (uint16_t* alias = &sequence->m_aliasNext; *alias != sequenceIndex; alias = &this->m_data->m_sequences[*alias].m_aliasNext) {
         if (!this->FinishLoadingLowPrioritySequence(*alias, static_cast<uint8_t*>(object->m_buffer), object->m_size)) {
             return 0;
         }
+#if defined(WOWDECOMP_LINUX)
+        if (mirror) WxlModelMirror::MirrorLoadedSequence(*this->m_data, *alias, mirrored);
+#endif
     }
 
     return 1;
@@ -1602,6 +1616,12 @@ int32_t CM2Shared::FinishLoading() {
     }
 
     this->m_data->m_flags &= ~0x60u;
+
+#if defined(WOWDECOMP_LINUX)
+    if (this->m_flags & WxlModelMirror::kSharedFlag) {
+        WxlModelMirror::MirrorData(*this->m_data);
+    }
+#endif
 
     if (!this->Initialize()) {
         DebugLog("Failed to initialize model: %s", this->m_fileName);
@@ -1837,8 +1857,9 @@ void CM2Shared::LowPrioritySequenceLoadedCallback(void* param) {
 #if defined(WOWDECOMP_LINUX)
     const auto animationResult = TransformModernExternalAnimation(load->m_asyncObject->m_buffer, load->m_asyncObject->m_size);
     if (animationResult == ModernAnimationTransformResult::Rejected) {
-        WxlNativeDiagnostic("modern-anim: rejected unsupported or malformed sequence %u for %s",
-            load->m_sequenceIndex, shared->m_fileName);
+        WxlNativeDiagnostic("modern-anim: rejected unsupported or malformed sequence %u for %s (%s)",
+            load->m_sequenceIndex, shared->m_fileName,
+            DescribeModernAnimationChunks(load->m_asyncObject->m_buffer, load->m_asyncObject->m_size).c_str());
         CM2Shared::LowPrioritySequenceFailedCallback(param);
         return;
     }

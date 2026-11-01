@@ -1,6 +1,7 @@
 #include "Engine/Source/ModernAssets/ModernBlp.h"
 
 #include "WxlBlp/textures/blp/BlpTranscode.hpp"
+#include "WxlBlp/textures/dds/Dds.hpp"
 
 #include <cctype>
 #include <span>
@@ -9,6 +10,7 @@
 namespace {
 constexpr uint32_t kMagicBlp1 = 0x31504C42;
 constexpr uint32_t kMagicBlp2 = 0x32504C42;
+constexpr uint32_t kMagicDds = 0x20534444;
 constexpr uint32_t kSafeTextureEdge = 2048;
 
 uint32_t ReadU32(const uint8_t* p) {
@@ -48,6 +50,17 @@ ModernBlpTransformResult TransformModernBlp(const char* name, const void* source
         return ModernBlpTransformResult::Rejected;
     }
     const uint32_t magic = ReadU32(raw.data());
+    if (magic == kMagicDds) {
+        // A .dds sibling served in place of a missing .blp (see SFile::OpenEx). Plain luminance
+        // alpha stays off: that option is for FX sprites the M3 drop-in flow selects per model.
+        // The scratch ceiling applies to DDS as to BLP2; the DXT payload copies verbatim.
+        if (raw.size() < 20 || ReadU32(raw.data() + 12) > kSafeTextureEdge || ReadU32(raw.data() + 16) > kSafeTextureEdge) {
+            return ModernBlpTransformResult::Rejected;
+        }
+        return wxl::modern::assets::textures::dds::DdsToBlp(raw.data(), raw.size(), output)
+            ? ModernBlpTransformResult::Transformed
+            : ModernBlpTransformResult::Rejected;
+    }
     if (magic == kMagicBlp1) {
         return ModernBlpTransformResult::NotApplicable;
     }

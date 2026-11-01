@@ -31,6 +31,7 @@
 #include "Engine/Source/Model2/M2Model.h"
 #if defined(WOWDECOMP_LINUX)
 #include "Engine/Source/Model2/WxlAttachmentId.h"
+#include "Engine/Source/Model2/WxlModelMirror.h"
 #endif
 #include "Engine/Source/Model2/M2Scene.h"
 #include "Engine/Source/ModernAssets/NativeDiagnostic.h"
@@ -2244,7 +2245,16 @@ void CCharacterComponent::AddLink(CM2Model* parent, GEOCOMPONENTLINKS link, cons
 #if defined(WOWDECOMP_LINUX)
     CM2Model* model = nullptr;
     if (weaponSidecar && !weaponSidecar->model.empty()) {
-        model = parent->m_scene->CreateModel(weaponSidecar->model.c_str(), 0);
+        // CreateModel substitutes an error cube for a missing file, so look first.
+        // A mirrored offhand is its own cache entry: the shared unmirrored model stays intact.
+        std::string onDisk = weaponSidecar->model;
+        const size_t dot = onDisk.rfind('.');
+        if (dot != std::string::npos && (onDisk.compare(dot, std::string::npos, ".mdx") == 0 || onDisk.compare(dot, std::string::npos, ".mdl") == 0)) {
+            onDisk.replace(dot, std::string::npos, ".m2");
+        }
+        if (SFile::FileExists(onDisk.c_str())) {
+            model = parent->m_scene->CreateModel(weaponSidecar->model.c_str(), weaponSidecar->mirror ? WxlModelMirror::kCreateFlag : 0);
+        }
         if (!model) {
             WxlNativeDiagnostic("weapon-sidecar: missing model %s", weaponSidecar->model.c_str());
             weaponSidecar = nullptr;
@@ -2299,8 +2309,7 @@ void CCharacterComponent::AddLink(CM2Model* parent, GEOCOMPONENTLINKS link, cons
             }
         }
         if (weaponSidecar->mirror) {
-            // Geometry and triangle-winding mirroring of an attached model is not ported yet.
-            WxlNativeDiagnostic("weapon-sidecar: offhand mirror requested for %s, rendering unmirrored", weaponSidecar->model.c_str());
+            WxlNativeDiagnostic("weapon-sidecar: offhand %s %s", weaponSidecar->model.empty() ? "mirror has no model, stock model unmirrored" : "mirrored", weaponSidecar->model.c_str());
         }
     }
 #endif

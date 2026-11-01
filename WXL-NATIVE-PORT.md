@@ -17,8 +17,8 @@ different completion gates.
 | Workstream | Current implementation | Remaining work |
 | --- | --- | --- |
 | M2/BLP assets | Native conversion, skeleton merge, single AFM2 unwrap, eligible v264 repairs, material/batch rebuild, packed wide index offsets and 75-bone subdivision | Split-animation rebasing; remaining format limits and real rendered acceptance |
-| Collection armor and waist models | Slot filtering/ownership, Icon2 and sidecar policies, texture-readiness queues, attachment-53 buckles, owner/world replay, cached and post-worker palette copying | Remaining source-policy cases, weapon offhand mirroring, remaining missing armor and full transition/retry acceptance; reported wisps/Human Female deformation are resolved |
-| Item physics | PHYS companions and PFDC/PFID associations, skeleton binding, native-pose restoration, post-worker simulation and model lifecycle cleanup | Private virtual-source associations, rendered motion, live lifecycle and frame-cost acceptance |
+| Collection armor and waist models | Slot filtering/ownership, Icon2 and sidecar policies, texture-readiness queues, attachment-53 buckles, owner/world replay, cached and post-worker palette copying | Remaining source-policy cases, remaining missing armor and full transition/retry acceptance; reported wisps/Human Female deformation are resolved |
+| Item physics | PHYS companions and PFDC/PFID associations, skeleton binding, native-pose restoration, post-worker simulation and model lifecycle cleanup | Rendered motion, live lifecycle and frame-cost acceptance |
 | WMO assets and materials | Conversion, scoped visibility handling, immutable layered texture/UV/weight snapshots, and GPU layered-material draws (two-layer overlays, four-layer height blends) through offline-patched native shaders | In-game acceptance on a layered WMO, frame cost; WMO modern emissive/parallax and the unified-render lighting extras are not implemented |
 | Native environment/renderer | Distance/profile controls and scoped fog-range handling; imported water (FFT, ripples, contacts), atmosphere, god-ray and local-light renderers drawing through the native D3D9Ex device with vendor-independent depth copy and 56 verified precompiled shaders | In-game acceptance and frame cost; transparent fog is implemented but unseen in game (opt-in); grading/postprocess modules are not imported |
 | Other extensions | Sound filtering, skybox/time/weather/control bridges, native local/preview/remote weapon rotation/reverse grip and loot-beam world draws | Weapon orientation and loot-beam rendered/transition acceptance; grass motion, editor features and remaining modules audited below |
@@ -457,17 +457,86 @@ ResetReadabilityOptions` over the settings store in
 `Engine/Source/ModernAssets/WxlCombatReadability/ReadabilitySettings.hpp` (keys, ranges and defaults
 as the DLL; `tests/wxl_readability_settings_test.cpp`). It only stores values. Everything it feeds
 (outlines, the frontal guide cone, danger rings) is drawn by `wxl-unit-outline`, which
-`WXL_UNIT_OVERLAYS=0` disables and which is not ported, so the add-on's frontal-guide option has no
-visible effect, exactly as on a Windows client with overlays off. `WXL_COMBAT_READABILITY=0` hides the
+`WXL_UNIT_OVERLAYS=0` disables. That renderer is now ported (see "Quest tracker, objective rings and unit
+outline" below); with the profile switch at 0 the add-on's frontal-guide option still has no visible effect,
+exactly as on a Windows client with overlays off. `WXL_COMBAT_READABILITY=0` hides the
 bridge. `WxlReadabilitySnapshot()` is there for a future outline renderer.
 
-**wxl-selcircle-poc** is not ported: `InstallModule` returns immediately unless
-`WXL_QUEST_RENDERING` is set, and the checked profile has it at 0 (the module draws circles on
-quest-objective mobs from the opcode-200 quest tracker).
+**wxl-selcircle-poc** (quest-objective rings) is ported 2026-11-01, off by default: see the next section.
 
 `Wow` builds and links. **Not seen in game.** To check: target a creature and turn it with the
 mouse/by walking around it; the front marker of the ring should follow the creature's facing, not
 rotate with the camera.
+
+### Quest tracker, objective rings and unit outline (2026-11-01)
+
+The developer confirmed `wxl-quest-marker`, `wxl-selcircle-poc` and `wxl-unit-outline` were only config-disabled, so
+they are ported. Both gates stay as the Windows modules had them and are **0 in this profile**, so nothing changes
+until `WXL_QUEST_RENDERING=1` and/or `WXL_UNIT_OVERLAYS=1` is set in `WarcraftXL.cfg` (or the environment). The
+WarcraftXLControl add-on's Tracker tab and Readability page drive them; before this, its tracker natives did not
+exist, so the tab reported that the runtime was missing.
+
+**Quest markers and objective rings (`WXL_QUEST_RENDERING`).**
+- Lua natives, registered only when the gate is on: `WarcraftXL_TrackerSetMarker / ClearMarkers / GetMarkerInfo /
+  SetMarkerAlpha / SetSettings / SetCorpseMarker / ClearCorpseMarker / IsCorpseActive / GetCorpseInfo / SetPlayerDead /
+  GetPlayerPosition / GetMapId / SetDiamond` and `SetObjectiveEntries / ClearObjectiveEntries / SetRingSettings`
+  (`WoW/Source/WorldClient/Linux/WxlQuestTracker.cpp`). Validation, the 25-marker and 16-entry caps, projection and
+  billboard maths are the engine-independent `Engine/Source/ModernAssets/WxlQuestTracker/TrackerState.hpp`.
+- **Marker pass.** The supplied quest billboard, opaque corpse stone (alpha-tested) and screen-space diamond are drawn
+  from `interface\navigation\ingamenavigationui.blp` (uncompressed BGRA 64x64 in Patch-I here; the supplied loader is
+  ported as `BlpTexture.hpp`, with its generated fallback icon) by `MarkerRenderer.hpp` through the native D3D9Ex
+  device inside the world pass, beside the loot beams: depth-tested against the world depth with the viewport's depth
+  range, reversed-depth aware, far plane extended for standard depth, full device-state capture and restore. The Lua
+  label queries project against the last drawn frame's world camera (`WxlWorldCamera`: the engine view with the eye
+  translation composed back in, as the loot beams do), so labels trail the icon by at most a frame.
+- **Objective rings.** `CGUnit_C::Render` (which the engine runs once per visible unit per frame, the tick the Windows
+  module used through `RenderAutoTrackCursor`) calls `WxlObjectiveRingDraw`: a unit whose creature entry is in the
+  selected quest's set, alive, not a player, not the locked target, within 60 yards, at most 24 a frame, gets a ring from
+  the engine's own selection-circle path (`SetCircleRenderStates`, `ProjectTex::Render2d`, the facing-aligned matrix)
+  using `textures\questmarker\unitselecttexture-quest.blp` (Patch-5), yellow at 40% brightness with the user's ring
+  alpha. The texture swap rides the engine's `RsPush/RsPop`, so the manual save/restore of the Windows module is not
+  needed. The Windows hooks on `ProjectTex2d`, `GetObjectByGuid` and the visible-object enumerator are not needed
+  either: the per-unit tick replaces the GUID cache.
+- **Verification.** `tests/wxl_quest_tracker_test.cpp` (ASan/UBSan: markers, caps, validation, objective entries,
+  rejected calls keeping old entries, colour, projection, billboard, far plane) passes.
+  `tools/wxl_quest_tracker_gpu_probe.cpp` runs the shipped `MarkerRenderer.hpp` on the real dxvk-native backend with the
+  real extracted atlas: marker centred and about 32 px at 50 and 90 yards, hidden at alpha 0, behind the camera, when
+  occluded and for a dead player, corpse opaque at alpha 0, diamond drawn through the depth buffer at its NDC
+  position, state restored (a repeat draw is pixel-identical). **Not verified:** the Lua natives against a running game
+  and server, the ring draw (it needs the engine), and anything in world space with a real camera.
+
+**Unit outline (`WXL_UNIT_OVERLAYS`).** The supplied `Outline.cpp`, `Outline.hpp`, `Hlsl.hpp` and
+`ImmediateSilhouette.hpp` are copied into `WoW/Source/WorldClient/Linux/WxlUnitOutline/` with three documented edits:
+the footprint helper reads the model through `m2::FootprintInputs` instead of raw offsets, the multisampled mask is
+resolved before the edge pass samples it, and the file-scope self-registration is replaced by an explicit
+`WxlUnitOutlineInit` (static initialisation order is not safe with the profile reader). The WarcraftXL core APIs it
+uses are provided by sibling headers with the same include names (`events/`, `game/gx|world|unit|camera|m2|combat/`,
+`gpu/`, `common/`, `core/`) and `NativeFacade.cpp` / `GxFacade.cpp`; `__try/__except` become `try/catch` (the native
+bindings validate before dereferencing instead).
+- **What it draws.** A reaction-coloured silhouette outline on the target and mouseover (cast / boss contrast and
+  pulse from the readability settings), the terrain-conforming facing chevrons (ground or overlay, four shapes), and
+  the frontal-cone and ring danger guide. Options come from the control bridge (`WxlGetControlSettings`, in the
+  supplied 200-byte layout) and the readability bridge.
+- **Event sources.** The Windows core's detours become native hooks in `NativeVisualHooks`: `m2BatchDrawn` after the
+  engine's single-model M2 indexed draw (`CM2SceneRender::DrawBatch` sets `currentM2Model`; instanced batches are not
+  reported, as no single model owns them), `outlineOverlay` just before the editor overlay at `ScenePresent`, and
+  `outlineDeviceLost`; world leave comes from `World::UnloadMap`.
+- **Shaders.** The five small pixel shaders cannot be compiled at run time here, so `tools/build-outline-shaders.py`
+  extracts the HLSL from `Hlsl.hpp`, compiles it offline with the same pinned compiler and Wine prefix as the other
+  visual shaders, and writes `outline_shaders.h`; the runtime finds bytecode by a hash of the exact source text
+  (`--verify` checks the table against `Hlsl.hpp` without Wine).
+- **Multisampling.** The swap chain is multisampled when the player selects it, and so is its depth buffer, which the
+  player-silhouette stamp shares. `EnsureBackbufferTarget` therefore creates the mask as a multisampled render target
+  with the back buffer's sample type, plus a plain texture it is resolved into before sampling.
+- **Verification.** `tools/wxl_unit_outline_gpu_probe.cpp` links the shipped `Outline.cpp` and `GxFacade.cpp` with a
+  mock unit, camera and flat ground behind the facade and checks real pixels on dxvk-native, plain and 4x
+  multisampled: red outline around a hostile target (and none with the outline off, no target, or the unit alone),
+  ground and overlay chevrons, danger cone and ring, and a player target through the shared depth buffer. The
+  engine-side glue (`NativeFacade.cpp`: object, model and world lookups; the batch, overlay and device-loss hooks)
+  builds but has no automated test. **Not seen in game:** whether the batch hook reports the right model for every
+  attached item, outline quality on real models and skinned geometry, chevron placement on real terrain, and frame
+  cost (the hook runs on every single-model M2 batch while the module is on, but returns at once when there is no
+  target).
 
 ### Required add-ons, NPCBot targeting, NPCBot enchant, Lone Wolf, Goblin Glider (2026-10-31)
 
@@ -584,10 +653,81 @@ unused, as upstream never applies it to hand items.
 
 Verified: `tests/wxl_weapon_sidecar_test.cpp` (upstream sample layout, ragged rows,
 first-seen dedup, all four offhand cases, malformed tables) passes; `Wow` builds.
-**In game:** the user reports it "appears to work" (2026-10-31; which weapons, sides and tables they used was not recorded, so mainhand/offhand/shield and geoset-filter cases are not individually confirmed). The FTA client ships no weapon sidecar tables, so nothing changes without them. Offhand Y-mirroring (`NoAutoMirror` column)
-is not ported: the model is drawn unmirrored and a diagnostic is logged
-(`WXL_NATIVE_DIAGNOSTICS=1`). `WXLExtendedEquipment.ini` `[Memory] MaxWeaponCacheMB`
+**In game:** the user reports it "appears to work" (2026-10-31; which weapons, sides and tables they used was not recorded, so mainhand/offhand/shield and geoset-filter cases are not individually confirmed). The FTA client ships no weapon sidecar tables, so nothing changes without them. `WXLExtendedEquipment.ini` `[Memory] MaxWeaponCacheMB`
 and `[EagerPreload]` have no native equivalent because nothing is baked.
+
+**Offhand Y-mirror (2026-10-31).** `NoAutoMirror` is opt-in, as upstream: a row whose column is true gets its offhand
+model (`Model1OffhandPath`, else the mainhand `Model1Path`) mirrored across Y. The Windows module wrote mirrored `.m2` and
+`.skin` bytes into a virtual file (`VirtualPath.cpp`: `MirrorModelBytes`, `MirrorSkinWinding`); there are no virtual files
+here, so `AddLink` asks for a separate cache entry (`CM2Scene::CreateModel` with `WxlModelMirror::kCreateFlag`) and the
+loader mirrors that entry's private copy in memory (`Engine/Source/Model2/WxlModelMirror.h`):
+
+- After `M2Init`, before the model is initialised: vertex positions and normals, bone pivots, translation and rotation
+  keys (rotation negates x and z; the engine's unsigned 16-bit encoding makes that `65535 - v`), attachment, event,
+  light, ribbon and particle positions, the particle wind vector, model/sequence/collision bounds and collision
+  positions and normals. Scale tracks stay (unsigned magnitudes), as upstream. Emitter latitude/longitude and the
+  collision triangle winding are not mirrored (upstream does not either; the collision mesh is unused for held items).
+- After the skin loads and is rebuilt, before it initialises: every triangle's winding reverses (a mirror flips facing)
+  and the section centres mirror. A triangle list that is not whole triangles is left alone and logged.
+- Key arrays of sequences streamed in later from `.anim` files are mirrored as they become resident, once per shared
+  buffer (aliased sequences share one). Upstream mirrored only keys inside the `.m2`; a non-resident sequence's offsets
+  point into `.anim` data, so this port skips those until they load rather than trusting a bounds check.
+- The unmirrored model keeps its own cache entry (the hash is salted and the mirror flag must match), so a mainhand and
+  a mirrored offhand of the same weapon do not share data. The mirror applies only when the sidecar names a model.
+
+A missing sidecar model now really falls back to the stock model: `CreateModel` substitutes an error cube for a missing
+file, so `AddLink` checks that the archive has the file first (the earlier code relied on `CreateModel` returning null).
+
+Verified: `tests/wxl_model_mirror_test.cpp` (ASan/UBSan: vertices, normals, pivots, shared and non-resident key arrays,
+global-sequence tracks, quaternion decoding, bounds, attachments, involution, late-loaded sequences and alias
+deduplication, skin winding, partial triangle lists, empty models) passes, and `Wow` builds. **Not seen in game:** the
+FTA client ships no weapon sidecar tables, so there is no mirrored weapon to look at until a table sets the column.
+Whether the winding, normals and attachment point look right on a real mirrored sword needs that run
+(`WXL_NATIVE_DIAGNOSTICS=1` logs `weapon-sidecar: offhand mirrored <path>`).
+
+### M3 and DDS drop-ins (2026-11-01)
+
+Ported although no sample exists in this client: the project is live and the main developer may add M3 or DDS
+content. Everything is inert unless matching input is present, and this is **synthetic-tested only**.
+
+**DDS.** `Dds.cpp` (the supplied DXT1/3/5 DDS to BLP2 transcode) is imported unchanged under
+`Engine/Source/ModernAssets/WxlBlp/textures/dds/`. `SFile::OpenEx`, `FileExists` and `FileExistsEx` now fall back to a
+`.dds` of the same name when a `.blp` is missing, as the Windows asset host did; `TransformModernBlp` recognises the DDS
+bytes under the `.blp` name and transcodes them (same 2048 edge ceiling as BLP2, payload copied verbatim, no luminance
+alpha). Only a *missing* `.blp` is affected, so no existing texture changes.
+
+**M3.** The supplied reader and builder (`Md34`, `M3Model`, `M2Build`, `Options`, `Math.hpp`) are imported unchanged
+under `Engine/Source/ModernAssets/WxlM3/`; `ModernM3.cpp` replaces the Windows `M3Host.cpp`. A loose folder named
+`patch-ZB.mpq` or `patch-ZA.mpq` (any case) under the `Data` directory next to the executable (the same place the weapon
+sidecar tables are read from), ZB first, may hold `<dir>/<base>.m3` with optional `<base>.m3a` (animation library) and
+`<base>.m3cfg` (options). Opening `<dir>/<base>.m2` then serves a model converted on first use, `<base>00.skin` its
+skin, and a `.blp` the transcoded `.dds` beside it; the model is cached for the session. As on Windows, the drop-in wins
+over an archive file of the same name. `WXL_MODERN_ASSETS=0` turns it off. The bytes are served to the engine as an
+in-memory file from `SFile::OpenEx`, so the existing M2 path then loads them like any native model.
+
+- **Conversion runs in a forked worker.** The shared MD34 reader trusts the offsets and counts in the file. Mutating a
+  valid model's bytes under ASan produced out-of-bounds reads in the reader and in `BuildSkin` for roughly one file in
+  seven (reads only, no writes), and some mutations make it loop. The worker has a 20 s CPU and wall deadline and an
+  address-space limit of the client's current size plus 2 GiB; a crash or timeout there only fails that conversion, which
+  is remembered so the file is not retried. The parent never parses an untrusted `.m3`.
+- **Native differences from the host:** case-insensitive lookup (the host ran on a case-insensitive file system); a
+  256 MiB cap on every source read; the `m3a` option must name a file inside the drop-in folder; no absolute paths or
+  `..` in served names.
+- **Layout limit on this install:** the real `patch-ZB.mpq` and `Patch-ZA.mpq` here are archive *files*, so a folder of the
+  same name cannot be created next to them. The drop-in folders are reachable only on an install where those names are
+  directories, which is the same constraint the Windows provider had. **Decision (user, 2026-11-01): keep the Windows
+  layout for parity**, since the developer may have intended it; revisit later if that changes.
+
+**Verification.** `tests/wxl_dds_test.cpp` (ASan/UBSan): DXT1/3/5 headers and alpha fields, mip levels, short files,
+zero mip count, oversize, damaged headers, luminance alpha. `tests/wxl_m3_dropin_test.cpp` (ASan/UBSan) builds an MD34
+by hand (one bone, three vertices, one triangle, one material) in a `Patch-ZB.mpq` folder with mixed-case file names and
+checks the served `MD20` model (264, one bone, three vertices), the `SKIN`, the cache, the DDS-to-`BLP2` transcode,
+refusals for unrelated names and path escapes, a damaged file, and 120 byte-mutated variants (every call returns, the test
+process survives; without sanitizers 85 serve a well-formed model and 35 are refused). `Wow` builds and
+`launch-native.sh --check` passes. **Not verified:** the `SFile` integration (the in-memory file through the engine's
+async model loader and the `.dds` fallback in the file layer) has no automated test, only the build; and the converter
+has only ever seen the synthetic model, so whether a real HotS/SC2 model looks right is unknown. First real run:
+`WXL_NATIVE_DIAGNOSTICS=1` prints `modern-m3:` lines.
 
 ### Weapon orientation: native implementation (2026-10-30)
 
@@ -752,8 +892,8 @@ complete native Release build passes; rendered acceptance remains open.
    attachment and material cases against the native implementation; cover cached
    previews, owner replacement, incomplete loads, removal and retries. The
    weapon-side sidecars are ported (below; user reports it appears to work in
-   game; offhand mirroring still open). Private physics
-   source associations remain.
+   game). Offhand mirroring is now ported (below). Private physics
+   source associations: see the Item physics note below.
    Continue diagnosing remaining missing armor without treating successful
    bone-ID matching as proof of full appearance parity. The reported wisps and
    Human Female deformation are resolved by the accepted HD index-window fix.
@@ -762,8 +902,8 @@ complete native Release build passes; rendered acceptance remains open.
    Keep the existing 16-bit vertex-lookup limits explicit and finish split
    external-animation rebasing. Unsupported inputs still require protection;
    rejection alone does not establish format support. M3/MD34
-   and DDS drop-in support remains a separate unported provider with no supplied
-   source assets to exercise.
+   and DDS drop-in support is now ported (below) and synthetic-tested only; there are
+   still no supplied source assets to exercise it.
 4. **Accept the native renderer passes in game.** Water, multisample/depth
    handling, contact ripples, atmosphere, local lights, interior transitions,
    scattering, god rays and glow compensation are integrated and pass synthetic
@@ -801,9 +941,21 @@ complete native Release build passes; rendered acceptance remains open.
   test it against, and `.skel` merging (the only source of such files) is
   opt-in. It stays rejected-before-parse; implement only when a real
   split-animation model is supplied.
+- **Split-animation rebasing: deliberately not implemented (2026-11-01).** The supplied Windows provider itself rejects
+  AFSA/AFSB streams (`AnimHost.cpp`: "Until that complete rebase exists, a multi-chunk file is deliberately rejected so
+  the client cannot consume an incomplete AFM2-only view"), and keeps `.skel` merging opt-in and size-capped for the same
+  reason, so there is no Windows behaviour to match. Flattening would mean sending bone tracks (AFSB), attachment tracks
+  (AFSA) and the rest (AFM2) into one buffer and rewriting the model's per-sequence track offsets by owner, from a layout
+  nothing in this tree specifies and no file here exercises. A wrong guess feeds garbage into the track relocation instead
+  of the safe present outcome (the sequence is refused and the model holds its default pose), which is real harm for no
+  parity gain. The one safe step is taken: the rejection log now lists the file's chunks
+  (`modern-anim: rejected ... (AFM2:4096 AFSB:81920)`, from `DescribeModernAnimationChunks`, covered in
+  `tests/wxl_native_m2_repair_test.cpp`) so a real file can be specified when one exists. Implement the flattening when a
+  split-animation model and its expected result are supplied.
 - No loose M3/M3A/M3CFG/DDS inputs or matching loose collection-sidecar tables were
   found in this client. Their absence limits content-based acceptance; it does
-  not mark those provider/features complete.
+  not mark those provider/features complete. The M3/DDS providers are ported anyway
+  (the project is live and new content may arrive); see "M3 and DDS drop-ins".
 
 ## Runtime boundary
 
@@ -836,12 +988,13 @@ features:
 | BLP2 BGRA and component DXT | Implemented | source item/component texture |
 | WMO root/group conversion | Implemented | modern WMO zone/interior |
 | WMO material and visibility draw interception | Partial: converted-root antiportals/exterior reopening and owned layered material/UV/weight snapshots are implemented; layered GPU draws run through an offline-patched shader pack and are probe-verified, in-game acceptance remains | source WMO with modern material/portal behavior |
-| M3/MD34 provider + DDS sidecars | Not yet ported | no loose M3, M3A, M3CFG, or DDS source exists in this client tree |
+| M3/MD34 provider + DDS sidecars | Ported 2026-11-01; synthetic-tested only (see "M3 and DDS drop-ins") | any real `.m3` drop-in and a model it should look like; none exists in this client tree |
 
 The M3 provider cannot affect the supplied FTA MPQ assets unless an M3 drop-in is
 actually added: WarcraftXL's own implementation is host-only and scans only loose
 Data/patch-ZA.mpq/ or Data/patch-ZB.mpq/ folders. No such source files are present
-here.
+here, and this install's `patch-ZB.mpq` and `Patch-ZA.mpq` are archive files, so a
+loose folder of the same name cannot sit beside them (see the section below).
 
 The Windows M2 skin rebuilder is enabled by default when a model was hot-reshaped.
 It is a required parity item, not an optional polish pass. Its Windows allocation
@@ -957,7 +1110,7 @@ lifecycle coverage is not yet complete or verified.
   The complete integration builds; live material/transition acceptance is deferred.
 - Weapon-side sidecars: the provider source is upstream (see Source and content
   gaps) and is now ported; see "Weapon sidecars" below.
-- Still open: weapon offhand mirroring, full path and
+- Still open: full path and
   attachment policy parity, complete transition/retry behavior, and
   the native renderer passes listed below. The user requested deferring the next
   client test until the renderer and collection-sidecar dependencies are ready.
@@ -981,8 +1134,8 @@ and creation; broader renderer and transition acceptance remains open.
 
 | Windows feature / source | Profile state | Native status |
 | --- | --- | --- |
-| Modern Assets + asset host | enabled | Partial: direct M2/BLP/WMO conversion, checked material/batch rebuilding and palette subdivision, WMO visibility handling and layered source-data preservation are compiled. WMO layered GPU draws are implemented (probe-verified, not yet seen in game); unsupported M2 formats and M3 remain open. |
-| Collection armor | enabled | Partial: race/sex resolution, section filtering, Icon2/sidecar placement, cached and post-worker bone remapping, bounded texture readiness, owner/world replay and cached-preview polling are implemented and build/fixture-verified. Weapon sidecars are ported (user reports working in game; mirroring open); remaining policies and full runtime/transition acceptance remain open. |
+| Modern Assets + asset host | enabled | Partial: direct M2/BLP/WMO conversion, checked material/batch rebuilding and palette subdivision, WMO visibility handling and layered source-data preservation are compiled. WMO layered GPU draws are implemented (probe-verified, not yet seen in game); the M3/DDS drop-in providers are ported (synthetic-tested only); unsupported M2 formats remain open. |
+| Collection armor | enabled | Partial: race/sex resolution, section filtering, Icon2/sidecar placement, cached and post-worker bone remapping, bounded texture readiness, owner/world replay and cached-preview polling are implemented and build/fixture-verified. Weapon sidecars, including the offhand Y-mirror, are ported (user reports the sidecars working in game; the mirror is not seen in game); remaining policies and full runtime/transition acceptance remain open. |
 | Additional-race creation cache / capacity API | required by shipped GlueXML | Implemented with bounded 256-race/three-gender storage and full cleanup; sanitizer and native build pass. User confirms additional-race creation works; optional customization controls are separate work. |
 | Transmogrification sizing / preview camera / title API | required by shipped addon | Native local equipment sizing, registered previews, frame projection controls and corrected numeric title contract/bounds and mask enumeration implemented. Production Lua/policy fixtures and native build pass. User reports Transmogrification working without the update warning and no further title errors; individual sizing/preview/physics acceptance remains open. |
 | Game-object editor | enabled | Ported (build + real-GPU gizmo probe + preview fixture pass); not yet run in game |
@@ -1000,7 +1153,8 @@ and creation; broader renderer and transition acceptance remains open.
 | Item-physics belts | enabled | Native companion/PFDC/PFID loading, skeleton binding and post-worker simulation implemented; core/adapter sanitizer fixtures and native build pass. Rendered motion, private-source association and performance/lifecycle acceptance remain open. |
 | Cast-failure mute | enabled | Native sound-kit filter implemented and build-verified; diagnostic and in-game verification pending |
 | Shadow-distance scale 1.0 | enabled but native value | Native behavior already equivalent |
-| Unit overlays, quest rendering, tree wind, density variation, distance haze, ground mist | disabled | Excluded from the parity build unless explicitly enabled later |
+| Unit overlays (`WXL_UNIT_OVERLAYS`), quest rendering (`WXL_QUEST_RENDERING`) | disabled by config | Ported natively 2026-11-01 at the developer's word that they were only config-disabled; still off in this profile, turn on in `WarcraftXL.cfg` (see "Quest tracker, objective rings and unit outline") |
+| Tree wind, density variation, distance haze, ground mist | disabled | Excluded from the parity build unless explicitly enabled later |
 | Distance fog, transparent fog | enabled (2026-10-31, user request) | Native distance fog and the transparent-fog hook are implemented and look right in game; both stay opt-in in code (`WXL_DISTANCE_FOG`, `WXL_TRANSPARENT_FOG`) |
 
 The Windows DXVK proxy is not copied into the Linux build. The native executable
@@ -1015,8 +1169,15 @@ clock settling are implemented. Sanitizer tests also bind and simulate installed
 artifact-shield (17 bones, 10 bodies, 9 joints) and Fel Plate Warrior buckle
 (4 bones, 4 bodies, 3 joints) samples for 60 steps. The buckle's M2 comes from ZB
 and its PHYS from ZA. These are read-only asset/solver checks, not rendered
-acceptance. Frame cost, live transitions and private virtual-source associations
+acceptance. Frame cost and live transitions
 remain open.
+
+**Virtual-source association (assessed 2026-10-31, not ported).** The supplied module resolves *virtual* equipment names
+(baked copies registered by the Windows asset host, e.g. recolours) back to a source model before looking up the PHYS
+companion. The native client has no virtual model files: collection and sidecar models are real archive paths, so the
+companion is found by the real name. This is a reading of the supplied `wxl-item-physics` README and
+`VirtualModelSources.hpp`, not something a test exercises. What remains is content: the upstream audit
+(`tools/custom_companions.py`) found 25 private models with no PHYS donor, which no code port can supply.
 
 ## Full binary/module audit
 
@@ -1029,24 +1190,24 @@ new native implementation and acceptance test.
 | Windows provider/module | Native replacement status |
 | --- | --- |
 | `d3d9.dll` proxy / bundled DXVK selection | Native-DXVK launch path exists; no Windows proxy is used. Its proxy-specific selection logic is not applicable on Linux. |
-| `WarcraftXLHost.exe` asset IPC, M3/M3A/M3CFG/DDS provider | Direct M2/BLP/WMO loaders are in-process. The loose M3 family/provider is not ported and has no supplied input files. |
-| `WarcraftXL.dll`: modern-assets | Partial; see the direct-asset table. Native material/batch rebuilding, palette subdivision, WMO visibility handling and layered source-data preservation are implemented. WMO layered GPU draws are implemented (probe-verified, not yet seen in game); unsupported M2 formats and M3 remain open. |
+| `WarcraftXLHost.exe` asset IPC, M3/M3A/M3CFG/DDS provider | Direct M2/BLP/WMO loaders are in-process. The M3/M3A/M3CFG and DDS providers are ported in-process (2026-11-01, "M3 and DDS drop-ins"); synthetic-tested only, no supplied input files. |
+| `WarcraftXL.dll`: modern-assets | Partial; see the direct-asset table. Native material/batch rebuilding, palette subdivision, WMO visibility handling and layered source-data preservation are implemented. WMO layered GPU draws are implemented (probe-verified, not yet seen in game); the M3/DDS providers are ported (synthetic-tested only); unsupported M2 formats remain open. |
 | `WarcraftXLVisuals.dll`: renderer wrapper | Partial: water, multisample depth, atmosphere, god rays and local lights run in-process through dxvk-native D3D9 (precompiled, hash-verified shaders; vendor-independent depth copy patch). Synthetic real-GPU and sanitizer tests pass. Transparent-draw fog fitting is ported (opt-in, see "Transparent fog"). Colour grading and Forever Glow/Look are **not ported on purpose**: the supplied `selection_policy.cpp` forces `ColorGrading=0`, `ForeverGlow=0`, `DataMode=0` and the Classic noise/phase off, and the supplied runtime logs "Classic placements/noise, grading, glow replacement and sprite changes disabled", so the shipped Windows product never runs them. They also need the Classic fog data and engine byte-placement patches. Porting them would add behaviour the Windows build does not have; nothing is accepted in game yet. |
 | `WarcraftXL.dll`: cast-failure sound filter | Native `SI2::PlaySoundKit` filters SoundEntries 1424–1428 when `WXL_MUTE_CAST_FAILURE_SOUNDS` is enabled, returns success and clears the optional sound handle like the Windows hook. The existing profile/environment reader supplies the option; a one-time stderr diagnostic records actual suppression. Build verified; gameplay and diagnostic verification pending. |
-| `wxl-collection-armor` | Partial: direct `CCharacterComponent` integration provides race/sex resolution, section filtering, independent slot ownership, Icon2/sidecar placement, bounded texture readiness, owner/world replay, cached-preview polling and cached/post-worker semantic bone copying. Model/material CSV and loose overlays are supported. Weapon sidecars are ported (user reports working in game; offhand mirroring open) and remaining policy cases are open. Production cache/copy and lifecycle fixtures pass; rendered appearance, full transition recovery and performance remain unverified. |
+| `wxl-collection-armor` | Partial: direct `CCharacterComponent` integration provides race/sex resolution, section filtering, independent slot ownership, Icon2/sidecar placement, bounded texture readiness, owner/world replay, cached-preview polling and cached/post-worker semantic bone copying. Model/material CSV and loose overlays are supported. Weapon sidecars, including the offhand Y-mirror, are ported (user reports the sidecars working in game; the mirror is not seen in game) and remaining policy cases are open. Production cache/copy and lifecycle fixtures pass; rendered appearance, full transition recovery and performance remain unverified. |
 | `wxl-waist-models` | Native attachment-53 buckle path implemented with nonblocking texture readiness, bounded retries, slot cleanup and owner identity checks. Path/name/retry fixture and native build pass; appearance and lifecycle acceptance remain unverified. |
-| `wxl-item-physics` | Partial: portable PHYS/Domino core and native scene/model adapter are implemented and compile/fixture-verified. Private virtual-source association and rendered/lifecycle/performance acceptance remain open. |
+| `wxl-item-physics` | Partial: portable PHYS/Domino core and native scene/model adapter are implemented and compile/fixture-verified. Virtual-source association is a Windows-host concept with no native counterpart (see the note above); rendered/lifecycle/performance acceptance remains open. |
 | `wxl-back-sheath-flip` | Native animation/Lua adapter implemented for back/hand rotations, reverse grip, previews and nearby-player snapshots. Source eligibility and profile gate preserved; sanitizer/native build verified. Live rendered/server/transition acceptance remains open. |
 | `wxl-loot-beam` | Native world-pass adapter implemented; authoritative per-viewer hint policy, bounded tracks/geometry, state-safe imported D3D9 draw and map/profile lifecycle. Sanitizer fixtures/native build pass; user confirms live loot beams work; broader quality/occlusion/reset/transition coverage remains open. |
 | `wxl-render-modern` | Grass motion implemented (offline-patched shaders; see the grass section); confirmed working in game by the user (2026-10-31). |
-| `wxl-treewind` | Not ported (disabled in the checked profile). |
+| `wxl-treewind` | Not ported, by decision: the developer confirmed (2026-11-01) it stays disabled and unported. |
 | `wxl-gameobject-editor` | Ported natively (2026-10-31); see "Game-object editor" below. In-game GM acceptance pending. |
 | `wxl-character-animation-lab` | Ported natively (2026-10-31); see "Character Animation Studio" above. In-game acceptance pending. |
 | `wxl-character-customizer` | Ported natively (2026-10-31); see "Character customizer" above. In-game acceptance pending. |
 | `wxl-gear-recolor` | Nothing to port: dye was removed upstream and the preview natives already exist. See "Gear recolor" above. |
 | `wxl-selection-circle` | Ported natively (2026-10-31); see "Selection circle and combat-readability bridge" above. In-game acceptance pending. |
-| `wxl-combat-readability` | Lua settings bridge ported (2026-10-31). Stores values only: its renderer is `wxl-unit-outline`, which is not ported. |
-| `wxl-selcircle-poc`, `wxl-quest-marker`, `wxl-unit-outline` | Not ported, deliberately: disabled in the checked profile (`WXL_QUEST_RENDERING=0`, `WXL_UNIT_OVERLAYS=0`; `SelCirclePoc::InstallModule` returns immediately without `WXL_QUEST_RENDERING`). |
+| `wxl-combat-readability` | Lua settings bridge ported (2026-10-31). Stores values only; its renderer is `wxl-unit-outline`, now ported natively (off unless `WXL_UNIT_OVERLAYS` is on). |
+| `wxl-selcircle-poc`, `wxl-quest-marker`, `wxl-unit-outline` | Ported natively 2026-11-01 (developer confirmed they were only config-disabled): objective rings, quest/corpse/diamond markers and the target outline/chevron/danger-guide renderer. Gated by `WXL_QUEST_RENDERING` (rings, markers) and `WXL_UNIT_OVERLAYS` (outline), both 0 in this profile. Real-GPU probes pass; not seen in game. See "Quest tracker, objective rings and unit outline". |
 | `wxl-underwear` | Ported natively (2026-10-31); see "Underwear and gossip" below. In-game acceptance pending. |
 | `wxl-required-addons`, `wxl-npcbot-targets` (+ resurrection), `wxl-npcbot-enchant`, `wxl-lone-wolf`, `wxl-goblin-glider` | Ported natively (2026-10-31); see "Required add-ons, NPCBot targeting, ..." above. In-game acceptance pending. |
 | `wxl-living-azeroth` | Ported natively 2026-10-31: grass instancing, the Environment page backend and the surface lights (terrain, M2, optional WMO; offline shader pack, light grid, baked occlusion, doodad light tables). **Surface lights are off by default** (`WXL_SURFACE_LIGHTS=0`, `lights.enabled=0`). Build, tests and a real-backend shader probe pass; rendering is not yet seen. See "Surface lights" above. |

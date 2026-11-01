@@ -1,5 +1,6 @@
 #include "WoW/Source/WorldClient/Linux/WxlModernVisuals.h"
 #include "WoW/Source/WorldClient/Linux/WxlLootBeam.h"
+#include "WoW/Source/WorldClient/Linux/WxlQuestTracker.h"
 #include "WoW/Source/WorldClient/Linux/WxlWmoMaterials.h"
 #include "WoW/Source/WorldClient/Linux/WxlGrassMotion.h"
 #include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
@@ -1806,6 +1807,7 @@ void CGWorldFrame::OnWorldRender() {
 #if defined(WOWDECOMP_LINUX)
     WxlFinishVisualWorld();
     WxlDrawLootBeams();
+    WxlDrawQuestTracker();
     WxlWmoFrame();
     WxlGrassFrame();
     WxlAnimationLabFrame();

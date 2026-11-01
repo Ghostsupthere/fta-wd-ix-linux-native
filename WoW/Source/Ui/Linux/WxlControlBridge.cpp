@@ -281,4 +281,19 @@ void WxlRegisterControlBridgeLua() {
     FrameScript_RegisterFunction("WarcraftXL_GetHellfireGrassSwayDisabled", &Script_WarcraftXL_GetHellfireGrassSwayDisabled);
 }
 
+
+// The settings snapshot the unit-outline renderer reads, in the supplied 200-byte wxl::gpu::control::Settings
+// layout: a 16-byte envelope (size, API version, two retired profile fields) then the option fields above.
+static_assert(sizeof(Settings) + 16 == 200, "control settings no longer match the supplied ABI size");
+bool WxlGetControlSettings(void* out, size_t size) {
+    if (!out || size != sizeof(Settings) + 16) {
+        return false;
+    }
+    const uint32_t envelope[4] = {static_cast<uint32_t>(size), static_cast<uint32_t>(kApiVersion), 0, 0};
+    unsigned char* bytes = static_cast<unsigned char*>(out);
+    std::memcpy(bytes, envelope, sizeof(envelope));
+    std::memcpy(bytes + sizeof(envelope), &g_settings, sizeof(Settings));
+    return true;
+}
+
 #endif  // WOWDECOMP_LINUX

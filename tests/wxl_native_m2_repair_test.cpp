@@ -69,6 +69,21 @@ int main() {
     size = animation.size();
     assert(TransformModernExternalAnimation(animation.data(), size) == ModernAnimationTransformResult::Rejected);
     assert(animation == original && size == original.size());
+    // The rejection log names what the file holds: the wrapper, then the split stream it could not flatten.
+    assert(DescribeModernAnimationChunks(animation.data(), animation.size()) == "AFM2:4 AFSB:0");
+    {
+        std::vector<uint8_t> two(8 + 4 + 8 + 2, 0);
+        const uint32_t head[] = {fmt::kMagicAFM2, 4, 0, fmt::kMagicAFSB, 2};
+        std::memcpy(two.data(), head, sizeof(head));
+        assert(DescribeModernAnimationChunks(two.data(), two.size()) == "AFM2:4 AFSB:2");
+        // A chunk that claims more than the file holds, an odd tail, and empty input stay inside the buffer.
+        const uint32_t overrun[] = {fmt::kMagicAFSA, 9999};
+        assert(DescribeModernAnimationChunks(overrun, sizeof(overrun)) == "AFSA:9999(overruns)");
+        assert(DescribeModernAnimationChunks(two.data(), 3) == "no chunks");
+        assert(DescribeModernAnimationChunks(nullptr, 100) == "no chunks");
+        two.push_back(1);
+        assert(DescribeModernAnimationChunks(two.data(), two.size()) == "AFM2:4 AFSB:2 +1 trailing bytes");
+    }
     for (uint32_t magic : {fmt::kMagicAFSA, fmt::kMagicAFSB, fmt::kMagicAFM2}) {
         size = 4;
         assert(TransformModernExternalAnimation(&magic, size) == ModernAnimationTransformResult::Rejected);

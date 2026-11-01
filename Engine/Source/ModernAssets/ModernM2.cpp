@@ -160,3 +160,27 @@ ModernAnimationTransformResult TransformModernExternalAnimation(void* buffer, ui
     size = payload;
     return ModernAnimationTransformResult::Unwrapped;
 }
+
+std::string DescribeModernAnimationChunks(const void* buffer, uint32_t size) {
+    const auto* bytes = static_cast<const uint8_t*>(buffer);
+    std::string text;
+    uint64_t at = 0;
+    for (int chunks = 0; bytes && at + 8 <= size && chunks < 16; ++chunks) {
+        uint32_t length = 0;
+        std::memcpy(&length, bytes + at + 4, sizeof(length));
+        char magic[5] = {};
+        for (int i = 0; i < 4; ++i) {
+            const char c = static_cast<char>(bytes[at + i]);
+            magic[i] = (c >= 0x20 && c < 0x7F) ? c : '?';
+        }
+        if (!text.empty()) text += ' ';
+        text += magic;
+        text += ':';
+        text += std::to_string(length);
+        if (length > size - at - 8) return text + "(overruns)";
+        at += 8 + static_cast<uint64_t>(length);
+    }
+    if (text.empty()) return "no chunks";
+    if (at < size) text += " +" + std::to_string(size - at) + " trailing bytes";
+    return text;
+}

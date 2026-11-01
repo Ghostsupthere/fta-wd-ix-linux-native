@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <vector>
+#include <strings.h>
 #include "Engine/Source/BlizzardCore/SFile2-Core.h"
 #include "Engine/Source/BlizzardCore/Source/Packages/Mopaq/IOMpqUnit.h"
 #include "Engine/Source/BlizzardCore/Source/Packages/Mopaq/SFile.h"
@@ -18,6 +20,7 @@
 #include "Engine/Source/BlizzardCore/Source/System/Thread/Thread.h"
 #include "Engine/Source/BlizzardCore/Source/Packages/Util/Hash.h"
 #include "Engine/Source/Storm/H/storm.h"
+#include "Engine/Source/ModernAssets/ModernM3.h"
 #include "Engine/Source/Storm/Source/MD5.h"
 
 // STATIC: 0x00B32038
@@ -940,6 +943,22 @@ void System_SFile2::BuildFileSystemHash() {
     Blizzard::Log::Flush(0);
 }
 
+#if defined(WOWDECOMP_LINUX)
+// The Windows asset host served a `.dds` sibling for a missing `.blp` (the M3 drop-in flow ships DDS
+// textures). The native client does the same here for every texture lookup; the bytes are converted
+// in TransformModernBlp. Writes the sibling name into `out` and returns true when `name` ends in
+// ".blp" (any case) and fits.
+static bool DdsSiblingName(const char* name, char* out, size_t size) {
+    const size_t length = name ? strlen(name) : 0;
+    if (length < 5 || length >= size || strcasecmp(name + length - 4, ".blp") != 0) {
+        return false;
+    }
+    memcpy(out, name, length - 3);
+    memcpy(out + length - 3, "dds", 4);
+    return true;
+}
+#endif
+
 // VERIFY: f3281a6b manual
 // OFFSET: 0x00424780
 bool System_SFile2::FindFile(const char* name, char* path, uint32_t size, uint32_t flags, SFILE_TYPE* type, System_SFile::ARCHIVEREC** archive) {
@@ -1021,7 +1040,16 @@ int32_t STORMAPI SFile::FileExistsEx(const char* name, uint32_t flags) {
     char path[260];
     SFILE_TYPE type;
 
+#if defined(WOWDECOMP_LINUX)
+    if (ModernM3Exists(name) || System_SFile2::FindFile(name, path, sizeof(path), flags, &type, nullptr)) {
+        return 1;
+    }
+    char sibling[260];
+    return DdsSiblingName(name, sibling, sizeof(sibling)) &&
+           System_SFile2::FindFile(sibling, path, sizeof(path), flags, &type, nullptr);
+#else
     return System_SFile2::FindFile(name, path, sizeof(path), flags, &type, nullptr);
+#endif
 }
 
 // VERIFY: 8c71c618 manual
@@ -1050,14 +1078,47 @@ int32_t STORMAPI SFile::OpenEx(SArchive* archive, const char* name, uint32_t fla
 
     *result = nullptr;
 
+#if defined(WOWDECOMP_LINUX)
+    // A loose M3/DDS drop-in is served from memory ahead of the archives (ModernM3.h).
+    if (!archive) {
+        std::vector<uint8_t> dropin;
+        if (ModernM3Provide(name, dropin) && !dropin.empty()) {
+            SFileImpl* memory = new (0u, __FILE__, __LINE__) SFileImpl(SFILE_MEMORY);
+            memory->m_data = static_cast<uint8_t*>(Blizzard::Memory::Allocate(static_cast<uint32_t>(dropin.size()), 0, __FILE__, __LINE__));
+            if (memory->m_data) {
+                memcpy(memory->m_data, dropin.data(), dropin.size());
+                memory->m_size = static_cast<uint32_t>(dropin.size());
+                memory->m_position = 0;
+                memory->m_name = Blizzard::String::Duplicate(name);
+                *result = memory;
+                return 1;
+            }
+            delete memory;
+        }
+    }
+#endif
+
     System_SFile::ARCHIVEREC* handle = nullptr;
     SFILE_TYPE type;
     char path[260];
+#if defined(WOWDECOMP_LINUX)
+    char sibling[260]; // `name` may be redirected here for the rest of the call
+#endif
 
     if (!archive) {
         if (!System_SFile2::FindFile(name, path, sizeof(path), flags, &type, &handle)) {
+#if defined(WOWDECOMP_LINUX)
+            if (DdsSiblingName(name, sibling, sizeof(sibling)) &&
+                System_SFile2::FindFile(sibling, path, sizeof(path), flags, &type, &handle)) {
+                name = sibling;
+            } else {
+                SErrSetLastError(2);
+                return 0;
+            }
+#else
             SErrSetLastError(2);
             return 0;
+#endif
         }
     } else if (archive->m_type == SARCHIVE_MPQ) {
         handle = archive->m_archive;
@@ -1136,7 +1197,16 @@ int32_t STORMAPI SFile::FileExists(const char* name) {
     char path[260];
     SFILE_TYPE type;
 
+#if defined(WOWDECOMP_LINUX)
+    if (ModernM3Exists(name) || System_SFile2::FindFile(name, path, sizeof(path), 0, &type, nullptr)) {
+        return 1;
+    }
+    char sibling[260];
+    return DdsSiblingName(name, sibling, sizeof(sibling)) &&
+           System_SFile2::FindFile(sibling, path, sizeof(path), 0, &type, nullptr);
+#else
     return System_SFile2::FindFile(name, path, sizeof(path), 0, &type, nullptr);
+#endif
 }
 
 // VERIFY: 6dee9c33 manual

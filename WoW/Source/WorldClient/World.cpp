@@ -5,6 +5,8 @@
 #include "WoW/Common/ComponentCore/WxlEquipmentOwner.h"
 #include "Engine/Source/ModernAssets/NativeModelPresentation.h"
 #include "WoW/Source/WorldClient/Linux/WxlLootBeam.h"
+#include "WoW/Source/WorldClient/Linux/WxlQuestTracker.h"
+#include "WoW/Source/WorldClient/Linux/WxlUnitOutline.h"
 #include "WoW/Source/WorldClient/Linux/WxlSurfaceLights.h"
 #include "WoW/Source/Ui/Linux/WxlGameObjectEditor.h"
 #include "WoW/Source/Ui/Linux/WxlUnderwear.h"
@@ -1504,6 +1506,8 @@ void World::UnloadMap() {
     WxlInvalidateWorldEquipment();
     InvalidateNativeWeaponWorld();
     WxlClearLootBeams();
+    WxlQuestTrackerWorldLeave();
+    WxlUnitOutlineWorldLeave();
     WxlGameObjectEditorWorldLeave();
     WxlUnderwearWorldLeave();
     WxlAnimationLabWorldLeave();

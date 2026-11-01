@@ -533,6 +533,10 @@ void CM2SceneRender::DrawBatch() {
     batch.m_start = this->m_curSkinSection->m_indexStart;
     batch.m_count = this->m_curSkinSection->m_indexCount;
 
+#if defined(WOWDECOMP_LINUX)
+    // The unit-outline module is told about this one model's batch right after its D3D draw.
+    NativeVisualHooks::currentM2Model = this->m_curModel;
+#endif
     if (CShaderEffect::s_enableShaders) {
         batch.m_minIndex = this->m_curSkinSection->m_vertexStart;
         batch.m_maxIndex = this->m_curSkinSection->m_vertexCount + this->m_curSkinSection->m_vertexStart - 1;
@@ -556,6 +560,9 @@ void CM2SceneRender::DrawBatch() {
         batch.m_maxIndex = this->m_curSkinSection->m_vertexCount - 1;
         g_theGxDevicePtr->Draw(&batch, 1);
     }
+#if defined(WOWDECOMP_LINUX)
+    NativeVisualHooks::currentM2Model = nullptr;
+#endif
 }
 
 // VERIFY: eebe62d2 manual
