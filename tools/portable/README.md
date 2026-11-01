@@ -12,10 +12,11 @@ contains no game data, and the Windows client keeps working.
    archive is not in `~/Downloads`:
 
    ```
-   mkdir fta-linux-install
-   tar -xzf ~/Downloads/wd-ix-linux-native-portable.tar.gz -C fta-linux-install
-   ./fta-linux-install/install.sh
+   mkdir fta-linux-install && tar -xzf ~/Downloads/wd-ix-linux-native-portable.tar.gz -C fta-linux-install && ./fta-linux-install/install.sh
    ```
+
+   That one line unpacks the archive **and runs the installer**; unpacking alone installs nothing. When it
+   finishes, an `FTA-Linux` folder exists in your client folder (the later steps need it).
 
 3. Install any missing system libraries, then check and play (still in the client folder):
 
