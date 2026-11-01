@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Playing the client: install, crashes, in-game problems
+    url: https://github.com/Ghostsupthere/fta-linux-client/issues/new/choose
+    about: Problems with installing or playing belong in the installer repository, where the logs and version are collected.
+  - name: Questions and chat
+    url: https://discord.gg/DsZMGUD8aT
+    about: For general help and ideas, use the Discord.
