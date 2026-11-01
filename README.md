@@ -1,36 +1,37 @@
-# From The Ashes: native Linux client
+# From The Ashes: native Linux client (source code)
 
-A native Linux build (no Wine) of the World of Warcraft 3.3.5a (build 12340) client, with the
-**From The Ashes** client extensions (WarcraftXL) ported in-process: modern models and textures, collection
-armor, the improved world renderer, and the extra UI tools the From The Ashes server uses.
+This is the **source code** of a native Linux client (no Wine) for **From The Ashes**, the World of Warcraft 3.3.5a
+(build 12340) server. It is Linux x86-64 only and is not meant to be built or run on Windows.
 
-It is built on wowdecomp, a C++ reconstruction of the original
-client in which every function keeps the address it came from (`// OFFSET:` tags) so it can be compared
-against the original. This repository adds the Linux platform layer and the WarcraftXL ports. The game
-renders through [dxvk-native](https://github.com/doitsujin/dxvk) (Direct3D 9 on Vulkan) with SDL3 for the
-window, input and audio.
+| I want to... | Go to |
+|---|---|
+| **Play it on Linux** | the installer: **[Releases](https://github.com/Ghostsupthere/fta-linux-client/releases/latest)** (one-click installer, install guide and distribution notes in the [fta-linux-client](https://github.com/Ghostsupthere/fta-linux-client) README) |
+| **Read or build the code** | this repository; start at "Building from source" below |
+| **Check what works** | [docs/WXL-NATIVE-PORT.md](docs/WXL-NATIVE-PORT.md), the feature-by-feature status ledger |
+
+It is the **From The Ashes** client extensions (WarcraftXL) ported in-process: modern models and textures, collection
+armor, the improved world renderer, and the extra UI tools the server uses. It is built on
+wowdecomp, a C++ reconstruction of the original client in which every
+function keeps the address it came from (`// OFFSET:` tags) so it can be compared against the original. This
+repository adds the Linux platform layer and the WarcraftXL ports. The game renders through
+[dxvk-native](https://github.com/doitsujin/dxvk) (Direct3D 9 on Vulkan) with SDL3 for the window, input and audio.
 
 Join the Discord for other clients and to show off what you build: https://discord.gg/DsZMGUD8aT
 
-> **Status.** The client builds, links, logs in and runs in the game world, and its maintainer plays on it. It is not at proven parity with the Windows client: each feature below is marked as confirmed in
-> game, implemented but not yet checked in game, or off by default. The full, honest ledger is
-> [docs/WXL-NATIVE-PORT.md](docs/WXL-NATIVE-PORT.md).
+> **Status.** The client builds, links, logs in and runs in the game world, and its maintainer plays on it. It is not at
+> proven parity with the Windows client: each feature below is marked as confirmed in game, implemented but not yet
+> checked in game, or off by default. Only Arch/CachyOS has been used to play; other distributions were checked in
+> containers without a GPU.
 
-## Install (players)
+## Playing it
 
-The installer, launcher and install instructions live in their own repository,
-**[fta-linux-client](https://github.com/Ghostsupthere/fta-linux-client)**. Download `FTA-Linux-Installer.run` from its
-Releases page and double-click it: it finds your From The Ashes client folder (the one with `Wow.exe`), installs the
-Linux client into it, installs any missing system libraries and adds a menu shortcut. The Windows client is not
-touched, and no game data is included.
-
-You need a From The Ashes client folder and a Linux x86-64 machine with a Vulkan GPU. The client bundles its own
-glibc and dxvk-native; SDL3, libcurl, ALSA and the PulseAudio client libraries come from the system (the installer
-handles this on Arch/CachyOS, Debian/Ubuntu, Fedora and openSUSE; Ubuntu 24.04 and older need SDL3 built from
-source, which that repository's README walks through). Only Arch/CachyOS has been used to play; the other
-distributions were checked in containers without a GPU.
-
-To build the release files yourself, see "Building from source" below.
+You do not build anything to play. Download `FTA-Linux-Installer.run` from the
+**[Releases page](https://github.com/Ghostsupthere/fta-linux-client/releases/latest)** and double-click it. It finds your
+From The Ashes client folder (the one with `Wow.exe`), installs the Linux client into it, installs any missing system
+libraries and adds a menu shortcut. The Windows client is not touched and no game data is included. You need a From The
+Ashes client folder and a Linux x86-64 machine with a Vulkan GPU. Manual steps, per-distribution notes (Arch, Debian,
+Ubuntu, Fedora, openSUSE) and troubleshooting are in the
+[fta-linux-client README](https://github.com/Ghostsupthere/fta-linux-client#readme).
 
 ### Settings
 
@@ -99,7 +100,8 @@ on the native client; split-animation flattening is not implemented because no s
 
 ## Building from source
 
-Linux (native client):
+Linux x86-64 only. You need [Nix](https://nixos.org/download/) (it provides the compiler, CMake, SDL3 and the Vulkan
+headers through `shell-native.nix`), Git, and a From The Ashes client folder to run against.
 
 ```
 nix-shell shell-native.nix            # compiler, CMake, SDL3, Vulkan headers
@@ -109,21 +111,10 @@ DXVK_NATIVE_DIR=$PWD/.deps/dxvk/build-native-sdl3 ./build-native-cmake.sh Wow   
 tools/make-linux-portable.sh          # gather the payload and build the release files (needs the fta-linux-client checkout)
 ```
 
-`tests/` holds sanitizer-built fixtures for the ported modules and `tools/` the offline shader builders and
-GPU probes. How the launcher works, and its development-checkout assumptions, are in
-[docs/NATIVE-LAUNCH-AND-SHARING.md](docs/NATIVE-LAUNCH-AND-SHARING.md).
-
-Windows (the original wowdecomp target; Visual Studio 2022 with the C++ desktop workload, CMake 3.10+):
-
-```powershell
-cmake -S . -B build/x64 -G "Visual Studio 17 2022" -A x64
-cmake --build build/x64 --config Release --target WowClient --parallel
-```
-
-The output is `bin/Win/WowClient64.exe` (with a crash logger) or `Wow64.exe`. Copy your 3.3.5a client's
-`Data` folder into `bin/Win/` and point `Data/<locale>/realmlist.wtf` at your server. The Win32 build needs
-NASM; the options are `WOWDECOMP_DISABLE_SIGNATURE_CHECKS`, `WOWCLIENT_CRASH_LOG` and
-`WOWCLIENT_OUTPUT_OVERRIDE`. Cross-building is described in [CROSS-BUILD.md](CROSS-BUILD.md).
+`tests/` holds sanitizer-built fixtures for the ported modules and `tools/` the offline shader builders and GPU probes.
+How the launcher works, and its development-checkout assumptions, are in
+[docs/NATIVE-LAUNCH-AND-SHARING.md](docs/NATIVE-LAUNCH-AND-SHARING.md). Release files are published from the
+[fta-linux-client](https://github.com/Ghostsupthere/fta-linux-client) repository.
 
 ## Layout
 
