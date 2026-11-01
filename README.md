@@ -24,27 +24,32 @@ and leaves the Windows files untouched. There is no game data in this repository
 
 1. Get the overlay `wd-ix-linux-native-portable.tar.gz` (from the maintainer or the repository's Releases
    page), or build it from a built source tree with `tools/make-linux-portable.sh`.
-2. Unpack it and install:
+2. Open a terminal **in your client folder** (the one containing `Wow.exe`, `Data` and `Interface`; in most file
+   managers, right-click an empty spot and choose *Open Terminal Here*), then unpack and install. Change the
+   first path if the archive is not in `~/Downloads`:
 
    ```
-   mkdir fta-linux && tar -xzf wd-ix-linux-native-portable.tar.gz -C fta-linux && cd fta-linux
-   ./install.sh /path/to/From_The_Ashes_Client
+   mkdir fta-linux-install
+   tar -xzf ~/Downloads/wd-ix-linux-native-portable.tar.gz -C fta-linux-install
+   ./fta-linux-install/install.sh
    ```
 
-3. Check and install the system libraries it needs (SDL3, libcurl, ALSA, PulseAudio client libraries, a
-   Vulkan driver):
+3. Install any missing system libraries (SDL3, libcurl, ALSA, PulseAudio client libraries, a Vulkan driver).
+   The first command only reports; the second installs, asking first and using sudo:
 
    ```
-   /path/to/From_The_Ashes_Client/FTA-Linux/install-deps.sh            # report what is missing
-   /path/to/From_The_Ashes_Client/FTA-Linux/install-deps.sh --install  # install it (asks first, uses sudo)
+   ./FTA-Linux/install-deps.sh
+   ./FTA-Linux/install-deps.sh --install
    ```
 
-4. Verify and play:
+4. Verify and play, still from the client folder:
 
    ```
-   /path/to/From_The_Ashes_Client/FTA-Linux/play.sh --check
-   /path/to/From_The_Ashes_Client/FTA-Linux/play.sh
+   ./FTA-Linux/play.sh --check
+   ./FTA-Linux/play.sh
    ```
+
+5. Optional: `rm -r fta-linux-install`.
 
 The overlay carries its own glibc, C++ runtime, xvidcore and dxvk-native, so it does not depend on your
 distribution's glibc. Logs go to `Logs/native-launch-*.log` in the client folder. To remove it, delete

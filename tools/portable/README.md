@@ -6,12 +6,29 @@ contains no game data, and the Windows client keeps working.
 
 ## Install
 
-```
-./install.sh /path/to/From_The_Ashes_Client
-/path/to/From_The_Ashes_Client/FTA-Linux/install-deps.sh --install   # only if something is missing
-/path/to/From_The_Ashes_Client/FTA-Linux/play.sh --check
-/path/to/From_The_Ashes_Client/FTA-Linux/play.sh
-```
+1. Open a terminal **in your From The Ashes client folder** (the folder that contains `Wow.exe`, `Data` and
+   `Interface`). In most file managers: right-click an empty spot in that folder, then *Open Terminal Here*.
+2. Unpack this archive into a temporary folder inside it and run the installer. Adjust the first path if the
+   archive is not in `~/Downloads`:
+
+   ```
+   mkdir fta-linux-install
+   tar -xzf ~/Downloads/wd-ix-linux-native-portable.tar.gz -C fta-linux-install
+   ./fta-linux-install/install.sh
+   ```
+
+3. Install any missing system libraries, then check and play (still in the client folder):
+
+   ```
+   ./FTA-Linux/install-deps.sh --install
+   ./FTA-Linux/play.sh --check
+   ./FTA-Linux/play.sh
+   ```
+
+4. Optional: `rm -r fta-linux-install` once it is installed.
+
+`install.sh` installs into the folder you run it from; to install into another folder, give its path:
+`./install.sh /path/to/client`.
 
 `install.sh` adds `Wow64`, a `FTA-Linux/` folder and the offline shader packs
 (`Utils/WarcraftXL/visuals/*.pack`, kept if you already have them; `--force` replaces them). Remove the
