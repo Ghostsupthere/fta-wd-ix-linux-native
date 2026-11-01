@@ -171,18 +171,29 @@ CM2Scene* Scene() { return World::s_m2Scene; }
 
 bool Finite3(const float* v) { return std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]); }
 
+// Only a model whose load has finished: m_shared->m_flags bit 0 is set at the end of CM2Shared::FinishLoading.
 const M2Data* DataOf(const CM2Model* model) {
-    return model && model->m_shared ? model->m_shared->m_data : nullptr;
+    return model && model->m_shared && (model->m_shared->m_flags & 1) ? model->m_shared->m_data : nullptr;
 }
 
-// The first value of a track's first sequence.
+// The first value of a track's first sequence whose keys are resident. Per-sequence tracks only have
+// resolved key arrays for embedded sequences (flag 0x20); the others point into .anim data that may not be
+// loaded, so they must never be read (modern models keep sequence 0 external). Global-sequence tracks
+// (loop index not 0xFFFF) always resolve.
 template <class T>
-bool FirstTrackValue(const M2Track<T>& track, T& out) {
-    if (!track.m_sequenceKeys.m_count) return false;
-    const M2Array<T>& keys = track.m_sequenceKeys[0];
-    if (!keys.m_count) return false;
-    out = keys[0];
-    return true;
+bool FirstTrackValue(const M2Data* data, const M2Track<T>& track, T& out) {
+    if (!data) return false;
+    const uint32_t count = track.m_sequenceKeys.m_count;
+    if (!count || count > 4096) return false;
+    const bool perSequence = track.m_loopIndex == 0xFFFF;
+    for (uint32_t i = 0; i < count && i < 64; ++i) {
+        if (perSequence && (i >= data->m_sequences.m_count || !(data->m_sequences[i].m_flags & 0x20))) continue;
+        const M2Array<T>& keys = track.m_sequenceKeys[i];
+        if (!keys.m_count) continue;
+        out = keys[0];
+        return true;
+    }
+    return false;
 }
 
 bool AttachmentPosition(const M2Data* data, uint32_t type, int32_t index, const float offset[3], float out[3]) {
@@ -385,8 +396,8 @@ void ScanModels(const float center[3]) {
             s.scale = sl::MatrixScale(m.world);
             C3Vector color;
             float intensity = 1.0f;
-            if (FirstTrackValue(file.m_diffuseColor, color)) {
-                FirstTrackValue(file.m_diffuseIntensity, intensity);
+            if (FirstTrackValue(m.data, file.m_diffuseColor, color)) {
+                FirstTrackValue(m.data, file.m_diffuseIntensity, intensity);
                 s.fileColor[0] = color.x * intensity; s.fileColor[1] = color.y * intensity; s.fileColor[2] = color.z * intensity;
                 s.haveFileColor = true;
             }
