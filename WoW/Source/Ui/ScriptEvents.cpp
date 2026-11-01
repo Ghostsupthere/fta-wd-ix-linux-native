@@ -2,6 +2,9 @@
 #include "Engine/Source/Storm/H/stpl.h"
 #include "Engine/Source/FrameScript/FrameScript.h"
 #include "WoW/Source/Ui/ScriptEvents.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/Ui/Linux/WxlNamePlates.h"
+#endif
 #include "WoW/Source/Object/ObjectClient/Unit_C.h"
 #include "WoW/Source/Object/Types.h"
 #include "WoW/Source/ObjectMgrClient/ObjectMgrClient.h"
@@ -162,6 +165,15 @@ bool Script_GetGUIDFromToken(const char* token, WOWGUID& guid, bool defaultToTar
     } else if (!SStrCmpI(token, "focus", 5)) {
         token += 5;
         guid = CGGameUI::m_focusTarget;
+#if defined(WOWDECOMP_LINUX)
+    } else if (!SStrCmpI(token, "nameplate", 9)) {
+        // Tokens of the nameplate API ("nameplate3"): the unit shown on that plate, if any.
+        token += 9;
+        if (!WxlNamePlateGuidFromIndex(SStrToUnsigned(&token), guid)) {
+            guid = WOWGUID();
+            return false;
+        }
+#endif
     } else if (!SStrCmpI(token, "npc", STORM_MAX_STR)) {
         token += 3;
         guid = CGGameUI::m_interactTarget;

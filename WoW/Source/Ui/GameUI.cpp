@@ -1,5 +1,6 @@
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Source/Ui/Linux/WxlRequiredAddons.h"
+#include "WoW/Source/Ui/Linux/WxlNamePlates.h"
 #include "WoW/Source/Ui/Linux/WxlGameScripts.h"
 #include "WoW/Source/Magic/MagicClient/Linux/WxlLoneWolf.h"
 #endif
@@ -1732,7 +1733,11 @@ void CGGameUI::InitializeFrameXML() {
     FrameScript_Destroy();
     FrameScript_Initialize(g_scriptProfileCVar->m_intValue);
     LoadScriptFunctions();
+#if defined(WOWDECOMP_LINUX)
+    WxlCreateScriptEvents();  // the stock events plus the nameplate API's
+#else
     FrameScript_CreateEvents(g_scriptEvents, NUM_SCRIPT_EVENTS);
+#endif
     CGGameUI::RegisterGameCVars();
     CGUIBindings::Initialize();
     CGWorldFrame::RegisterFrames();

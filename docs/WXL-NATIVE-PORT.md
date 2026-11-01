@@ -1255,3 +1255,31 @@ Verified: the install and `--check` outside nix on the build machine; a real lau
 data; `--check`, missing-library reporting and engine start on Debian 13 (glibc 2.41) in Docker. Not
 verified: other distributions, NVIDIA/other Vulkan drivers, Wayland vs X11 on other machines, a full play
 session from the overlay, and glibc newer than 2.44 on the host.
+
+## Frame profiler and the nameplate API (2026-11-01)
+
+Both were written natively for this tree; neither is part of the Windows WarcraftXL product. The ideas came from reading
+the public documentation of other wowdecomp forks (RosemyneH's performance docs, the AwesomeWotLK spec); no code was copied.
+
+**Profiler.** `Engine/Source/Base/Profiler` records, per frame, self and total time of six main-thread zones (world render,
+world scene, terrain, M2 animate, M2 draw, present) plus draw calls and triangles, averaged over the last 120 frames
+(240 kept). `GetProfilerZones([frames])` returns it to Lua as `{frames, frameMs, fps, drawCalls, triangles, zones =
+{ {name, selfMs, totalMs, calls}, ... }}`; `SetProfilerEnabled` / `IsProfilerEnabled` switch it. `WXL_PROFILE_LOG=N` logs a
+summary line every N seconds to the launch log; `WXL_PROFILER=0` disables recording. "Present" includes waiting for the
+GPU or vsync, so a large Present with a small rest means the client is GPU- or vsync-bound. Tested by a sanitizer test
+(nesting, averaging, other-thread scopes, disabling) and on the real client at the login screen (live numbers logged); the
+world zones have not been read in a world yet.
+
+**Nameplate API.** `WoW/Source/Ui/Linux/WxlNamePlates`. Every nameplate frame the client creates keeps a token
+`nameplate1`..`nameplate64` (a 65th frame gets none). While a frame shows a unit the token resolves like any unit token
+(`UnitName("nameplate1")`, `UnitGUID`, and trailing forms such as `nameplate1target`). `C_NamePlate.GetNamePlates()`,
+`GetNamePlateForUnit(unit)`, `GetNamePlateByGUID(guid)` (a `0x...` string or a unit token) and `GetNamePlateTokenByGUID(guid)`
+are implemented, and the events `NAME_PLATE_CREATED` (frame), `NAME_PLATE_UNIT_ADDED`, `NAME_PLATE_UNIT_REMOVED` and
+`NAME_PLATE_OWNER_CHANGED` (token). The `nameplateDistance` CVar (default 41 yards) replaces the fixed plate range. Not
+implemented: the AwesomeWotLK stacking and spacing CVars (`nameplateStacking`, `nameplateXSpace`, ...), the other
+AwesomeWotLK functions (text to speech, transmog queries, window and clipboard calls) and `UnitTokenFromGUID`. The
+Windows FTA client does not provide this API either (checked in `Wow.exe` and `WarcraftXL.dll`), so this goes beyond
+parity; addons that feature-detect it (DBM-Core target scanning, Questie, Immersion, ElvUI) use it when present.
+The bookkeeping (`Engine/Source/ModernAssets/WxlNamePlates/Registry.hpp`) has a sanitizer test; the engine hooks build and
+the client starts, but **nothing has been exercised in a world yet**. To check in game: `/run print(C_NamePlate and
+#C_NamePlate.GetNamePlates())`, `/run print(UnitName("nameplate1"))`, and a frame listening for the events.

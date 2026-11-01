@@ -1553,6 +1553,11 @@ void vFrameScript_SignalEvent(uint32_t index, const char* format, va_list args) 
                     argCount++;
                     break;
 
+                case 'r':  // a Lua object by its registry reference (a frame's m_luaObjectRef)
+                    lua_rawgeti(L, LUA_REGISTRYINDEX, va_arg(args, int32_t));
+                    argCount++;
+                    break;
+
                 case 's':
                     lua_pushstring(L, va_arg(args, const char*));
                     argCount++;

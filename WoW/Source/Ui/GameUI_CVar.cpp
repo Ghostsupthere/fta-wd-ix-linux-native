@@ -1,4 +1,7 @@
 #include "GameUI.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/Ui/Linux/WxlNamePlates.h"
+#endif
 #include "Engine/Source/ConsoleBase/ConsoleVar.h"
 #include "Engine/Source/ConsoleBase/Types.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
@@ -593,6 +596,9 @@ void CGGameUI::RegisterGameCVars() {
     g_nameplateShowFriendlyPetsCVar = CVar::Register("nameplateShowFriendlyPets", nullptr, 0x20, "1", nullptr, CATEGORY_GAME, false, nullptr, false);
     g_nameplateShowFriendlyGuardiansCVar = CVar::Register("nameplateShowFriendlyGuardians", nullptr, 0x20, "1", nullptr, CATEGORY_GAME, false, nullptr, false);
     g_nameplateShowFriendlyTotemsCVar = CVar::Register("nameplateShowFriendlyTotems", nullptr, 0x20, "1", nullptr, CATEGORY_GAME, false, nullptr, false);
+#if defined(WOWDECOMP_LINUX)
+    WxlNamePlatesRegisterCVars();
+#endif
     s_cvNameplateAllowOverlap = CVar::Register("nameplateAllowOverlap", "switches between overlapping nameplates or the (old) never overlapping version", 0x20, "1", nullptr, CATEGORY_GAME, false, nullptr, false);
     g_unitHighlightsCVar = CVar::Register("unitHighlights", "Whether the highlight circle around units should be displayed", 0x10, "1", CGGameUI::UnitHighlightsCVarCallback, CATEGORY_GAME, false, nullptr, false);
     g_enablePVPNotifyAFKCVar = CVar::Register("enablePVPNotifyAFK", "The ability to shutdown the AFK notification system", 0x10, "1", nullptr, CATEGORY_GAME, false, nullptr, false);

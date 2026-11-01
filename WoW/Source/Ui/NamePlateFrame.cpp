@@ -1,3 +1,6 @@
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/Ui/Linux/WxlNamePlates.h"
+#endif
 #include "NamePlateFrame.h"
 #include <new>
 #include <typeinfo>
@@ -658,4 +661,7 @@ CGNamePlateFrame::CGNamePlateFrame(CSimpleFrame* parent) : CSimpleFrame(parent),
 // VERIFY: 44471dc3 manual
 // OFFSET: [0x0098FFE0, 0x00990030]
 CGNamePlateFrame::~CGNamePlateFrame() {
+#if defined(WOWDECOMP_LINUX)
+    WxlNamePlateFrameDestroyed(this);
+#endif
 }

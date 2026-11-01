@@ -93,6 +93,8 @@ or GPU probes, not yet accepted in game. **Off** = ported, disabled until its sw
 | Required add-ons, NPCBot targeting, resurrection and enchant, Lone Wolf, Goblin Glider | Implemented |
 | Skybox, visual-time and weather control bridges; WarcraftXL control panel API | Implemented |
 | Cast-failure sound mute | Implemented |
+| Nameplate API (`C_NamePlate`, `nameplateN` unit tokens, `NAME_PLATE_*` events) for DBM, Questie, Immersion, ElvUI | Implemented; not yet exercised in a world. Beyond the Windows client |
+| Frame profiler (`GetProfilerZones()`, `WXL_PROFILE_LOG`): zone times, draw calls, triangles | Implemented; works on the real client |
 
 ### Deliberately not ported
 Tree wind, colour grading and Forever Glow stay out by decision of the developer; `wxl-db2` has no consumer

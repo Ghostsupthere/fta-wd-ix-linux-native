@@ -78,6 +78,9 @@
 #include "WoW/Source/Ui/GameUI.h"
 #include "WoW/Source/Ui/MinimapFrame.h"
 #include "WoW/Source/Ui/NamePlateFrame.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/Ui/Linux/WxlNamePlates.h"
+#endif
 #include "WoW/Source/Ui/PartyFrame.h"
 #include "WoW/Source/Ui/RaidInfo.h"
 #include "WoW/Source/Ui/ScriptEvents.h"
@@ -161,6 +164,15 @@ static const float TRACKMOVE_THRESHOLD_DISTANCE = 4.5f;
 static const int32_t DEFAULT_MODEL_FADE_TIME = 1000;
 
 static const float MAX_NAMEPLATE_DIST_SQUARED = 1681.0f;
+
+// The nameplate range: the stock 41 yards, or the nameplateDistance CVar on Linux.
+static float WxlNamePlateMaxDistanceSquared() {
+#if defined(WOWDECOMP_LINUX)
+    return WxlNamePlateDistanceSquared();
+#else
+    return MAX_NAMEPLATE_DIST_SQUARED;
+#endif
+}
 
 static const float MISSILE_MIN_HEIGHT = 0.25f;
 
@@ -809,6 +821,9 @@ void CGUnit_C::DestroyNamePlate() {
         CGUnit_C::s_namePlateFocus = nullptr;
     }
 
+#if defined(WOWDECOMP_LINUX)
+    WxlNamePlateHidden(this->m_namePlateFrame);
+#endif
     s_unusedNamePlates.LinkToTail(this->m_namePlateFrame);
     this->m_namePlateFrame->Hide();
     this->m_namePlateFrame = nullptr;
@@ -20171,6 +20186,9 @@ void CGUnit_C::NamePlateAddOrUpdate(const C3Vector& position, CGWorldFrame* worl
         this->m_namePlateFrame = CGNamePlateFrame::GetNewNameplateFrame(worldFrame);
         this->m_namePlateFrame->Initialize(this);
         this->m_namePlateFrame->Show();
+#if defined(WOWDECOMP_LINUX)
+        WxlNamePlateShown(this->m_namePlateFrame);
+#endif
         this->m_namePlateFrame->m_position = position;
         NamePlateSort(this->m_namePlateFrame);
         worldFrame->SetNamePlateUpdate();
@@ -20473,7 +20491,7 @@ int32_t CGUnit_C::ShouldShowNamePlate(CGWorldFrame* worldFrame, C3Vector* positi
     if (!map || map->m_instanceType != 4) {
         C3Vector delta = this->GetPosition() - target->GetPosition();
 
-        if (delta.y * delta.y + delta.x * delta.x + delta.z * delta.z > MAX_NAMEPLATE_DIST_SQUARED) {
+        if (delta.y * delta.y + delta.x * delta.x + delta.z * delta.z > WxlNamePlateMaxDistanceSquared()) {
             return 0;
         }
     }

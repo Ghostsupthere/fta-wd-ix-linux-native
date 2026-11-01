@@ -7,6 +7,7 @@
 #include "Engine/Source/ModernAssets/NativeModelPresentation.h"
 #include "WoW/Source/WorldClient/Linux/WxlLootBeam.h"
 #include "WoW/Source/WorldClient/Linux/WxlQuestTracker.h"
+#include "WoW/Source/Ui/Linux/WxlNamePlates.h"
 #include "WoW/Source/WorldClient/Linux/WxlUnitOutline.h"
 #include "WoW/Source/WorldClient/Linux/WxlSurfaceLights.h"
 #include "WoW/Source/Ui/Linux/WxlGameObjectEditor.h"
@@ -1508,6 +1509,7 @@ void World::UnloadMap() {
     InvalidateNativeWeaponWorld();
     WxlClearLootBeams();
     WxlQuestTrackerWorldLeave();
+    WxlNamePlatesReset();
     WxlUnitOutlineWorldLeave();
     WxlGameObjectEditorWorldLeave();
     WxlUnderwearWorldLeave();
