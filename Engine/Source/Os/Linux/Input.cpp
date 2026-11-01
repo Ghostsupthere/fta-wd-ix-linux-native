@@ -378,8 +378,33 @@ static void WarpMouse(int32_t x, int32_t y) {
     SDL_WarpMouseInWindow(window, static_cast<float>(x), static_cast<float>(y));
 }
 
+// Leaving mouselook puts the cursor back where it was. On Wayland the pointer lock is released asynchronously, so
+// a single warp issued in the same breath is sometimes dropped or overridden and the cursor stays wherever the
+// compositor left it (a jump across the screen on some clicks). The warp is therefore repeated on every input poll
+// for a short window after the mode change. A repeat is harmless when the cursor is already in place.
+static constexpr uint64_t kRestoreWindowMs = 60;
+static uint64_t s_restoreUntil;
+static int32_t s_restoreX;
+static int32_t s_restoreY;
+
 static void RestoreMouse() {
-    WarpMouse(s_mousePos.x, s_mousePos.y);
+    s_restoreX = s_mousePos.x;
+    s_restoreY = s_mousePos.y;
+    s_restoreUntil = SDL_GetTicks() + kRestoreWindowMs;
+    WarpMouse(s_restoreX, s_restoreY);
+}
+
+static void ServiceRestoreMouse() {
+    if (!s_restoreUntil) {
+        return;
+    }
+
+    if (s_osMouseMode == OS_MOUSE_MODE_RELATIVE || SDL_GetTicks() >= s_restoreUntil) {
+        s_restoreUntil = 0;
+        return;
+    }
+
+    WarpMouse(s_restoreX, s_restoreY);
 }
 
 // SDL hands text input over as UTF-8 -- SDL_TextInputEvent::text, which SDL3
@@ -606,6 +631,7 @@ int32_t OsInputGet(OSINPUT* id, int32_t* param0, int32_t* param1, int32_t* param
     // SDL_GetWindowRelativeMouseMode, so re-asserting afterwards would leave
     // the cursor a frame behind the mode.
     ApplyMouseMode(window);
+    ServiceRestoreMouse();
     OsSdlApplyCursorState();
     ApplyTextInput(window);
 
