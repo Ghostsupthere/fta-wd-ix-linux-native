@@ -1336,6 +1336,11 @@ int32_t M2Init<M2Particle>(uint8_t* base, uint32_t size, const M2Data& data, M2A
 // OFFSET: 0x0083C5F0
 CM2Shared::CM2Shared(CM2Cache* cache) {
     this->m_flags &= ~0x7Fu;
+#if defined(WOWDECOMP_LINUX)
+    // The object comes from an allocator that does not zero it; the mirrored-copy marker must not
+    // start as stale heap bits or unrelated models get mirrored.
+    this->m_flags &= ~WxlModelMirror::kSharedFlag;
+#endif
     this->m_cache = cache;
     this->m_callbackList = nullptr;
     this->m_refCount = 1;
