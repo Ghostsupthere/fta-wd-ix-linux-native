@@ -73,5 +73,16 @@ chmod +x "$payload/FTA-Linux/play.sh" "$payload/FTA-Linux/install-deps.sh" "$out
 printf 'commit: %s\nbuilt: %s\nglibc: %s\n' "$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)" \
     "$(date -u +%Y-%m-%dT%H:%MZ)" "$(basename "$(dirname "$glibc")")" >"$payload/FTA-Linux/VERSION.txt"
 
+# One-click installer: the launcher script followed by the overlay archive (self-extracting).
+installer=$(dirname -- "$out")/FTA-Linux-Installer.run
+tarball=$out.tar.gz
+tar -C "$out" -czf "$tarball" .
+sum=$(sha256sum "$tarball" | cut -d' ' -f1)
+# Written aside and moved into place, so nobody copies a half-written file.
+{ sed "s/@PAYLOAD_SHA256@/$sum/" "$root/tools/portable/installer-header.sh"; cat "$tarball"; } >"$installer.tmp"
+chmod +x "$installer.tmp"
+mv -f -- "$installer.tmp" "$installer"
+( cd -- "$(dirname -- "$installer")" && sha256sum "$(basename -- "$installer")" "$(basename -- "$tarball")" >FTA-Linux-SHA256SUMS.txt )
+
 if find "$out" -type l | grep -q .; then fail 'the overlay contains symlinks'; fi
-printf 'Portable overlay written to %s (%s)\n' "$out" "$(du -sh "$out" | cut -f1)"
+printf 'Portable overlay written to %s (%s)\nArchive: %s\nOne-click installer: %s (%s)\n' "$out" "$(du -sh "$out" | cut -f1)" "$tarball" "$installer" "$(du -sh "$installer" | cut -f1)"

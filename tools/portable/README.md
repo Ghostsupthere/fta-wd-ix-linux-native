@@ -6,6 +6,18 @@ contains no game data, and the Windows client keeps working.
 
 ## Install
 
+### One-click install
+
+Use `FTA-Linux-Installer.run` (the one-click installer that comes with this overlay) and **double-click it** (if your file manager asks, choose *Run*; if it
+only opens it as text, right-click, *Properties*, *Permissions*, tick *Allow executing*, or just run
+`bash FTA-Linux-Installer.run`). It opens a terminal, finds your From The Ashes client folder (the one with
+`Wow.exe`, or it asks you to pick it), installs into it, offers to install any missing system libraries
+(it asks for your password), adds **From The Ashes (Linux)** to your applications menu and offers to start the
+game. Run it again at any time to update. The installer checks its own integrity; `FTA-Linux-SHA256SUMS.txt`
+lists the checksums if you want to compare a download.
+
+### Manual install
+
 1. Open a terminal **in your From The Ashes client folder** (the folder that contains `Wow.exe`, `Data` and
    `Interface`). In most file managers: right-click an empty spot in that folder, then *Open Terminal Here*.
 2. Unpack this archive into a temporary folder inside it and run the installer. Adjust the first path if the

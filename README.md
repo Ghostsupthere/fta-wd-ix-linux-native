@@ -22,6 +22,18 @@ You need a From The Ashes base client folder (the one with `Wow.exe`, `Data`, `I
 Linux x86-64 machine with a Vulkan GPU. The native client installs **into that folder**, uses its game data
 and leaves the Windows files untouched. There is no game data in this repository or in the overlay.
 
+### One-click install
+
+Download `FTA-Linux-Installer.run` and **double-click it** (if your file manager asks, choose *Run*; if it
+only opens it as text, right-click, *Properties*, *Permissions*, tick *Allow executing*, or just run
+`bash FTA-Linux-Installer.run`). It opens a terminal, finds your From The Ashes client folder (the one with
+`Wow.exe`, or it asks you to pick it), installs into it, offers to install any missing system libraries
+(it asks for your password), adds **From The Ashes (Linux)** to your applications menu and offers to start the
+game. Run it again at any time to update. The installer checks its own integrity; `FTA-Linux-SHA256SUMS.txt`
+lists the checksums if you want to compare a download.
+
+### Manual install
+
 1. Get the overlay `wd-ix-linux-native-portable.tar.gz` (from the maintainer or the repository's Releases
    page), or build it from a built source tree with `tools/make-linux-portable.sh`.
 2. Open a terminal **in your client folder** (the one containing `Wow.exe`, `Data` and `Interface`; in most file

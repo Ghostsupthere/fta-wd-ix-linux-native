@@ -10,10 +10,11 @@ set -euo pipefail
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 fail() { printf 'install: %s\n' "$*" >&2; exit 1; }
 
-target="" force=0
+target="" force=0 deps=1
 for arg in "$@"; do
     case $arg in
         --force) force=1 ;;
+        --no-deps) deps=0 ;;
         --help|-h) sed -n '2,6p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) fail "unknown option $arg" ;;
         *) [[ -z $target ]] || fail 'give at most one folder'; target=$arg ;;
@@ -45,4 +46,4 @@ if [[ $target == "$PWD" ]]; then prefix=.; else prefix=$target; fi
 printf 'Installed into %s\nNext, from that folder:\n  %s/FTA-Linux/install-deps.sh --install   (system libraries, if the check below lists any)\n  %s/FTA-Linux/play.sh --check\n  %s/FTA-Linux/play.sh\n\n' \
     "$target" "$prefix" "$prefix" "$prefix"
 
-"$target/FTA-Linux/install-deps.sh" || true
+if (( deps )); then "$target/FTA-Linux/install-deps.sh" || true; fi
