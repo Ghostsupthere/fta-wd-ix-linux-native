@@ -24,6 +24,13 @@ the Nix environment without launching the game. It does not test GPU presentatio
 log in, or confirm server reachability. `./install-native-launcher.py --output-dir
 /tmp/fta-launcher-review` generates a shortcut for review without installing it.
 
+## Update (2026-11-01): the portable overlay
+
+Sharing is now handled by the portable overlay (`tools/make-linux-portable.sh`, installed with `install.sh`
+into a recipient's own base client and started with `FTA-Linux/play.sh`). It bundles the glibc loader,
+C++ runtime, xvidcore and dxvk-native, uses relative paths and contains no symlinks or game data. The audit
+below is the 2026-10-30 state of the development checkout, kept for reference; see the README.
+
 ## Can friends copy the folder today?
 
 **Not reliably. Same CachyOS does not reproduce this development environment.**

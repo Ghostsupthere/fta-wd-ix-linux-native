@@ -31,8 +31,11 @@ elif [[ $ids == *' debian '* || $ids == *' ubuntu '* ]]; then
     # The t64 names are the ones Debian 13 and Ubuntu 24.04+ use; older releases keep the plain names.
     cand() { apt-cache policy "$1" 2>/dev/null | awk '/Candidate:/ {print $2}'; }
     pick() { for name in "$@"; do c=$(cand "$name"); [[ -n $c && $c != '(none)' ]] && { echo "$name"; return; }; done; echo "$1"; }
-    packages=(libsdl3-0 "$(pick libcurl4t64 libcurl4)" "$(pick libasound2t64 libasound2)" libpulse0 libvulkan1 mesa-vulkan-drivers)
-    note='NVIDIA users also need the proprietary driver (nvidia-driver). SDL3 is in Debian 13 and Ubuntu 25.04 or newer.'
+    packages=("$(pick libcurl4t64 libcurl4)" "$(pick libasound2t64 libasound2)" libpulse0 libvulkan1 mesa-vulkan-drivers)
+    note='NVIDIA users also need the proprietary driver (nvidia-driver).'
+    sdl=$(cand libsdl3-0)
+    if [[ -n $sdl && $sdl != '(none)' ]]; then packages=(libsdl3-0 "${packages[@]}")
+    else note+=$'\nThis release has no SDL3 package (it is in Debian 13 and Ubuntu 25.04 or newer). Upgrade, or build SDL 3.2+\nfrom source into /usr/local; the steps are in README.md under "Ubuntu".'; fi
 elif [[ $ids == *' fedora '* || $ids == *' rhel '* || $ids == *' centos '* ]]; then
     manager=dnf
     packages=(SDL3 libcurl alsa-lib pulseaudio-libs vulkan-loader mesa-vulkan-drivers)

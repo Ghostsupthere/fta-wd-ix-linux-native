@@ -32,6 +32,35 @@ distribution's glibc. It needs these from the system:
 sudo; add `--yes` to skip the question). `install.sh` runs the same check at the end. `play.sh --check` verifies
 the whole install.
 
+## Distribution notes
+
+SDL3 is the one dependency older releases lack. `install-deps.sh` handles the rest.
+
+- **Arch, CachyOS, Manjaro:** everything is in the repositories. NVIDIA users add `nvidia-utils`.
+- **Debian 13 and Ubuntu 25.04 or newer:** everything is in the repositories (`libsdl3-0`). Tested on
+  Debian 13. NVIDIA users add the proprietary driver (`nvidia-driver`, or Ubuntu's driver tool).
+- **Ubuntu 22.04 and 24.04 (and Debian 12):** no SDL3 package. Either upgrade, or build SDL 3.2 or newer
+  into `/usr/local`, which the launcher searches. Tested on Ubuntu 24.04 (this gave SDL 3.2.31):
+
+  ```
+  sudo apt-get install build-essential cmake ninja-build git pkg-config libx11-dev libxext-dev libxcursor-dev \
+      libxi-dev libxfixes-dev libxrandr-dev libxss-dev libxkbcommon-dev libwayland-dev wayland-protocols \
+      libdrm-dev libgbm-dev libegl-dev libasound2-dev libpulse-dev libudev-dev libdecor-0-dev libvulkan-dev
+  git clone --depth 1 --branch release-3.2.x https://github.com/libsdl-org/SDL.git
+  cmake -S SDL -B SDL/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF
+  cmake --build SDL/build && sudo cmake --install SDL/build
+  FTA-Linux/install-deps.sh --install      # the rest
+  ```
+
+- **Fedora:** SDL3 is packaged from Fedora 42 (`SDL3`); on older releases build it as above. NVIDIA users
+  add the driver from RPM Fusion (`akmod-nvidia`).
+- **openSUSE:** Tumbleweed has `libSDL3-0`; Leap releases without it need the source build above.
+- **Verification:** only Arch/CachyOS, Debian 13 and Ubuntu 24.04 (with the source-built SDL) were tested,
+  and only up to `play.sh --check` on the last two (the Docker images have no GPU). The Fedora and openSUSE
+  package names come from those distributions' package lists and have not been run. If a name is wrong,
+  install the library `play.sh --check` reports by your usual route. The maintainer's own SDL3 is 3.4.x;
+  3.2.x builds and loads but has not been played.
+
 ## Notes
 
 - Run it through `FTA-Linux/play.sh`. The executable finds its loader relative to the client folder, so it
