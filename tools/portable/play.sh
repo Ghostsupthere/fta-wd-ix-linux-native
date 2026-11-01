@@ -40,11 +40,11 @@ unset LD_LIBRARY_PATH
 export DXVK_WSI_DRIVER=${DXVK_WSI_DRIVER:-SDL3}
 
 loader=$here/lib/ld-linux-x86-64.so.2
-listing=$("$loader" --library-path "$libpath" --list ./Wow64 2>&1) || fail "the bundled loader cannot start Wow64: $listing (install SDL3, curl, ALSA and PulseAudio/PipeWire-pulse packages; see README.md)"
+listing=$("$loader" --library-path "$libpath" --list ./Wow64 2>&1) || fail "the bundled loader cannot start Wow64: $listing (run FTA-Linux/install-deps.sh to check and install them)"
 missing=$(grep 'not found' <<<"$listing" || true)
 if [[ -n $missing ]]; then
     printf '%s\n' "$missing" >&2
-    fail 'system libraries are missing (see the list above). Install SDL3, curl, ALSA and PulseAudio/PipeWire-pulse packages; see README.md'
+    fail 'system libraries are missing (see the list above). Run FTA-Linux/install-deps.sh to check and install them'
 fi
 
 if [[ $mode == check ]]; then

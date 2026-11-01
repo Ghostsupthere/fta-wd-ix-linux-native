@@ -8,6 +8,7 @@ contains no game data, and the Windows client keeps working.
 
 ```
 ./install.sh /path/to/From_The_Ashes_Client
+/path/to/From_The_Ashes_Client/FTA-Linux/install-deps.sh --install   # only if something is missing
 /path/to/From_The_Ashes_Client/FTA-Linux/play.sh --check
 /path/to/From_The_Ashes_Client/FTA-Linux/play.sh
 ```
@@ -26,7 +27,10 @@ distribution's glibc. It needs these from the system:
 - **libcurl** (`libcurl.so.4`), **ALSA** (`libasound.so.2`), **PulseAudio client libraries**
   (`libpulse.so.0`, `libpulse-simple.so.0`; PipeWire's pulse package provides them)
 
-`play.sh --check` lists anything that is missing.
+`FTA-Linux/install-deps.sh` reports what is missing and the exact install command for your distribution
+(Arch/CachyOS, Debian/Ubuntu, Fedora, openSUSE); `FTA-Linux/install-deps.sh --install` runs it (asks first, uses
+sudo; add `--yes` to skip the question). `install.sh` runs the same check at the end. `play.sh --check` verifies
+the whole install.
 
 ## Notes
 

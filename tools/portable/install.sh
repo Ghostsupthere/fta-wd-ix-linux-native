@@ -31,7 +31,9 @@ for pack in "$here"/payload/Utils/WarcraftXL/visuals/*.pack; do
         cp -f -- "$pack" "$target/Utils/WarcraftXL/visuals/"
     fi
 done
-chmod +x "$target/Wow64" "$target/FTA-Linux/play.sh"
+chmod +x "$target/Wow64" "$target/FTA-Linux/play.sh" "$target/FTA-Linux/install-deps.sh"
 
-printf 'Installed into %s\nCheck the install:  %s/FTA-Linux/play.sh --check\nStart the game:     %s/FTA-Linux/play.sh\n' \
-    "$target" "$target" "$target"
+printf 'Installed into %s\nSystem libraries:   %s/FTA-Linux/install-deps.sh [--install]\nCheck the install:  %s/FTA-Linux/play.sh --check\nStart the game:     %s/FTA-Linux/play.sh\n' \
+    "$target" "$target" "$target" "$target"
+
+"$target/FTA-Linux/install-deps.sh" || true

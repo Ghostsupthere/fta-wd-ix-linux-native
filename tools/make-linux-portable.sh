@@ -66,10 +66,10 @@ for pack in grass_instanced grass_shaders light_shaders wmo_shaders; do
     else printf 'note: %s.pack not found; the overlay will not carry it\n' "$pack" >&2; fi
 done
 
-cp -- "$root/tools/portable/play.sh" "$payload/FTA-Linux/play.sh"
+cp -- "$root/tools/portable/play.sh" "$root/tools/portable/install-deps.sh" "$payload/FTA-Linux/"
 cp -- "$root/tools/portable/install.sh" "$out/install.sh"
 cp -- "$root/tools/portable/README.md" "$out/README.md"
-chmod +x "$payload/FTA-Linux/play.sh" "$out/install.sh" "$payload/Wow64"
+chmod +x "$payload/FTA-Linux/play.sh" "$payload/FTA-Linux/install-deps.sh" "$out/install.sh" "$payload/Wow64"
 printf 'commit: %s\nbuilt: %s\nglibc: %s\n' "$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)" \
     "$(date -u +%Y-%m-%dT%H:%MZ)" "$(basename "$(dirname "$glibc")")" >"$payload/FTA-Linux/VERSION.txt"
 
