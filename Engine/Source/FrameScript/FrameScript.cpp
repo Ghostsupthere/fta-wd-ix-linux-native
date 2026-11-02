@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <malloc.h>
 #include "Engine/Source/FrameScript/FrameScript.h"
@@ -238,6 +239,17 @@ lua_State* FrameScript_GetContext() {
 // OFFSET: 0x00817DC0
 int32_t FrameScript_GetTotalMemoryUsed() {
     return lua_gc(s_context, LUA_GCCOUNT, 0);
+}
+
+void FrameScript_TraceStack(const char* tag) {
+    lua_State* L = s_context;
+    lua_Debug ar;
+
+    for (int32_t level = 0; L && lua_getstack(L, level, &ar); level++) {
+        lua_getinfo(L, "Sln", &ar);
+        fprintf(stderr, "FTA_TRACE_UNINVITE:   %s #%d %s:%d in %s '%s'\n", tag, level, ar.short_src, ar.currentline,
+                ar.what, ar.name ? ar.name : "?");
+    }
 }
 
 // VERIFY: 8190783d auto

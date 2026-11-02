@@ -3047,6 +3047,20 @@ void CGGameUI::DisplayError(UIErrors error, ...) {
         CGTutorial::TriggerTutorial(57);
     }
 
+    static const bool traceUninvite = [] {
+        const char* env = std::getenv("FTA_TRACE_UNINVITE");
+        return env && env[0] == '1';
+    }();
+
+    if (traceUninvite && error == ERR_TARGET_NOT_IN_GROUP_S) {
+        va_list traceArgs;
+        va_start(traceArgs, error);
+        const char* traceName = va_arg(traceArgs, const char*);
+        fprintf(stderr, "FTA_TRACE_UNINVITE: ERR_TARGET_NOT_IN_GROUP_S name=\"%.48s\"\n", traceName ? traceName : "(null)");
+        va_end(traceArgs);
+        FrameScript_TraceStack("not-in-group");
+    }
+
     const UIErrorInfo& info = s_errorInfo[error];
 
     if (info.m_vocalError == VUI_NONE) {

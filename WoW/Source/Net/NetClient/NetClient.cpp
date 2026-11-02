@@ -1,4 +1,5 @@
 #include "NetClient.h"
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -6,6 +7,7 @@
 #include "Engine/Source/BlizzardCore/Source/Packages/Util/SHA1.h"
 #include "Engine/Source/ConsoleBase/IConsole.h"
 #include "Engine/Source/Event/Types.h"
+#include "Engine/Source/FrameScript/FrameScript.h"
 #include "Engine/Source/Os/TimeManager.h"
 #include "Engine/Source/Storm/H/storm.h"
 #include "WoW/Source/Glue/CGlueMgr.h"
@@ -571,6 +573,37 @@ NetClient::NetClient() {
     node->m_client = this;
 }
 
+// Opt-in (FTA_TRACE_UNINVITE=1): the name-based uninvite is never sent by native code, so a
+// "partyN is not in your party" reply means an addon passed a raw unit token. Name the caller.
+static void TraceNameUninvite(CDataStore* msg, uint32_t size) {
+    static const bool enabled = [] {
+        const char* value = std::getenv("FTA_TRACE_UNINVITE");
+        return value && value[0] == '1';
+    }();
+
+    if (!enabled || size < sizeof(uint32_t) || msg->m_read < msg->m_base) {
+        return;
+    }
+
+    uint32_t opcode;
+    memcpy(&opcode, &msg->m_data[msg->m_read - msg->m_base], sizeof(opcode));
+
+    if (opcode != CMSG_GROUP_UNINVITE && opcode != CMSG_GROUP_UNINVITE_GUID) {
+        return;
+    }
+
+    if (opcode == CMSG_GROUP_UNINVITE_GUID) {
+        fprintf(stderr, "FTA_TRACE_UNINVITE: CMSG_GROUP_UNINVITE_GUID (%u bytes)\n", size);
+    } else {
+        const char* name = size > sizeof(uint32_t)
+            ? reinterpret_cast<const char*>(&msg->m_data[msg->m_read - msg->m_base + sizeof(uint32_t)])
+            : "";
+        fprintf(stderr, "FTA_TRACE_UNINVITE: CMSG_GROUP_UNINVITE name=\"%.48s\"\n", name);
+    }
+
+    FrameScript_TraceStack(opcode == CMSG_GROUP_UNINVITE_GUID ? "uninvite-guid" : "uninvite-name");
+}
+
 // VERIFY: 3e4c9045 manual
 // OFFSET: 0x00632B50
 void NetClient::Send(CDataStore* msg) {
@@ -583,6 +616,8 @@ void NetClient::Send(CDataStore* msg) {
     if (!size) {
         return;
     }
+
+    TraceNameUninvite(msg, size);
 
     if (this->m_suspended) {
         NetClient::HELDMESSAGE* held = this->m_heldMessages.NewNode(2, 0, 0);

@@ -4931,6 +4931,16 @@ int32_t Packet_SMSG_PARTY_COMMAND_RESULT(void* param, NETMESSAGE msgId, uint32_t
     msg->Get(reinterpret_cast<uint32_t&>(value));
     char duration[256];
 
+    static const bool traceUninvite = [] {
+        const char* env = std::getenv("FTA_TRACE_UNINVITE");
+        return env && env[0] == '1';
+    }();
+
+    if (traceUninvite) {
+        fprintf(stderr, "FTA_TRACE_UNINVITE: SMSG_PARTY_COMMAND_RESULT operation=%u name=\"%s\" result=%u value=%d\n",
+                operation, name, result, value);
+    }
+
     if (!result) {
         if (!operation) {
             if (name[0]) {

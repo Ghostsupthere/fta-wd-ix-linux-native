@@ -50,6 +50,8 @@ void FrameScript_Flush();
 int32_t FrameScript_GetColor(lua_State* L, int32_t index, CImVector& color);
 int32_t FrameScript_GetColorNoAlpha(lua_State* L, int32_t index, CImVector& color);
 lua_State* FrameScript_GetContext();
+// Opt-in (FTA_TRACE_UNINVITE=1) diagnostic: prints the live Lua stack to stderr under a tag.
+void FrameScript_TraceStack(const char* tag);
 const char* FrameScript_GetCurrentObject(lua_State* L, int32_t level);
 char* FrameScript_GetCurrentFunction(lua_State* L, char* buffer, uint32_t bufferLen);
 int32_t FrameScript_GetErrorHandlerReference();

@@ -1059,7 +1059,14 @@ int32_t CGRaidInfo::GetPartyAssignments(lua_State* L, int32_t assignment) {
 
     if (lua_isstring(L, 2)) {
         const char* name = lua_tolstring(L, 2, nullptr);
-        WOWGUID guid = CGGameUI::ClosestObjectMatch(name, TYPE_PLAYER, 6, StringToBOOL(L, 3, 0), 3.4028235e38f, 0);
+        WOWGUID guid = WOWGUID();
+
+        // NPCBots are creature party members. ClosestObjectMatch only accepts players, so
+        // ElvUI's per-unit roster refresh printed "partyN is not in your party" for every
+        // bot. Assignments are stored per member GUID, so a member token needs no type filter.
+        if (!Script_GetGUIDFromToken(name, guid, false) || !IsGuidInMyRaid(guid)) {
+            guid = CGGameUI::ClosestObjectMatch(name, TYPE_PLAYER, 6, StringToBOOL(L, 3, 0), 3.4028235e38f, 0);
+        }
 
         if (!guid) {
             CGGameUI::DisplayError(ERR_TARGET_NOT_IN_GROUP_S, name);
