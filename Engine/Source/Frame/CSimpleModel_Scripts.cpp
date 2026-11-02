@@ -209,12 +209,16 @@ static int32_t Script_SetCamera(lua_State* L) {
 
         // The loaded callback (PlayerModel::ConfigureCamera) swaps in the paperdoll camera once the
         // model and its attachments finish loading. A camera chosen before then was overwritten, so a
-        // unit portrait whose gear was still streaming in framed the middle of the body. Defer it.
-        if (model->m_model && model->m_model->m_loadedCallback) {
+        // unit portrait whose gear was still streaming in framed the middle of the body. Hold it, and
+        // remember that a script asked, so the loaded-model step keeps it.
+#if defined(WOWDECOMP_LINUX)
+        if (!model->m_model || model->m_model->m_loadedCallback) {
             model->m_pendingCameraIndex = index;
             model->m_pendingCameraId = 0xFFFFFFFF;
+            model->m_wxlScriptCameraPending = true;
             return 0;
         }
+#endif
 
         model->SetCameraByIndex(index);
         return 0;

@@ -14,6 +14,7 @@
 #include "Engine/Source/Frame/CScriptObject.h"
 #include "Engine/Source/Frame/CScriptRegion.h"
 #include "Engine/Source/Frame/CSimpleFrame.h"
+#include "Engine/Source/FrameScript/FrameScript.h"
 #include "Engine/Source/FrameXML/LoadXML.h"
 #include "Engine/Source/FrameXML/XMLTree.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
@@ -387,6 +388,9 @@ void CSimpleModel::SetCameraByIndex(uint32_t index) {
         }();
 
         if (tracePortrait) {
+            fprintf(stderr, "FTA_TRACE_PORTRAIT: frame=%s loadedCallbackPending=%d\n", this->GetName() ? this->GetName() : "?",
+                    model->m_loadedCallback != nullptr);
+            FrameScript_TraceStack("setcamera");
             CAaBox box = model->GetBoundingBox();
             fprintf(stderr, "FTA_TRACE_PORTRAIT: SetCameraByIndex(%u) model=%s cameras=%u byId0=%d chosen=%u bbox=(%.2f %.2f %.2f)-(%.2f %.2f %.2f)\n", index,
                     model->m_shared->m_fileNameWithoutPath, data->m_cameras.m_count,

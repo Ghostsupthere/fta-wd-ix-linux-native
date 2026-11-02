@@ -64,6 +64,9 @@ class CSimpleModel : public CSimpleFrame {
     uint64_t m_wxlPreviewGeneration = 0;
     uint64_t m_wxlEquipmentGeneration = 0;
     bool m_wxlEquipmentPreview = false;
+    // A script called SetCamera before the model finished loading (the constructor's pending camera 0 is only
+    // a default); the loaded-model step must then keep it instead of switching to the paperdoll camera.
+    bool m_wxlScriptCameraPending = false;
 #endif
 
     virtual ~CSimpleModel();

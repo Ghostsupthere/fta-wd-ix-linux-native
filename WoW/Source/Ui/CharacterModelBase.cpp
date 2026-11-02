@@ -157,9 +157,23 @@ CM2Model* CGCharacterModelBase::GetDuplicateUnitCharacterModel(CGUnit_C* unit) {
 // VERIFY: 4219f365 auto
 // OFFSET: 0x005977C0
 void CGCharacterModelBase::OnModelLoaded(CM2Model* model) {
-    // A camera the script asked for (SetCamera) is applied by the base class; keep it.
-    bool cameraRequested = this->m_pendingCameraIndex != 0xFFFFFFFF || this->m_pendingCameraId != 0xFFFFFFFF;
+    // A camera the script asked for (SetCamera) is applied by the base class; keep it. The constructor's
+    // pending camera 0 is only a default, so it does not count as a request.
+    bool cameraRequested = false;
+#if defined(WOWDECOMP_LINUX)
+    cameraRequested = this->m_wxlScriptCameraPending;
+    this->m_wxlScriptCameraPending = false;
+#endif
     CSimpleModel::OnModelLoaded(model);
+
+    static const bool tracePortrait = [] {
+        const char* env = std::getenv("FTA_TRACE_PORTRAIT");
+        return env && env[0] == '1';
+    }();
+
+    if (tracePortrait) {
+        fprintf(stderr, "FTA_TRACE_PORTRAIT: OnModelLoaded frame=%s cameraRequested=%d\n", this->GetName() ? this->GetName() : "?", cameraRequested);
+    }
 
     if (!cameraRequested) {
         this->ConfigureCamera();
