@@ -205,7 +205,18 @@ static int32_t Script_SetCamera(lua_State* L) {
     CSimpleModel* model = static_cast<CSimpleModel*>(FrameScript_GetObjectThis(L, CSimpleModel::GetObjectType()));
 
     if (lua_isnumber(L, 2)) {
-        model->SetCameraByIndex(static_cast<uint32_t>(lua_tonumber(L, 2)));
+        uint32_t index = static_cast<uint32_t>(lua_tonumber(L, 2));
+
+        // The loaded callback (PlayerModel::ConfigureCamera) swaps in the paperdoll camera once the
+        // model and its attachments finish loading. A camera chosen before then was overwritten, so a
+        // unit portrait whose gear was still streaming in framed the middle of the body. Defer it.
+        if (model->m_model && model->m_model->m_loadedCallback) {
+            model->m_pendingCameraIndex = index;
+            model->m_pendingCameraId = 0xFFFFFFFF;
+            return 0;
+        }
+
+        model->SetCameraByIndex(index);
         return 0;
     }
 

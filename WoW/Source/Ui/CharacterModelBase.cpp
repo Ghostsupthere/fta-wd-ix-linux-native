@@ -157,8 +157,13 @@ CM2Model* CGCharacterModelBase::GetDuplicateUnitCharacterModel(CGUnit_C* unit) {
 // VERIFY: 4219f365 auto
 // OFFSET: 0x005977C0
 void CGCharacterModelBase::OnModelLoaded(CM2Model* model) {
+    // A camera the script asked for (SetCamera) is applied by the base class; keep it.
+    bool cameraRequested = this->m_pendingCameraIndex != 0xFFFFFFFF || this->m_pendingCameraId != 0xFFFFFFFF;
     CSimpleModel::OnModelLoaded(model);
-    this->ConfigureCamera();
+
+    if (!cameraRequested) {
+        this->ConfigureCamera();
+    }
 }
 
 // VERIFY: ab38d930 manual

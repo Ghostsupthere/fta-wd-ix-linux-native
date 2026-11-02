@@ -1,6 +1,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <set>
+#include <strings.h>
 #include "Engine/Source/Frame/CSimpleModel.h"
 #include "Engine/Source/Base/Coordinate.h"
 #include "Engine/Source/Base/Handle.h"
@@ -343,8 +348,80 @@ void CSimpleModel::SetCameraByIndex(uint32_t index) {
         model->WaitForLoad(nullptr);
     }
 
-    if (index < model->m_shared->m_data->m_cameras.m_count) {
-        this->SetCamera(static_cast<CCamera*>(this->m_model->GetCameraByIndex(index)));
+    M2Data* data = model->m_shared->m_data;
+
+    if (index < data->m_cameras.m_count) {
+        uint32_t chosen = index;
+
+        // Camera 0 means the portrait camera (type 0). Stock models keep it at index 0, but a model
+        // whose portrait camera sits elsewhere (the converted HD dwarf male) framed mid-body.
+        if (index == 0 && data->m_cameraIndicesById.m_count > 0) {
+            uint16_t portrait = data->m_cameraIndicesById[0];
+
+            if (portrait != 0xFFFF && portrait < data->m_cameras.m_count) {
+                chosen = portrait;
+            }
+        }
+
+        // The converted HD dwarf male reuses the stock dwarf's portrait camera, which aims about 0.1
+        // below its head (target 0.29 under the Helm attachment against 0.18-0.21 on the other races),
+        // so a wide overlay portrait showed beard and chest. Raise it once; the camera is rebuilt from
+        // this shared data every update.
+        static const struct {
+            const char* model;
+            float dz;
+        } kPortraitAdjust[] = { { "dwarfmale_hd.m2", 0.10f } };
+        static std::set<const M2Data*> adjusted;
+
+        for (const auto& entry : kPortraitAdjust) {
+            if (model->m_shared->m_fileNameWithoutPath && !strcasecmp(model->m_shared->m_fileNameWithoutPath, entry.model) &&
+                adjusted.insert(data).second) {
+                data->m_cameras[chosen].m_positionBase.z += entry.dz;
+                data->m_cameras[chosen].m_targetPositionBase.z += entry.dz;
+            }
+        }
+
+        static const bool tracePortrait = [] {
+            const char* env = std::getenv("FTA_TRACE_PORTRAIT");
+            return env && env[0] == '1';
+        }();
+
+        if (tracePortrait) {
+            CAaBox box = model->GetBoundingBox();
+            fprintf(stderr, "FTA_TRACE_PORTRAIT: SetCameraByIndex(%u) model=%s cameras=%u byId0=%d chosen=%u bbox=(%.2f %.2f %.2f)-(%.2f %.2f %.2f)\n", index,
+                    model->m_shared->m_fileNameWithoutPath, data->m_cameras.m_count,
+                    data->m_cameraIndicesById.m_count ? static_cast<int>(data->m_cameraIndicesById[0]) : -1, chosen,
+                    box.b.x, box.b.y, box.b.z, box.t.x, box.t.y, box.t.z);
+
+            // GetAttachmentPivot does not bounds-check, so look the attachment up here.
+            for (uint32_t id : { 11u, 0u }) {
+                if (id < data->m_attachmentIndicesById.m_count) {
+                    uint16_t slot = data->m_attachmentIndicesById[id];
+
+                    if (slot != 0xFFFF && slot < data->m_attachments.m_count) {
+                        C3Vector pivot = data->m_attachments[slot].m_position;
+                        fprintf(stderr, "FTA_TRACE_PORTRAIT:   attachment %u pivot=(%.2f %.2f %.2f)\n", id, pivot.x, pivot.y, pivot.z);
+                    }
+                }
+            }
+
+            for (uint32_t i = 0; i < data->m_cameras.m_count; i++) {
+                C3Vector pos, target;
+                pos = C3Vector();
+                target = C3Vector();
+                CCamera* candidate = static_cast<CCamera*>(model->GetCameraByIndex(i));
+
+                if (candidate) {
+                    DataMgrGetCoord(candidate, 7, &pos);
+                    DataMgrGetCoord(candidate, 8, &target);
+                }
+
+                fprintf(stderr, "FTA_TRACE_PORTRAIT:   camera %u pos=(%.2f %.2f %.2f) tgt=(%.2f %.2f %.2f)\n", i, pos.x, pos.y, pos.z,
+                        target.x, target.y, target.z);
+            }
+        }
+
+        this->SetCamera(static_cast<CCamera*>(this->m_model->GetCameraByIndex(chosen)));
         return;
     }
 
