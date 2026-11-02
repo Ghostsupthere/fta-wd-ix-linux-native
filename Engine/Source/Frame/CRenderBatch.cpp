@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include "Engine/Source/Base/Handle.h"
 #include "Engine/Source/Frame/CRenderBatch.h"
 #include "Engine/Source/Base/Coordinate.h"
 #include "Engine/Source/Frame/CSimpleRender.h"
@@ -20,7 +21,7 @@ static int32_t SortByTexture(const void* elem1, const void* elem2) {
     const CSimpleBatchedMesh* mesh2 = static_cast<const CSimpleBatchedMesh*>(elem2);
 
     if (mesh1->m_textureID != mesh2->m_textureID) {
-        return static_cast<int32_t>(reinterpret_cast<uintptr_t>(mesh1->m_textureID) - reinterpret_cast<uintptr_t>(mesh2->m_textureID));
+        return reinterpret_cast<uintptr_t>(mesh1->m_textureID) < reinterpret_cast<uintptr_t>(mesh2->m_textureID) ? -1 : 1;
     }
 
     int32_t alphaMode1 = (mesh1->m_color && mesh1->m_alphaMode < GxBlend_Alpha) ? GxBlend_Alpha : mesh1->m_alphaMode;
@@ -30,7 +31,11 @@ static int32_t SortByTexture(const void* elem1, const void* elem2) {
         return alphaMode1 - alphaMode2;
     }
 
-    return static_cast<int32_t>(reinterpret_cast<uintptr_t>(mesh1->m_shader) - reinterpret_cast<uintptr_t>(mesh2->m_shader));
+    if (mesh1->m_shader == mesh2->m_shader) {
+        return 0;
+    }
+
+    return reinterpret_cast<uintptr_t>(mesh1->m_shader) < reinterpret_cast<uintptr_t>(mesh2->m_shader) ? -1 : 1;
 }
 
 // VERIFY: 2cc3a1bc auto
@@ -54,7 +59,8 @@ void CRenderBatch::Queue(CTexture* texture, EGxBlend alphaMode, int32_t posCount
     this->m_texturelist.SetCount(index + 1);
 
     CSimpleBatchedMesh* mesh = &this->m_texturelist[index];
-    mesh->m_texture = texture;
+    // Frames cache their batches across frames; hold the texture so a release elsewhere cannot leave a dangling pointer for DrawBatch.
+    mesh->m_texture = reinterpret_cast<CTexture*>(HandleDuplicate(reinterpret_cast<HOBJECT>(texture)));
     mesh->m_textureID = gxTex;
     mesh->m_alphaMode = alphaMode;
     mesh->m_shader = shader;
@@ -93,6 +99,12 @@ void CRenderBatch::QueueCallback(void (*callback)(void*), void* param) {
 // VERIFY: 0c4ec2c0 auto
 // OFFSET: 0x00485F00
 void CRenderBatch::Clear() {
+    for (uint32_t i = 0; i < this->m_texturelist.Count(); i++) {
+        if (this->m_texturelist[i].m_texture) {
+            HandleClose(reinterpret_cast<HOBJECT>(this->m_texturelist[i].m_texture));
+        }
+    }
+
     this->m_texturelist.SetCount(0);
 
     if (this->m_stringbatch) {
