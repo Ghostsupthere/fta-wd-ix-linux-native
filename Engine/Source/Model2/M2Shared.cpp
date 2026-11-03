@@ -670,7 +670,17 @@ CShaderEffect* CM2Shared::GetEffect(M2Batch* batch) {
                 alphaOp = static_cast<EGxTexOp>(3);
                 break;
             default:
+#if defined(WOWDECOMP_LINUX)
+                // Only 0x8000-0x8003 are written by SubstituteSpecializedShaders; any other value came
+                // from the model file itself (modern assets), and the strcpy below would read null.
+                // Skip the batch like shader 0: drawing it with the generic effect shows its effect
+                // cards as solid translucent quads (Molten Giant, Molten Core).
+                WxlNativeDiagnostic("m2: unknown specialized shader 0x%04x, batch skipped: %s",
+                    batch->m_shader, this->m_fileName);
+                return nullptr;
+#else
                 break;
+#endif
         }
 
         char effectName[256];
