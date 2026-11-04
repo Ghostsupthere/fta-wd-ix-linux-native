@@ -22,7 +22,8 @@ namespace wxl::grass::environment
     };
 
     // Same names, ranges and order as the supplied module. Defaults match it except lights.enabled and
-    // lights.models: surface lights are OFF by default in the native client.
+    // lights.models: surface lights are ON by default in the native client (they stay inert unless
+    // WXL_SURFACE_LIGHTS is on and light_shaders.pack exists; a saved Environment.ini keeps its own values).
     constexpr Option kOptions[] = {
         {"grass.instanced", 0, 1, 1, true},
         {"grass.memoryMB", 16, 128, 64, true},
@@ -30,8 +31,8 @@ namespace wxl::grass::environment
         {"grass.windStrength", 0, 2, 1, false},
         {"grass.windSpeed", 0, 2, 1, false},
         {"grass.interaction", 0, 1, 1, true},
-        {"lights.enabled", 0, 1, 0, true},
-        {"lights.models", 0, 1, 0, true},
+        {"lights.enabled", 0, 1, 1, true},
+        {"lights.models", 0, 1, 1, true},
         {"lights.brightness", 0, 2, 1, false},
         {"lights.radius", 4, 32, 16, false},
         {"lights.range", 32, 256, 160, true},

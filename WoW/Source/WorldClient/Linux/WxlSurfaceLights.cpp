@@ -64,7 +64,7 @@ std::filesystem::path ClientDirectory() {
 void EnsurePack() {
     if (packTried) return;
     packTried = true;
-    profileOn = WxlProfileEnabled("WXL_SURFACE_LIGHTS", false);
+    profileOn = WxlProfileEnabled("WXL_SURFACE_LIGHTS", true);
     if (!profileOn) return;
     std::error_code exists;
     wmoPackPresent = std::filesystem::exists(ClientDirectory() / "Utils/WarcraftXL/visuals/wmo_shaders.pack", exists);
@@ -818,7 +818,7 @@ std::string WxlSurfaceLightsStatus() {
     EnsurePack();
     char text[768];
     if (!profileOn) {
-        return "Lighting: the surface-light shaders are not loaded (WXL_SURFACE_LIGHTS is off in WarcraftXL.cfg, the default here). "
+        return "Lighting: the surface-light shaders are not loaded (WXL_SURFACE_LIGHTS is turned off in WarcraftXL.cfg or the environment). "
                "The light settings are saved but change nothing.";
     }
     if (!packLoaded) {

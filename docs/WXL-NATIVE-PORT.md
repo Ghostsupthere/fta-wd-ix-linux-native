@@ -120,15 +120,16 @@ Verified: the ASan/UBSan test (table, clamping, hostile input, round trip, perce
 ### Surface lights, Living Azeroth (2026-10-31)
 
 Port of the lighting half of the supplied `wxl-living-azeroth` (Morfium's Living Azeroth, GPL-3.0-or-later): the
-client's own torches, braziers and lamps light the terrain, models and buildings around them. **It is off by
-default and inert unless you turn it on.**
+client's own torches, braziers and lamps light the terrain, models and buildings around them. **Since 0.2.7 it is on
+by default (still inert without the shader pack); `WXL_SURFACE_LIGHTS=0` turns it off.**
 
 **Switches (all must be on):**
-1. `WXL_SURFACE_LIGHTS=1` in `WarcraftXL.cfg` or the environment (default **0**). With it off nothing about the
-   client's shaders or lighting changes at all.
+1. `WXL_SURFACE_LIGHTS` in `WarcraftXL.cfg` or the environment (default **1** since 0.2.7; `0` turns it off). With
+   it off nothing about the client's shaders or lighting changes at all.
 2. `Utils/WarcraftXL/visuals/light_shaders.pack`, built per install by `tools/build-light-shader-pack.py`
    (Wine and the pinned compiler, offline; the client never loads either). Derived from game assets, never committed.
-3. The Environment page's "Dynamic lights" (`lights.enabled`, default **0** natively). "Light characters and
+3. The Environment page's "Dynamic lights" (`lights.enabled`, default **1** natively since 0.2.7; a saved `Environment.ini` keeps its own value, and the file the
+   Windows client writes has `0`). "Light characters and
    buildings" (`lights.models`) adds M2s and WMOs; without it only the terrain is lit.
 
 With 1 and 2 on but 3 off, the patched shaders load and stay inert (the header texture is all zero, the terrain
@@ -162,7 +163,7 @@ built from the light-patched one. Rendering of lit layered WMOs is not seen.
 **In use on this install (2026-10-31):** the user ran it, turned on "Dynamic lights" and "Light characters and
 buildings", saw the lighting change and judged it good, and chose to keep it enabled. `WarcraftXL.cfg` now has
 `WXL_SURFACE_LIGHTS=1` and `WTF/WXL/Environment.ini` has `lights.enabled=1`, `lights.models=1`. The code defaults
-stay off. That test ran with WMO lights off (the old layered pack was installed), so it covered the terrain and M2
+were off then; they became on in 0.2.7. That test ran with WMO lights off (the old layered pack was installed), so it covered the terrain and M2
 doodads such as torches and lamp posts. The combined WMO pack was installed afterwards, which turns WMO (building)
 lights on by default; that part is not yet user-tested (`WXL_SURFACE_LIGHTS_WMO=0` turns it off).
 

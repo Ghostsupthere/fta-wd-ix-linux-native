@@ -13,7 +13,7 @@ static void Require(bool ok, const char* what) { if (!ok) { std::fprintf(stderr,
 int main() {
     Values defaults;
     Require(kCount == 17, "17 options");
-    Require(defaults.v[kLightsEnabled] == 0 && defaults.v[kLightsModels] == 0 && defaults.v[kGrassMemoryMB] == 64, "defaults (surface lights off)");
+    Require(defaults.v[kLightsEnabled] == 1 && defaults.v[kLightsModels] == 1 && defaults.v[kGrassMemoryMB] == 64, "defaults (surface lights on)");
 
     // Clamping, integer rounding, non-finite input.
     Require(Normalize(kGrassWindStrength, 9) == 2, "clamp high");

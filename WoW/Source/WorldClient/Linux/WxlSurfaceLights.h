@@ -4,10 +4,11 @@
 // and buildings around them, through shaders patched offline (tools/build-light-shader-pack.py ->
 // Utils/WarcraftXL/visuals/light_shaders.pack) and one light texture.
 //
-// OFF BY DEFAULT. Nothing about the client's shaders changes unless the profile sets
-// WXL_SURFACE_LIGHTS=1 (environment variable or WarcraftXL.cfg) AND the pack exists. With the profile on,
-// the patched shaders load but stay inert (the stock lighting keeps working) until the Environment page's
-// "Dynamic lights" option (lights.enabled, default off here) is switched on.
+// ON BY DEFAULT since 0.2.7: the profile setting WXL_SURFACE_LIGHTS defaults to 1 (WXL_SURFACE_LIGHTS=0 in the
+// environment or WarcraftXL.cfg turns it off) and the lights need the pack to exist. Without the pack, or with
+// the profile off, nothing about the client's shaders changes. With the profile on, the patched shaders stay
+// inert (the stock lighting keeps working) while the Environment page's "Dynamic lights" option
+// (lights.enabled, default on here) is switched off.
 //
 // Pure logic: Engine/Source/ModernAssets/WxlSurfaceLights/. This file is the engine adapter: the scene
 // scan, the live CM2Light values, indoor and ray tests, the texture and the terrain-stage hook.
