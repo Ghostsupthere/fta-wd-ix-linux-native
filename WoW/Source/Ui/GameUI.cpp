@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Source/Ui/Linux/WxlRequiredAddons.h"
 #include "WoW/Source/Ui/Linux/WxlNamePlates.h"
@@ -2010,6 +2011,7 @@ void CGGameUI::InitializeGame() {
 // VERIFY: fa2430a7 manual
 // OFFSET: 0x0052AF40
 int32_t CGGameUI::Idle(const void* data, void* param) {
+    Profiler::Scope profileScope(Profiler::UiIdle);
     if (g_theGxDevicePtr->StereoEnabled()) {
         float convergence = g_theGxDevicePtr->StereoGetConvergence();
 

@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -765,6 +766,7 @@ int ForEveryRunOnceWTF::FileNameCompare(const void* a, const void* b) {
 // VERIFY: f04c040b auto
 // OFFSET: 0x00403340
 static int32_t ClientIdle(const void* data, void* param) {
+    Profiler::Scope profileScope(Profiler::ClientIdle);
     ClientGameTimeTickHandler(data, param);
     Player_C_ZoneUpdateHandler(data, param);
 

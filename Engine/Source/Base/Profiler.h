@@ -17,6 +17,12 @@ enum Id : uint32_t {
     M2Animate,        // CM2Scene::Animate, model animation (main thread plus its worker)
     M2Draw,           // CM2Scene::Draw, model passes
     Present,          // the device's ScenePresent: includes waiting for the GPU or vsync
+    Paint,            // the paint event: every screen layer (the world view, nested, and the UI) and the present
+    ClientIdle,       // the client's idle handler: game clock, zone, network-driven updates
+    WorldUpdate,      // CGWorldFrame::Update: object and camera updates before the world draws
+    UiIdle,           // CGGameUI::Idle: the UI's own per-frame work
+    UiUpdate,         // CSimpleTop::OnLayerUpdate: layout and every frame's OnUpdate script (add-ons)
+    UiRender,         // CSimpleTop::OnLayerRender: drawing every visible frame, texture and font string
     Count
 };
 
@@ -25,6 +31,7 @@ struct ZoneLine {
     double selfMs;   // average per frame, excluding nested zones
     double totalMs;  // average per frame, including nested zones
     double calls;    // average per frame
+    double selfDraws;  // draw calls made directly in this zone (not in a nested one), average per frame
 };
 
 struct Summary {
@@ -41,6 +48,7 @@ struct Scope {
     ~Scope();
     Scope(const Scope&) = delete;
     Scope& operator=(const Scope&) = delete;
+    int32_t Zone() const { return m_zone; }
 
 private:
     int32_t m_zone;  // -1: inactive

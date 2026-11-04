@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include <cstddef>
 #include <cstdint>
 #include <new>
@@ -154,6 +155,7 @@ static int32_t CaptureScreen() {
 // VERIFY: 52c6418c manual
 // OFFSET: 0x004A8720
 static int32_t OnPaint(const void* data, void* param) {
+    Profiler::Scope profileScope(Profiler::Paint);
     if (GxHasContext() && GxIsWindowVisible()) {
         HSRGN rgn;
         SRgnCreate(&rgn, 0);

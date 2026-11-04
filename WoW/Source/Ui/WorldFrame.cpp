@@ -1374,6 +1374,7 @@ void CGWorldFrame::SetScreenEffect(int32_t effect) {
 // VERIFY: 01c7ec1b manual
 // OFFSET: 0x004F8730
 int32_t CGWorldFrame::Update(const void* data, void* param) {
+    Profiler::Scope profileScope(Profiler::WorldUpdate);
     CGPlayer_C* player = static_cast<CGPlayer_C*>(ClntObjMgrObjectPtr(ClntObjMgrGetActivePlayer(), TYPE_PLAYER, __FILE__, __LINE__));
 
     if (player) {

@@ -2,6 +2,9 @@
 #include "WoW/Source/Object/Linux/WxlGoblinGlider.h"
 #endif
 #include "Movement.h"
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/ModernAssets/NativeDiagnostic.h"
+#endif
 #include <cmath>
 #include <cstddef>
 #include <cstring>
@@ -5378,6 +5381,24 @@ void CMovement_C::MoveUnits(uint32_t time, uint32_t lastUpdateTime) {
         return;
     }
 
+#if defined(WOWDECOMP_LINUX)
+    {
+        // Opt-in (WXL_NATIVE_DIAGNOSTICS=1): every 600 calls, who is in the mover list and why it needs per-frame
+        // movement work (units that stand still should not be here).
+        static unsigned calls = 0;
+        if (++calls % 600 == 0) {
+            unsigned count = 0;
+            for (CMovement_C* m = globals->m_movers.Head(); m; m = globals->m_movers.Next(m))
+                ++count;
+            WxlNativeDiagnostic("movers: %u in the list", count);
+            unsigned shown = 0;
+            for (CMovement_C* m = globals->m_movers.Head(); m && shown < 12; m = globals->m_movers.Next(m), ++shown)
+                WxlNativeDiagnostic("  mover %llx flags %08x flags2 %08x spline %d active %d moving-flags %d",
+                    static_cast<unsigned long long>(m->m_unit->m_obj->m_guid.m_guid), m->m_flags, m->m_flags2, m->m_spline != nullptr,
+                    m->m_unit->m_obj->m_guid == CGUnit_C::s_activeMover, (m->m_flags & 0x40C010FF) != 0);
+        }
+    }
+#endif
     CMovement_C* mover = globals->m_movers.Head();
 
     while (mover) {

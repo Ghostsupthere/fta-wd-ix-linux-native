@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include "Engine/Source/Frame/CSimpleTop.h"
 #include <cmath>
 #include <cstring>
@@ -36,7 +37,11 @@ uint32_t CSimpleTop::s_eventTime;
 // OFFSET: 0x00495810
 static void PaintScreen(void* param, const RECTF* rect, const RECTF* visible, float elapsedSec) {
     CSimpleTop* top = CSimpleTop::s_instance;
-    top->OnLayerUpdate(elapsedSec);
+    {
+        Profiler::Scope updateScope(Profiler::UiUpdate);
+        top->OnLayerUpdate(elapsedSec);
+    }
+    Profiler::Scope renderScope(Profiler::UiRender);
     top->OnLayerRender();
 }
 
