@@ -31,7 +31,8 @@ namespace wxl::modern::assets::textures::blp
 
     // Character component textures are CPU-composited by the client. Native components are palettized
     // BLP2 (encoding 1), while modern retail components are commonly DXT. Converts DXT components to that
-    // legacy shape while preserving the source mip-0 dimensions. The caller must enforce the client's
+    // legacy shape while preserving the source mip-0 dimensions; uncompressed BGRA (encoding 3) components
+    // are converted the same way. The caller must enforce the client's
     // active decode limit before conversion.
     bool TextureComponentToPaletted(std::span<const uint8_t> in, std::vector<uint8_t>& out);
 

@@ -95,6 +95,37 @@ namespace wxl::modern::assets::textures::blp
             }
         }
 
+        // Mip 0 of an uncompressed encoding-3 BLP (4-byte BGRA, or 3-byte BGR) as RGBA.
+        bool DecodeRawMip0(std::span<const uint8_t> in, RgbaImage& img)
+        {
+            const uint8_t* b = in.data();
+            const uint32_t n = static_cast<uint32_t>(in.size());
+            if (n < 0x94 || rd32(b) != kMagicBlp2 || rd32(b + 4) != 1) return false;
+            if (b[kEncoding] != 3) return false;
+
+            const uint32_t width = rd32(b + kWidth), height = rd32(b + kHeight);
+            if (width == 0 || height == 0 || width > 4096 || height > 4096) return false;
+
+            const uint32_t off = rd32(b + kMipOffsets), size = rd32(b + kMipSizes);
+            if (off == 0 || size == 0 || off > n || size > n - off) return false;
+
+            const uint32_t bpp = static_cast<uint32_t>(size / (uint64_t(width) * height));
+            if (bpp != 3 && bpp != 4) return false;
+
+            const bool hasAlpha = bpp == 4 && b[kAlphaDepth] != 0;
+            img.w = width;
+            img.h = height;
+            img.px.assign(size_t(width) * height * 4, 0);
+            const uint8_t* src = b + off;
+            for (size_t i = 0, count = size_t(width) * height; i < count; ++i, src += bpp)
+            {
+                uint8_t* d = img.px.data() + i * 4;
+                d[0] = src[2]; d[1] = src[1]; d[2] = src[0];
+                d[3] = hasAlpha ? src[3] : 255;
+            }
+            return true;
+        }
+
         bool DecodeDxtMip(std::span<const uint8_t> in, RgbaImage& img, uint32_t maxEdge)
         {
             const uint8_t* b = in.data();
@@ -531,7 +562,8 @@ namespace wxl::modern::assets::textures::blp
         RgbaImage img;
         // The host validates the active client decode limit before reaching this conversion. Always decode
         // mip 0 here: compatibility conversion must not double as a hidden armor-quality setting.
-        if (!DecodeDxtMip(in, img, 0)) return false;
+        const bool raw = in.size() > kEncoding && in[kEncoding] == 3;
+        if (raw ? !DecodeRawMip0(in, img) : !DecodeDxtMip(in, img, 0)) return false;
 
         return EncodePalettedBlp(img, out);
     }

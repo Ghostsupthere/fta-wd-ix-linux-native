@@ -1,6 +1,8 @@
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <new>
+#include <vector>
 #include "WoW/Common/TextureCache.h"
 #include "Engine/Source/Base/ObjectAlloc.h"
 #include "Engine/Source/BLPFile/blp.h"
@@ -9,6 +11,11 @@
 #include "Engine/Source/Services/Texture.h"
 #include "Engine/Source/Services/Types.h"
 #include "Engine/Source/Storm/H/storm.h"
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/ModernAssets/ModernBlp.h"
+#include "Engine/Source/ModernAssets/NativeDiagnostic.h"
+#include "Engine/Source/Services/Linux/TextureDiagnostics.h"
+#endif
 
 // STATIC: 0x00B6BA48
 static HASHKEY_NONE s_cacheKey;
@@ -35,6 +42,26 @@ static void FreeRequest(CAsyncObject* object) {
 static void LoadSuccessCallback(void* param) {
     CACHEENTRY* entry = static_cast<CACHEENTRY*>(param);
 
+#if defined(WOWDECOMP_LINUX)
+    // Everything cached here is composited on the CPU from palettized BLP (TextureCacheGetPal), so a
+    // DXT, uncompressed or DDS source would paste as solid green. Convert it before anything reads it.
+    std::vector<uint8_t> converted;
+    ModernBlpTransformResult conversion = TransformModernBlp(
+        entry->m_fileName, entry->m_data, entry->m_asyncObject->m_size, converted, true);
+    if (conversion == ModernBlpTransformResult::Transformed) {
+        void* replacement = SMemAlloc(converted.size(), __FILE__, __LINE__, 0);
+        if (replacement) {
+            memcpy(replacement, converted.data(), converted.size());
+            SMemFree(entry->m_data, __FILE__, __LINE__, 0);
+            entry->m_data = static_cast<BLPHeader*>(replacement);
+            WxlNativeDiagnostic("modern-blp: cache converted %s to palettized", entry->m_fileName);
+        }
+    } else if (conversion == ModernBlpTransformResult::Rejected) {
+        WxlNativeDiagnostic("modern-blp: cache rejected source texture: %s", entry->m_fileName);
+        WxlTextureFailure("cache-rejected", entry->m_fileName);
+    }
+#endif
+
     AsyncFileReadDestroyObject(entry->m_asyncObject);
     BLPHeader* header = entry->m_data;
     entry->m_asyncObject = nullptr;
@@ -60,6 +87,9 @@ int32_t CACHEENTRY::LoadTexture() {
     }
 
     if (!file) {
+#if defined(WOWDECOMP_LINUX)
+        WxlTextureFailure("cache-missing", this->m_fileName);
+#endif
         this->m_loadFailed = 1;
         return 0;
     }
@@ -71,7 +101,12 @@ int32_t CACHEENTRY::LoadTexture() {
     this->m_asyncObject->m_size = SFileGetFileSize(file, nullptr);
     this->m_asyncObject->m_priority = 130;
     this->m_size = this->m_asyncObject->m_size;
+#if defined(WOWDECOMP_LINUX)
+    // m_size is a 20-bit field: a file over 1 MiB would get a buffer smaller than the read that fills it.
+    this->m_data = static_cast<BLPHeader*>(SMemAlloc(this->m_asyncObject->m_size, __FILE__, __LINE__, 0));
+#else
     this->m_data = static_cast<BLPHeader*>(SMemAlloc(this->m_size, __FILE__, __LINE__, 0));
+#endif
     this->m_asyncObject->m_buffer = this->m_data;
     AsyncFileReadObject(this->m_asyncObject, 0);
 

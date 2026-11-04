@@ -38,7 +38,7 @@ bool EndsWithCi(std::string_view value, std::string_view suffix) {
 } // namespace
 
 ModernBlpTransformResult TransformModernBlp(const char* name, const void* source, uint32_t sourceSize,
-                                            std::vector<uint8_t>& output) {
+                                            std::vector<uint8_t>& output, bool forcePaletted) {
     output.clear();
     const std::string_view path = name ? std::string_view(name) : std::string_view();
     if (!source || !EndsWithCi(path, ".blp")) {
@@ -57,9 +57,19 @@ ModernBlpTransformResult TransformModernBlp(const char* name, const void* source
         if (raw.size() < 20 || ReadU32(raw.data() + 12) > kSafeTextureEdge || ReadU32(raw.data() + 16) > kSafeTextureEdge) {
             return ModernBlpTransformResult::Rejected;
         }
-        return wxl::modern::assets::textures::dds::DdsToBlp(raw.data(), raw.size(), output)
-            ? ModernBlpTransformResult::Transformed
-            : ModernBlpTransformResult::Rejected;
+        if (!wxl::modern::assets::textures::dds::DdsToBlp(raw.data(), raw.size(), output)) {
+            output.clear();
+            return ModernBlpTransformResult::Rejected;
+        }
+        if (forcePaletted) {
+            std::vector<uint8_t> dxt;
+            dxt.swap(output);
+            if (!wxl::modern::assets::textures::blp::TextureComponentToPaletted(dxt, output)) {
+                output.clear();
+                return ModernBlpTransformResult::Rejected;
+            }
+        }
+        return ModernBlpTransformResult::Transformed;
     }
     if (magic == kMagicBlp1) {
         return ModernBlpTransformResult::NotApplicable;
@@ -77,6 +87,11 @@ ModernBlpTransformResult TransformModernBlp(const char* name, const void* source
     }
 
     const bool component = StartsWithCi(path, "item\\texturecomponents\\");
+    if (forcePaletted && encoding != 1) {
+        return wxl::modern::assets::textures::blp::TextureComponentToPaletted(raw, output)
+            ? ModernBlpTransformResult::Transformed
+            : ModernBlpTransformResult::Rejected;
+    }
     if (component && encoding == 2) {
         return wxl::modern::assets::textures::blp::TextureComponentToPaletted(raw, output)
             ? ModernBlpTransformResult::Transformed
