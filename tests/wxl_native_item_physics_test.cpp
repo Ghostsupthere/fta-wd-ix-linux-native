@@ -148,6 +148,38 @@ int main() {
         WxlVisitSceneModels(&scene,[&](CM2Model* model) { order.push_back(model); });
         assert(order.empty()); // A corrupt ancestry cycle cannot loop the frame.
     }
+    assert(HasItemPrefix("Item\\Objectcomponents\\x.m2") && HasItemPrefix("ITEM/x") && HasItemPrefix("item\\"));
+    assert(!HasItemPrefix(nullptr) && !HasItemPrefix("") && !HasItemPrefix("ite") && !HasItemPrefix("items\\x") &&
+           !HasItemPrefix("World\\item\\x") && !HasItemPrefix("item"));
+    {
+        // The stamped set matches a hash set through growth, repeats and clears.
+        WxlPointerSet set; std::unordered_set<const void*> reference;
+        std::vector<char> storage(40000);
+        for (uint32_t round=0; round<3; ++round) {
+            set.Clear(); reference.clear();
+            for (uint32_t i=0; i<60000; ++i) {
+                const void* key=&storage[(i*7919u+round)%storage.size()];
+                assert(set.Insert(key)==reference.insert(key).second);
+                assert(set.Size()==reference.size());
+            }
+        }
+        // A scene far past the first table size is visited once per model, parents first, with nesting allowed.
+        CM2Scene scene; std::vector<CM2Model> models(5000);
+        for (auto& model : models) model.m_scene=&scene;
+        for (size_t i=1; i<models.size(); ++i) {
+            models[i].m_attachParent=&models[0];
+            models[i].m_attachNext=models[0].m_attachList; models[0].m_attachList=&models[i];
+        }
+        scene.m_animateList=&models[4999]; scene.m_drawList=&models[1];
+        size_t visits=0, inner=0; bool rootFirst=true;
+        WxlVisitSceneModels(&scene,[&](CM2Model* model) {
+            if (!visits++) rootFirst=model==&models[0];
+            if (visits==1) WxlVisitSceneModels(&scene,[&](CM2Model*) { ++inner; });
+        });
+        assert(visits==5000 && inner==5000 && rootFirst);
+        visits=0; WxlVisitSceneModels(&scene,[&](CM2Model*) { ++visits; });
+        assert(visits==5000);
+    }
     const char* companion="item\\objectcomponents\\waist\\belt.phys";
     files[companion]=Phys();
     {

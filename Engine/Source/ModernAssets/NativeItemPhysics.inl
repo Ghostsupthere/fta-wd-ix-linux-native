@@ -84,10 +84,25 @@ void Tune(domino::Model& model, const std::string& path) {
     }
 }
 
+// The test NormPath would make, without copying the path: most world doodads are not items.
+bool HasItemPrefix(const char* path) {
+    static constexpr char prefix[] = "item\\";
+    if (!path) return false;
+    for (size_t i = 0; i + 1 < sizeof(prefix); ++i) {
+        char c = path[i];
+        if (!c) return false;
+        if (c == '/') c = '\\';
+        if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
+        if (c != prefix[i]) return false;
+    }
+    return true;
+}
+
 void Apply(CM2Model* model, CM2Scene* scene) {
     if (!(model->m_fFlags & 1) || !model->m_shared || !model->m_shared->m_data || !model->m_boneMatrices) return;
     const M2Data* data = model->m_shared->m_data;
     const uint32_t count = data->m_bones.m_count;
+    if (!HasItemPrefix(model->m_shared->m_fileName)) return;
     char name[1024];
     if (!count || count > 256 || !domino::NormPath(model->m_shared->m_fileName, name, sizeof(name)) ||
         !std::string_view(name).starts_with("item\\")) return;
