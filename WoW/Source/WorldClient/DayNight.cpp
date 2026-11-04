@@ -1449,6 +1449,23 @@ void DayNight::DNClouds::UpdateTextureAnimation() {
         }
     }
 
+#if defined(WOWDECOMP_LINUX)
+    // Each call rebuilds a few rows, a rate tuned for about 60 frames a second. Faster than that the same
+    // texture was regenerated several times per cloud step for nothing, so rows are produced at that pace
+    // and the time in between is carried into the animation clock.
+    static float s_pendingSeconds = 0.0f;
+    s_pendingSeconds += info.m_deltaSec;
+
+    if (!this->m_fullUpdate && s_pendingSeconds < 1.0f / 60.0f) {
+        return;
+    }
+
+    const float elapsedSeconds = s_pendingSeconds;
+    s_pendingSeconds = 0.0f;
+#else
+    const float elapsedSeconds = info.m_deltaSec;
+#endif
+
     uint32_t rowsPerUpdate = this->m_rowsPerUpdate;
 
     if (this->m_fullUpdate) {
@@ -1456,7 +1473,7 @@ void DayNight::DNClouds::UpdateTextureAnimation() {
         this->m_rowsPerUpdate = this->m_size;
     }
 
-    this->m_animTime += info.m_deltaSec;
+    this->m_animTime += elapsedSeconds;
 
     float density = info.m_bands.m_cloudDensity;
 
