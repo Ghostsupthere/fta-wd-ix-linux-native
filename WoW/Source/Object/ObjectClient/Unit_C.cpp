@@ -53,6 +53,7 @@
 #include "WoW/Source/WorldClient/Linux/WxlQuestTracker.h"
 #include "WoW/Source/Magic/MagicClient/Linux/WxlNpcBotTargets.h"
 #include "WoW/Source/Magic/MagicClient/Linux/WxlLoneWolf.h"
+#include "Engine/Source/ModernAssets/NativeDiagnostic.h"
 #endif
 #include "WoW/Source/Object/CMoveSpline.h"
 #include "WoW/Source/Object/CreatureStats.h"
@@ -18051,6 +18052,10 @@ void CGUnit_C::DoPowerRegen(uint32_t elapsed) {
 // VERIFY: 08043232 manual
 // OFFSET: 0x0072E3A0
 void CGUnit_C::OnLevelChange() {
+#if defined(WOWDECOMP_LINUX)
+    WxlNativeDiagnostic("level-up effect: unit %llx level now %u", static_cast<unsigned long long>(this->m_obj->m_guid.m_guid),
+        static_cast<unsigned>(this->m_unit->m_unitFieldLevel));
+#endif
     void* memory = SMemAlloc(sizeof(CEffect), __FILE__, __LINE__, 0);
     CEffect* effect = memory ? new (memory) CEffect() : nullptr;
     WOWGUID guid = this->m_obj->m_guid;

@@ -147,6 +147,8 @@ private:
     IDirect3DQuery9* m_probeCopied = nullptr;
     PendingDepthProbe m_pendingProbe;
     GpuTimer m_gpuTimer{"fog"};
+    GpuTimer m_timerTemporal{"temporal+copy"};  // WXL_FOG_TRACE=2: the pass split into three timed stages
+    GpuTimer m_timerComposite{"composite"};
     StockFogFit m_stockFogFit;
     GodRayFrame m_lateGodRays;
     UINT m_lowW = 0;

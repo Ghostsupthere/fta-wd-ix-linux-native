@@ -14,6 +14,10 @@
 #include "WoW/Source/WorldClient/MapEntity.h"
 #include "Engine/Source/Model2/M2Scene.h"
 #include "Engine/Source/Model2/M2Light.h"
+#include "Engine/Source/Model2/M2Model.h"
+#include "Engine/Source/Model2/M2Shared.h"
+#include "Engine/Source/Model2/M2Data.h"
+#include "Engine/Source/Model2/M2ModelLight.h"
 #include "Engine/Source/ModernAssets/NativeVisualHooks.h"
 #include "WxlWmoMaterials.h"
 #include "WxlGrassInstancing.h"
@@ -206,11 +210,51 @@ int32_t VisitContact(WOWGUID guid,void* context) {
     engine::SelectWaterContact(scan.frame,contact,scan.centre);
     return 1;
 }
+// Names the model each captured point light belongs to, once per change of the set (the first 40 changes, so a
+// busy fight cannot fill the log).
+void TraceLightOwners(CM2Scene* scene,const LocalLightInputs& lights) {
+    static uint64_t logged=0;
+    static unsigned events=0;
+    if(!scene||events>=40)return;
+    uint64_t set=lights.pointLightCount;
+    for(uint32_t i=0;i<lights.pointLightCount;++i)set=set*1099511628211ull^lights.pointLights[i].nativeId;
+    if(set==logged)return;
+    logged=set;
+    if(!lights.pointLightCount)return;
+    ++events;
+    for(uint32_t i=0;i<lights.pointLightCount;++i) {
+        const auto* target=reinterpret_cast<const CM2Light*>(lights.pointLights[i].nativeId);
+        const char* owner="not found among the scene's models";unsigned slot=0,count=0;
+        const CM2Model* found=nullptr;
+        for(CM2Model* model=scene->m_modelList;model;model=model->m_sceneNext) {
+            if(!(model->m_fFlags&1)||!model->m_lights||!model->m_shared||!model->m_shared->m_data)continue;
+            count=model->m_shared->m_data->m_lights.m_count;
+            bool match=false;
+            for(unsigned k=0;k<count&&k<256;++k)if(&model->m_lights[k].m_light==target){slot=k;match=true;break;}
+            if(match){owner=model->m_shared->m_fileName;found=model;break;}
+        }
+        VF_LOG_INFO("  local light %u owner: %s (light %u of %u), last animated %d frames ago",i,owner,slot,count,
+                    int(scene->m_frameStamp-reinterpret_cast<const CM2Light*>(lights.pointLights[i].nativeId)->m_stamp));
+        if(found)
+            VF_LOG_INFO("    model %p: parent %s, flags %08x/%08x, attachment %u, sequence callback %d, event callback %d, "
+                        "last anim time %u of scene time %u, model age %d ms",
+                        static_cast<const void*>(found),
+                        found->m_attachParent&&found->m_attachParent->m_shared?found->m_attachParent->m_shared->m_fileName:"(none)",
+                        found->m_flags,found->m_fFlags,found->m_attachmentId,found->m_sequenceCallback!=nullptr,
+                        found->m_eventCallback!=nullptr,found->m_lastAnimTime,scene->m_time,
+                        int(scene->m_time-found->m_lastAnimTime));
+    }
+}
 void CaptureNativePointLights(FrameInputs& frame) {
     // Called after opaque M2 draws have joined animation workers. This is the
     // native light grid used by model lighting, not fixed Windows addresses.
     auto* scene=World::s_m2Scene;
     auto& output=frame.localLights;output.capture=LocalLightCapture::Captured;
+    // cameraFrame outlives the frame and CaptureFrame does not touch the light list, so without this each frame's
+    // lights were added to the previous frames': one fading effect light filled all eight slots with copies of
+    // itself (and kept lights that had since gone), which the fog then paid for.
+    output.pointLightCount=0;
+    for(auto& light:output.pointLights)light=LocalPointLight{};
     if(!config.localLights||!scene||!scene->m_lightGrid)return;
     PointLightUpload upload;upload.linear=config.colorSpace!=0;upload.intensity=config.localLightIntensity;
     unsigned visited=0;
@@ -230,6 +274,7 @@ void CaptureNativePointLights(FrameInputs& frame) {
             if(valid)engine::SelectLocalPointLight(output,candidate,frame.camPos,upload);
         }
     }
+    TraceLightOwners(scene,output);
 }
 void FitM2BatchFog(float* start,float* end,float* exponent,uint32_t* colour) {
     const double began=NowMs();

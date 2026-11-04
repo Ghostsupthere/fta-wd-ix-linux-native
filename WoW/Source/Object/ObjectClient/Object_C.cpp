@@ -26,6 +26,9 @@
 #include "WoW/Source/WorldClient/World.h"
 #include "Engine/Source/Model2/M2Data.h"
 #include "Engine/Source/Model2/M2Shared.h"
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/ModernAssets/NativeDiagnostic.h"
+#endif
 #include "Engine/Source/Tempest/CAaSphere.h"
 #include "WoW/Source/WorldClient/Map.h"
 #include "WoW/Source/Object/ObjectClient/Corpse_C.h"
@@ -1842,6 +1845,11 @@ attachments:
 // OFFSET: 0x00744870
 void CGObject_C::EffectOnceHandler(CM2Model* model, uint32_t boneId, uint32_t sequenceId, int32_t interrupted, uint32_t time, uint64_t param) {
     CEffect* effect = reinterpret_cast<CEffect*>(static_cast<uintptr_t>(param));
+
+#if defined(WOWDECOMP_LINUX)
+    WxlNativeDiagnostic("effect once-handler: %s sequence %u interrupted %d time %u",
+        effect && effect->m_model ? effect->m_model->m_shared->m_fileName : "(none)", sequenceId, interrupted, time);
+#endif
 
     if (interrupted || !effect) {
         return;

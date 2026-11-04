@@ -53,6 +53,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <limits>
@@ -320,9 +321,19 @@ float CameraDistance(const LocalPointLight& light, const float* camera)
     return static_cast<float>(std::sqrt(dx * dx + dy * dy + dz * dz));
 }
 
+// WXL_FOG_TRACE: 1 logs the pass state every 300 frames, 2 also times its stages separately.
+static int FogTraceMode()
+{
+    static const int mode = [] {
+        const char* value = std::getenv("WXL_FOG_TRACE");
+        return value && value[0] >= '1' && value[0] <= '2' ? value[0] - '0' : 0;
+    }();
+    return mode;
+}
+
 void LogUploadedLight(uint32_t index, const LocalPointLight& light, const float* camera)
 {
-    VF_LOG_DEBUG("  local light %u: at (%.2f %.2f %.2f), %.1f yd; diffuse (%.4g %.4g %.4g), attenuation %.4g %.4g "
+    VF_LOG_INFO("  local light %u: at (%.2f %.2f %.2f), %.1f yd; diffuse (%.4g %.4g %.4g), attenuation %.4g %.4g "
                  "%.4g, enabled %u; uploaded (%.4g %.4g %.4g), reach %.1f yd",
                  index, light.position[0], light.position[1], light.position[2], CameraDistance(light, camera),
                  light.color[0], light.color[1], light.color[2], light.attenuation[0], light.attenuation[1],
@@ -384,6 +395,8 @@ void Renderer::ReleaseDefaultPool()
     SafeRelease(m_probeReadback);
     SafeRelease(m_probeCopied);
     m_gpuTimer.Release();
+    m_timerTemporal.Release();
+    m_timerComposite.Release();
     m_lateGodRays = {};
     SafeRelease(m_state);
     m_lowW = m_lowH = m_rayW = m_rayH = 0;
@@ -485,11 +498,15 @@ void Renderer::LogUploadedLocalLights(const FrameInputs& in, const Config& cfg, 
         m_pendingLocalLightSet = set;
         m_pendingLocalLightFrames = 0;
     }
-    const bool detailed = LogEnabled(LogLevel::Debug);
+    // The per-light lines are cheap and say where a frame-rate drop came from, so the first few sets always get them.
+    static unsigned detailedSets = 0;
+    const bool detailed = LogEnabled(LogLevel::Debug) || FogTraceMode() > 0 || detailedSets < 40;
     const bool alreadyLogged = set == m_loggedLocalLightSet && (m_loggedLocalLightDetail || !detailed);
     if (alreadyLogged || ++m_pendingLocalLightFrames < kLocalLightSetSettleFrames)
         return;
     m_loggedLocalLightSet = set;
+    if (uploaded > 0)
+        ++detailedSets;
     m_loggedLocalLightDetail = detailed || uploaded == 0;
     if (uploaded == 0)
     {
@@ -1434,6 +1451,11 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
     dev->SetPixelShaderConstantF(78, &variation.x, 1);
     BindTexture(dev, 0, depthTexture, false);
     DrawFullscreenTriangle(dev);
+    if (FogTraceMode() == 2 && LogEnabled(LogLevel::Info))
+    {
+        m_gpuTimer.End();
+        m_timerTemporal.Begin(dev);
+    }
 
     m_adaptiveLightingHistory =
         pointLightCount > 0 || m_prevLocalLightCount > 0 || cfg.noiseAmount > 0.0f || samplesNoise;
@@ -1459,6 +1481,11 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
         VF_LOG_INFO("fog blend: %s", FogBlendName(blend));
     }
 
+    if (FogTraceMode() == 2 && LogEnabled(LogLevel::Info))
+    {
+        m_timerTemporal.End();
+        m_timerComposite.Begin(dev);
+    }
     const RECT world = ViewportRect(vp);
     dev->SetRenderTarget(0, target);
     dev->SetViewport(&vp);
@@ -1504,6 +1531,7 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
     }
     else
         m_gpuTimer.End();
+    m_timerComposite.End();
     if (pass == FogPass::BeforeTransparents)
         m_stockFogFit = FitStockFog(fog, in, {composite[0].x, composite[2].w, pointLightCount, cfg.localLightPhase});
 
@@ -1525,6 +1553,27 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
     m_prevLocalLightCount = pointLightCount;
     m_prevTicks = now;
     m_historyValid = temporalFiltering;
+    // WXL_FOG_TRACE=1: one line per 300 frames with the pass's own GPU time and the choices that drive its cost,
+    // so a frame-rate change can be matched to the state that caused it (the summary above averages a minute).
+    if (FogTraceMode() > 0 && m_frame % 300u == 0 && LogEnabled(LogLevel::Info))
+    {
+        char gpuTime[96] = {};
+        DescribeGpuTime(m_gpuTimer, dev, gpuTime, sizeof(gpuTime));
+        if (FogTraceMode() == 2)
+        {
+            // "fog" is the depth copy plus the march here; then the temporal filter with the scene copies; then the
+            // composite.
+            char stage[2][96] = {};
+            DescribeGpuTime(m_timerTemporal, dev, stage[0], sizeof(stage[0]));
+            DescribeGpuTime(m_timerComposite, dev, stage[1], sizeof(stage[1]));
+            VF_LOG_INFO("fog trace stages: %s; %s; %s", gpuTime, stage[0], stage[1]);
+        }
+        VF_LOG_INFO("fog trace %.1fs frame %u: %s | lights %u noise %d quality %d march 1/%u split %d blend %s rays %.2f "
+                    "scene copy %d",
+                    TickSeconds(now), m_frame, gpuTime[0] ? gpuTime : "gpu timing unavailable", pointLightCount,
+                    samplesNoise ? 1 : 0, cfg.quality, scale, splitSamples ? 1 : 0, FogBlendName(blend),
+                    raysNow ? rayStrength : 0.0f, sceneBlend ? 1 : 0);
+    }
     ++m_frame;
     return true;
 }
