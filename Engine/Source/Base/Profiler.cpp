@@ -20,7 +20,11 @@ namespace Profiler {
 namespace {
 
 constexpr uint32_t kKeptFrames = 240;
-constexpr const char* kNames[Count] = {"World render", "World scene", "Terrain", "M2 animate", "M2 draw", "Present", "Paint", "Client idle", "World update", "UI idle", "UI update", "UI render"};
+constexpr const char* kNames[Count] = {
+    "World render", "World scene", "Terrain", "WMO draw", "Weather",
+    "M2 animate", "M2 draw", "Present", "Paint", "Client idle",
+    "World update", "UI idle", "UI update", "UI render"
+};
 
 struct FrameRecord {
     uint64_t self[Count];
