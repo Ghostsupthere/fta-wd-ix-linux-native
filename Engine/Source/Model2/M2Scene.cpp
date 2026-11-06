@@ -1,9 +1,12 @@
 #include "Engine/Source/Base/Profiler.h"
+#include <algorithm>
+#include <atomic>
 #include <cfloat>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <new>
+#include <vector>
 #include <xmmintrin.h>
 #include "Engine/Source/Model2/M2Scene.h"
 #if defined(WOWDECOMP_LINUX)
@@ -237,26 +240,34 @@ CM2Model* CM2ModelHeap::New() {
     return model;
 }
 
+namespace {
+struct M2AnimateJob {
+    CM2Scene* scene = nullptr;
+    CM2Model* const* models = nullptr;
+    uint32_t count = 0;
+    std::atomic<uint32_t> nextIndex{0};
+};
+}
+
 // VERIFY: f41c995e auto
 // OFFSET: 0x0081CE70
 void CM2Scene::AnimateThread(void* param) {
-    CM2Scene* scene = static_cast<CM2Scene*>(param);
+    M2AnimateJob* job = static_cast<M2AnimateJob*>(param);
+    CM2Scene* scene = job->scene;
 
-    for (CM2Model* model = scene->m_animateList; model; model = model->m_animateNext) {
-        model = model->m_animateNext;
-
-        if (!model) {
+    while (true) {
+        uint32_t idx = job->nextIndex.fetch_add(4, std::memory_order_relaxed);
+        if (idx >= job->count) {
             break;
         }
-
-        if (model->m_attachParent) {
-            continue;
-        }
-
-        if (model->m_fFlags & 0x1000) {
-            model->AnimateMTSimple(&scene->m_view, C3Vector(1.0f, 1.0f, 1.0f), C3Vector(0.0f, 0.0f, 0.0f), 1.0f, 1.0f);
-        } else {
-            model->AnimateMT(&scene->m_view, C3Vector(1.0f, 1.0f, 1.0f), C3Vector(0.0f, 0.0f, 0.0f), 1.0f, 1.0f);
+        uint32_t end = std::min(idx + 4, job->count);
+        for (uint32_t i = idx; i < end; ++i) {
+            CM2Model* model = job->models[i];
+            if (model->m_fFlags & 0x1000) {
+                model->AnimateMTSimple(&scene->m_view, C3Vector(1.0f, 1.0f, 1.0f), C3Vector(0.0f, 0.0f, 0.0f), 1.0f, 1.0f);
+            } else {
+                model->AnimateMT(&scene->m_view, C3Vector(1.0f, 1.0f, 1.0f), C3Vector(0.0f, 0.0f, 0.0f), 1.0f, 1.0f);
+            }
         }
     }
 }
@@ -1740,40 +1751,35 @@ int32_t CM2Scene::Animate(const C3Vector& cameraPos) {
     this->m_view.Translate(move);
     this->m_viewInv = this->m_view.Inverse(this->m_view.Determinant());
 
-    if (this->m_cache->m_flags & 4) {
-        this->m_cache->BeginThread(&CM2Scene::AnimateThread, this);
+    static thread_local std::vector<CM2Model*> s_rootModels;
+    s_rootModels.clear();
 
-        for (CM2Model* model = this->m_animateList; model; ) {
-            if (!model->m_attachParent) {
-                if (model->m_fFlags & 0x1000) {
-                    model->AnimateMTSimple(&this->m_view, C3Vector(1.0f, 1.0f, 1.0f), C3Vector(0.0f, 0.0f, 0.0f), 1.0f, 1.0f);
-                } else {
-                    model->AnimateMT(&this->m_view, C3Vector(1.0f, 1.0f, 1.0f), C3Vector(0.0f, 0.0f, 0.0f), 1.0f, 1.0f);
-                }
-            }
-
-            CM2Model* next = model->m_animateNext;
-
-            if (!next) {
-                break;
-            }
-
-            model = next->m_animateNext;
+    for (CM2Model* model = this->m_animateList; model; model = model->m_animateNext) {
+        if (!model->m_attachParent) {
+            s_rootModels.push_back(model);
         }
+    }
 
-        this->m_cache->WaitThread();
-    } else {
-        for (CM2Model* model = this->m_animateList; model; model = model->m_animateNext) {
-            if (model->m_attachParent) {
-                continue;
-            }
-
+    const uint32_t rootCount = static_cast<uint32_t>(s_rootModels.size());
+    if (rootCount < 8 || !(this->m_cache->m_flags.load(std::memory_order_relaxed) & 4) || this->m_cache->m_workerCount == 0) {
+        for (uint32_t i = 0; i < rootCount; ++i) {
+            CM2Model* model = s_rootModels[i];
             if (model->m_fFlags & 0x1000) {
                 model->AnimateMTSimple(&this->m_view, C3Vector(1.0f, 1.0f, 1.0f), C3Vector(0.0f, 0.0f, 0.0f), 1.0f, 1.0f);
             } else {
                 model->AnimateMT(&this->m_view, C3Vector(1.0f, 1.0f, 1.0f), C3Vector(0.0f, 0.0f, 0.0f), 1.0f, 1.0f);
             }
         }
+    } else {
+        M2AnimateJob job;
+        job.scene = this;
+        job.models = s_rootModels.data();
+        job.count = rootCount;
+        job.nextIndex.store(0, std::memory_order_relaxed);
+
+        this->m_cache->BeginThread(&CM2Scene::AnimateThread, &job);
+        CM2Scene::AnimateThread(&job);
+        this->m_cache->WaitThread();
     }
 
 #if defined(WOWDECOMP_LINUX)
