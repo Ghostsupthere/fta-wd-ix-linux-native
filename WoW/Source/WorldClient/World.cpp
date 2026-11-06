@@ -3032,6 +3032,36 @@ void CWorldScene::LocateViewer3() {
     }
 }
 
+namespace {
+bool ShouldCullFog() {
+    static CVar* s_cullFogCutoff = CVar::Lookup("cullFogCutoff");
+    return s_cullFogCutoff && s_cullFogCutoff->m_intValue != 0;
+}
+
+bool IsSubPixelDoodad(const CMapDoodadDef* doodadDef, float distSq) {
+    if (distSq <= 225.0f) {
+        return false;
+    }
+    if (CM2Model* m = doodadDef->m_model) {
+        if (m->m_shared && m->m_shared->m_data) {
+            if (m->m_shared->m_data->m_lights.m_count > 0 ||
+                m->m_shared->m_data->m_particles.m_count > 0 ||
+                m->m_shared->m_data->m_ribbons.m_count > 0) {
+                return false;
+            }
+        }
+        if (m->m_particleEmitters != nullptr) {
+            return false;
+        }
+    }
+    float vpHeight = g_theGxDevicePtr ? (g_theGxDevicePtr->m_curWindowRect.maxY - g_theGxDevicePtr->m_curWindowRect.minY) : 1080.0f;
+    if (vpHeight <= 0.0f) vpHeight = 1080.0f;
+    float projY = (g_theGxDevicePtr && g_theGxDevicePtr->m_projection.b1 > 0.0f) ? g_theGxDevicePtr->m_projection.b1 : 2.4142f;
+    float minRatio = 8.0f / (projY * vpHeight);
+    return (doodadDef->m_sphere.r * doodadDef->m_sphere.r < distSq * (minRatio * minRatio));
+}
+} // namespace
+
 // VERIFY: a040cfec manual
 // OFFSET: 0x007964A0
 void CWorldScene::RenderMapObjDefGroups() {
@@ -3659,6 +3689,25 @@ void CWorldScene::CullDoodads(CSortEntry* entry, uint16_t fadeLevel) {
         }
 
         if (visible) {
+            float dx = doodadDef->m_sphere.c.x - CWorldScene::s_activeWorldView.x;
+            float dy = doodadDef->m_sphere.c.y - CWorldScene::s_activeWorldView.y;
+            float dz = doodadDef->m_sphere.c.z - CWorldScene::s_activeWorldView.z;
+            float distSq = dx * dx + dy * dy + dz * dz;
+
+            if (ShouldCullFog() && doodadDef->m_fadeLevel < 3) {
+                float maxFogDist = CWorld::farFog + CWorldScene::s_fogFovPadding + 20.0f;
+                float dist = CMap::s_useSSE ? sqrtf(distSq) : sqrt(distSq);
+                if (dist - doodadDef->m_sphere.r > maxFogDist) {
+                    visible = false;
+                }
+            }
+
+            if (visible && IsSubPixelDoodad(doodadDef, distSq)) {
+                visible = false;
+            }
+        }
+
+        if (visible) {
             CWorldScene::AddDoodadDefModelToModelScene(doodadDef);
             CWorldScene::nDoodadsRendered++;
         } else if ((doodadDef->m_staticFlags & 0x400) || (doodadDef->m_sphere.c.x - CWorldScene::s_activeWorldView.x) * (doodadDef->m_sphere.c.x - CWorldScene::s_activeWorldView.x) + ((doodadDef->m_sphere.c.y - CWorldScene::s_activeWorldView.y) * (doodadDef->m_sphere.c.y - CWorldScene::s_activeWorldView.y) + (doodadDef->m_sphere.c.z - CWorldScene::s_activeWorldView.z) * (doodadDef->m_sphere.c.z - CWorldScene::s_activeWorldView.z)) < 100.0f) {
@@ -3925,7 +3974,27 @@ void CWorldScene::CullDoodadsExterior(TSList<CMapBaseObjLink, TSGetExplicitLink<
                     doodadDef->m_culled = 0;
                 }
 
-                if (!culled && CWorldOcclusion::QueryBuffer(doodadDef->m_sphere.c, doodadDef->m_sphere.r, 0x10) < 2) {
+                bool visible = !culled && CWorldOcclusion::QueryBuffer(doodadDef->m_sphere.c, doodadDef->m_sphere.r, 0x10) < 2;
+                if (visible) {
+                    float dx = doodadDef->m_sphere.c.x - CWorldScene::s_activeWorldView.x;
+                    float dy = doodadDef->m_sphere.c.y - CWorldScene::s_activeWorldView.y;
+                    float dz = doodadDef->m_sphere.c.z - CWorldScene::s_activeWorldView.z;
+                    float distSq = dx * dx + dy * dy + dz * dz;
+
+                    if (ShouldCullFog() && doodadDef->m_fadeLevel < 3) {
+                        float maxFogDist = CWorld::farFog + CWorldScene::s_fogFovPadding + 20.0f;
+                        float dist = CMap::s_useSSE ? sqrtf(distSq) : sqrt(distSq);
+                        if (dist - doodadDef->m_sphere.r > maxFogDist) {
+                            visible = false;
+                        }
+                    }
+
+                    if (visible && IsSubPixelDoodad(doodadDef, distSq)) {
+                        visible = false;
+                    }
+                }
+
+                if (visible) {
                     CWorldScene::AddDoodadDefModelToModelScene(doodadDef);
                     CWorldScene::nDoodadsRendered++;
                 } else {
@@ -4020,6 +4089,14 @@ void CWorldScene::CullChunks(CSortEntry* entry, uint32_t index) {
         chunk->m_sortListLink.Unlink();
 
         if (CWorldScene::frustumStack[CWorldScene::frustumIndex].Cull(chunk->m_bbox) && !CWorldOcclusion::QueryVolumes(&chunk->m_sphere) && !CWorldOcclusion::QueryBuffer(&chunk->m_bbox, 0)) {
+            if (ShouldCullFog()) {
+                float maxFogRenderDist = CWorld::farFog + CWorldScene::s_fogFovPadding + 33.333332f;
+                if (chunk->m_distToCamera > maxFogRenderDist) {
+                    chunk = next;
+                    continue;
+                }
+            }
+
             CWorldScene::CullDoodadsExterior(&chunk->m_doodadDefLinkList, CWorldView::GetFadeLevelForDistance(chunk->m_distToCamera));
 
             if (CWorldScene::frustumStack[CWorldScene::frustumIndex].Cull(chunk->m_bbox2) && !CWorldOcclusion::QueryBuffer(&chunk->m_bbox2, 0)) {

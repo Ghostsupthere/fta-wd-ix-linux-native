@@ -702,6 +702,7 @@ uint32_t GetM2CvarFlags() {
     s_M2ForceAdditiveParticleSortVar = CVar::Register("M2ForceAdditiveParticleSort", "force all particles to sort as though they were additive", 0, "0", ForceAdditiveParticleSortCallback, CATEGORY_GRAPHICS, false, nullptr, false);
     s_M2FasterVar = CVar::Register("M2Faster", "end user control of scene optimization mode - (0-3)", 0, "1", M2FasterChanged, CATEGORY_GRAPHICS, false, nullptr, false);
     s_M2FasterDebugVar = CVar::Register("M2FasterDebug", "programmer control of scene optimization mode", 0, "0", M2DebugFasterChanged, CATEGORY_GRAPHICS, false, nullptr, false);
+    CVar::Register("cullFogCutoff", "cull terrain chunks and doodads behind fog boundary", 0, "0", nullptr, CATEGORY_GRAPHICS, false, nullptr, false);
 
     uint32_t flags = s_M2UseZFillVar->m_intValue != 0;
 

@@ -1,6 +1,7 @@
 #ifndef ENGINE_SOURCE_MODEL2_M2CACHE_H
 #define ENGINE_SOURCE_MODEL2_M2CACHE_H
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include "Engine/Source/Base/Prop.h"
@@ -22,24 +23,31 @@ class CM2ModelHeap {
 class CM2Cache {
     public:
     static uint32_t s_processorFeatures;
+    static constexpr uint32_t kMaxWorkerThreads = 6;
+
+    struct WorkerContext {
+        CM2Cache* cache = nullptr;
+        uint32_t workerIndex = 0;
+    };
 
     static uint32_t STORMAPI ThreadProc(void* param);
 
     /* 0000 */ int32_t m_initialized;
-    /* 0004 */ uint32_t m_flags;
+    /* 0004 */ std::atomic<uint32_t> m_flags;
     /* 0008 */ CM2Shared* m_freeList;
     /* 000C */ CM2Shared** m_freeListTail;
     /* 0010 */ CM2Shared* m_shared [1021];
-    /* 1004 */ SThread m_thread;
-    /* 1008 */ SEvent m_threadStart;
-    /* 100C */ SEvent m_threadDone;
-    /* 1010 */ HPROPCONTEXT m_propContext;
-    /* 1014 */ void (*m_threadFunc)(void*);
-    /* 1018 */ void* m_threadParam;
-    /* 101C */ char unused_101C [64];
-    /* 105C */ char unused_105C [64];
-    /* 109C */ uint32_t m_updateTime;
-    /* 10A0 */ TSExplicitList<CM2Shared, offsetof(CM2Shared, m_updateLink)> m_sharedUpdateList;
+    /* 1004 */ uint32_t m_workerCount;
+    /* 1008 */ SThread m_threads[kMaxWorkerThreads];
+    /* 1020 */ SEvent m_threadStart[kMaxWorkerThreads];
+    /* 1038 */ SEvent m_threadDone[kMaxWorkerThreads];
+    /* 1050 */ WorkerContext m_workerCtx[kMaxWorkerThreads];
+    /* 10B0 */ HPROPCONTEXT m_propContext;
+    /* 10B4 */ void (*m_threadFunc)(void*);
+    /* 10B8 */ void* m_threadParam;
+    /* 10BC */ std::atomic<uint32_t> m_activeWorkers{0};
+    /* 10C0 */ uint32_t m_updateTime;
+    /* 10C4 */ TSExplicitList<CM2Shared, offsetof(CM2Shared, m_updateLink)> m_sharedUpdateList;
 
     CM2Cache();
     ~CM2Cache();
