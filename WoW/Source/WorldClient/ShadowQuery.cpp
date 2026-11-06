@@ -15,6 +15,7 @@
 #include "WoW/Source/WorldClient/Map.h"
 #include "WoW/Source/WorldClient/MapLight.h"
 #include "WoW/Source/WorldClient/World.h"
+#include "WoW/Source/WorldClient/WorldParam.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
 #include "Engine/Source/Gxu/Gxu.h"
 #include "Engine/Source/ShaderEffect/ShaderEffect.h"
@@ -524,7 +525,13 @@ void CShadowQuery::GatherShadowCasters(CShadowCacheQueryData& data, int32_t firs
             CAaBox& extents = data.m_extents[band];
             CAaBox& bbox = entity->m_bbox;
 
-            if (extents.t.x >= bbox.b.x && extents.t.y >= bbox.b.y && extents.t.z >= bbox.b.z && extents.b.x <= bbox.t.x && extents.b.y <= bbox.t.y && extents.b.z <= bbox.t.z && minRadius[band] <= entity->m_sphere.r && ((flags & 0x20000) || maxRadius[band] >= entity->m_sphere.r)) {
+            float entityMinRadius = minRadius[band];
+            CVar* s_shadowRadiusVar = CWorldParam::cvar_shadowCasterMinRadiusFilter;
+            if (s_shadowRadiusVar && s_shadowRadiusVar->m_intValue != 0 && !isUnit) {
+                entityMinRadius = (band == 0) ? 0.8f : (band == 1 ? 2.5f : 10.0f);
+            }
+
+            if (extents.t.x >= bbox.b.x && extents.t.y >= bbox.b.y && extents.t.z >= bbox.b.z && extents.b.x <= bbox.t.x && extents.b.y <= bbox.t.y && extents.b.z <= bbox.t.z && entityMinRadius <= entity->m_sphere.r && ((flags & 0x20000) || maxRadius[band] >= entity->m_sphere.r)) {
                 if (data.m_bandFrustums[band].Cull(bbox) && (!data.m_useCullFrustum[band] || data.m_cullFrustums[band].CullInv(bbox) != WorldCull_notOutside)) {
                     model->GatherModelBatchesShadowMap(CShadowQuery::s_bandBuffers[band].m_untextured, CShadowQuery::s_bandBuffers[band].m_textured);
                 }

@@ -34,6 +34,10 @@ class CWorldParam {
     static CVar* cvar_objectFade;
     static CVar* cvar_objectFadeZFill;
     static CVar* cvar_environmentDetail;
+    // Not in the original client: opt-in render tuning (all default to off).
+    static CVar* cvar_weatherRainCap;
+    static CVar* cvar_doodadFadeRebalance;
+    static CVar* cvar_shadowCasterMinRadiusFilter;
     static CVar* cvar_hwPCF;
     static CVar* cvar_extShadowQuality;
     static CVar* cvar_projectedTextures;
@@ -46,6 +50,7 @@ class CWorldParam {
     static bool CloudLODCallback(CVar* var, const char* oldValue, const char* value, void* arg);
     static void Destroy();
     static bool EnvironmentDetailCallback(CVar* var, const char* oldValue, const char* value, void* arg);
+    static bool DoodadFadeRebalanceCallback(CVar* var, const char* oldValue, const char* value, void* arg);
     static bool ExtShadowQualityCallback(CVar* var, const char* oldValue, const char* value, void* arg);
     static bool FarClipCallback(CVar* var, const char* oldValue, const char* value, void* arg);
     static bool FarClipOverrideCallback(CVar* var, const char* oldValue, const char* value, void* arg);
