@@ -56,7 +56,20 @@ struct Pair {
     const PackEntry* pixel = nullptr;
 };
 std::map<std::pair<const PackEntry*, const PackEntry*>, Pair> pairs;
-struct EntryLookup { const CGxShader* shader; const uint8_t* code; size_t size; const PackEntry* entry; bool pixel; uint32_t layers; };
+
+struct PairCacheSlot {
+    const CGxShader* vertex = nullptr;
+    const uint8_t* vcode = nullptr;
+    size_t vsize = 0;
+    const CGxShader* pixel = nullptr;
+    const uint8_t* pcode = nullptr;
+    size_t psize = 0;
+    uint32_t layers = 0;
+    const Pair* pair = nullptr;
+    bool valid = false;
+};
+std::array<PairCacheSlot, 64> pairCache{};
+
 struct Mesh { std::weak_ptr<ModernWmoGroupVisuals> source; Com<IDirect3DVertexBuffer9> vb; uint64_t lastUse = 0; };
 std::unordered_map<const ModernWmoGroupVisuals*, Mesh> meshes;
 struct Textures {
@@ -122,7 +135,7 @@ bool WxlWmoPackHasVertexVariant(const uint32_t* code, size_t bytes) {
 namespace {
 void ClearGpu() {
     RestoreTextures();
-    pairs.clear(); meshes.clear(); textureSets.clear(); declaration.reset();
+    pairs.clear(); pairCache.fill({}); meshes.clear(); textureSets.clear(); declaration.reset();
     device = nullptr;
 }
 
@@ -154,13 +167,26 @@ bool Code(const CGxShader* shader, const uint8_t*& bytes, size_t& size) {
 const Pair* ShaderPair(IDirect3DDevice9* dev, CGxShader* vertex, CGxShader* pixel, uint32_t layers) {
     const uint8_t *vcode, *pcode; size_t vsize, psize;
     if (!Code(vertex, vcode, vsize) || !Code(pixel, pcode, psize)) return nullptr;
+
+    const size_t slotIndex = ((reinterpret_cast<uintptr_t>(vertex) >> 4) ^
+                              (reinterpret_cast<uintptr_t>(pixel) >> 2) ^
+                              layers) & (pairCache.size() - 1);
+    auto& slot = pairCache[slotIndex];
+    if (slot.valid && slot.vertex == vertex && slot.vcode == vcode && slot.vsize == vsize &&
+        slot.pixel == pixel && slot.pcode == pcode && slot.psize == psize && slot.layers == layers) {
+        return slot.pair;
+    }
+
     const PackEntry* vsEntry = pack.FindVertex(vcode, vsize);
     if (!vsEntry) { ++shaderMisses; return nullptr; }
     const PackEntry* psEntry = pack.FindPixel(pcode, psize, layers, *vsEntry);
     if (!psEntry) { ++shaderMisses; return nullptr; }
     const auto key = std::make_pair(vsEntry, psEntry);
     auto found = pairs.find(key);
-    if (found != pairs.end()) return &found->second;
+    if (found != pairs.end()) {
+        slot = {vertex, vcode, vsize, pixel, pcode, psize, layers, &found->second, true};
+        return &found->second;
+    }
     if (pairs.size() >= kMaxPairs) return nullptr;
     IDirect3DVertexShader9* v = nullptr; IDirect3DPixelShader9* p = nullptr;
     if (FAILED(dev->CreateVertexShader(vsEntry->bytecode.data(), &v))) return nullptr;
@@ -168,6 +194,7 @@ const Pair* ShaderPair(IDirect3DDevice9* dev, CGxShader* vertex, CGxShader* pixe
     if (FAILED(dev->CreatePixelShader(psEntry->bytecode.data(), &p))) return nullptr;
     Pair& pair = pairs[key];
     pair.vs = std::move(vOwner); pair.ps.reset(p); pair.pixel = psEntry;
+    slot = {vertex, vcode, vsize, pixel, pcode, psize, layers, &pair, true};
     return &pair;
 }
 

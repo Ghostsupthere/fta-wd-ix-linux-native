@@ -14,6 +14,8 @@ enum Id : uint32_t {
     WorldRender = 0,  // CGWorldFrame::OnWorldRender, the whole 3D view
     WorldScene,       // CWorldScene::Render, the scene inside it
     Terrain,          // CWorldScene::RenderChunks
+    WmoDraw,          // CWorldScene::RenderMapObjDefGroups (WMO structures)
+    Weather,          // CWorldScene::RenderWeather (rain, snow, sand particles)
     M2Animate,        // CM2Scene::Animate, model animation (main thread plus its worker)
     M2Draw,           // CM2Scene::Draw, model passes
     Present,          // the device's ScenePresent: includes waiting for the GPU or vsync

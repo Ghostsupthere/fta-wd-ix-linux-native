@@ -3035,6 +3035,7 @@ void CWorldScene::LocateViewer3() {
 // VERIFY: a040cfec manual
 // OFFSET: 0x007964A0
 void CWorldScene::RenderMapObjDefGroups() {
+    Profiler::Scope profileScope(Profiler::WmoDraw);
     g_theGxDevicePtr->RsPush();
     CWorldScene::frustumIndex++;
     CWorldScene::frustumStack[CWorldScene::frustumIndex] = CWorldScene::frustumStack[CWorldScene::frustumIndex - 1];
@@ -4936,6 +4937,7 @@ bool World::QueryMapObjMatrix(CMapEntity* entity, C44Matrix* matrix, C44Matrix* 
 // VERIFY: 1c0aecde manual
 // OFFSET: 0x0077F030
 void CWorldScene::RenderWeather() {
+    Profiler::Scope profileScope(Profiler::Weather);
     World::s_weather->Render();
 }
 
