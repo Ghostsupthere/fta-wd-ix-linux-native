@@ -17,7 +17,6 @@
 #include "WoW/Source/WorldClient/WorldView.h"
 #include "WoW/Source/WorldClient/MapObj.h"
 #include "WoW/Source/WorldClient/MapObjDef.h"
-#include "Engine/Source/ConsoleBase/ConsoleVar.h"
 
 // STATIC: 0x00ADF350
 float CWorldScene::s_fadeSizeDefault[5] = { 1.0f, 4.0f, 15.0f, 100.0f, 100000.0f };
@@ -54,6 +53,8 @@ CTexture* CWorldScene::s_defaultTexture;
 
 // STATIC: 0x00CD877C
 float CWorldScene::s_fogFovPadding;
+
+bool CWorldScene::s_fadeRebalance = false;
 
 // STATIC: 0x00CD8794
 uint32_t s_liquidTypeId;
@@ -137,8 +138,7 @@ void CWorldScene::Initialize() {
 // VERIFY: 45953486 auto
 // OFFSET: 0x0078F570
 void CWorldScene::ScaleFadeDist(float scale) {
-    static CVar* s_rebalanceVar = CVar::Lookup("doodadFadeRebalance");
-    const bool rebalanced = s_rebalanceVar && s_rebalanceVar->m_intValue != 0;
+    const bool rebalanced = CWorldScene::s_fadeRebalance;
     float dist0 = rebalanced ? 25.0f : CWorldScene::s_fadeDistDefault[0];
     float dist1 = rebalanced ? 55.0f : CWorldScene::s_fadeDistDefault[1];
     float dist2 = rebalanced ? 130.0f : CWorldScene::s_fadeDistDefault[2];

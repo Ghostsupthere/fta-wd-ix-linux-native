@@ -216,6 +216,8 @@ class CWorldScene {
     static void Destroy();
     static void Initialize();
     static void ScaleFadeDist(float scale);
+    // Not in the original client: set by the doodadFadeRebalance CVar.
+    static bool s_fadeRebalance;
     static void Update(C3Vector* camPos, C3Vector* camTarget);
     static void GetNearestCornerToCamera(CAaBox* box, C3Vector* outCorner);
     static void __fastcall AddMapChunk(CMapChunk* mapChunk);

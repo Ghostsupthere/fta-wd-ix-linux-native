@@ -18,6 +18,7 @@
 #include "WoW/Source/WorldClient/FrameTime.h"
 #include "WoW/Source/WorldClient/MapWeather.h"
 #include "WoW/Source/WorldClient/World.h"
+#include "WoW/Source/WorldClient/WorldParam.h"
 #include "Engine/Source/Gx/CGxVertexPT.h"
 #include "Engine/Source/ShaderEffect/Types.h"
 
@@ -39,7 +40,7 @@ const char* const RainPatterParticleBuffer::s_packetName = ".?AU?$Packet@UPatter
 void Rain::SetStormIntensity(float intensity) {
     uint8_t useShaders = this->m_useWeatherShaders;
     this->m_intensity = intensity;
-    static CVar* s_rainCapVar = CVar::Lookup("weatherRainCap");
+    CVar* s_rainCapVar = CWorldParam::cvar_weatherRainCap;
     bool cap = s_rainCapVar && s_rainCapVar->m_intValue != 0;
     float rate = useShaders ? (cap ? 12000.0f : 35000.0f) : (cap ? 4500.0f : 6500.0f);
     this->m_particlesPerFrame = s_weatherDensity * rate * intensity;
@@ -279,7 +280,7 @@ void Rain::UpdatePacket(Packet<RainParticleBuffer>* packet, Packet<RainPatterPar
             float splashY = drop->m_velocity.y * dt + drop->m_position.y;
             float splashZ = dt * drop->m_velocity.z + drop->m_position.z;
 
-            static CVar* s_rainCapVar = CVar::Lookup("weatherRainCap");
+            CVar* s_rainCapVar = CWorldParam::cvar_weatherRainCap;
             bool skip = false;
             if (s_rainCapVar && s_rainCapVar->m_intValue != 0) {
                 float dx = splashX - CWorldScene::s_activeWorldView.x;

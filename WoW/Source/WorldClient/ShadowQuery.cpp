@@ -15,6 +15,7 @@
 #include "WoW/Source/WorldClient/Map.h"
 #include "WoW/Source/WorldClient/MapLight.h"
 #include "WoW/Source/WorldClient/World.h"
+#include "WoW/Source/WorldClient/WorldParam.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
 #include "Engine/Source/Gxu/Gxu.h"
 #include "Engine/Source/ShaderEffect/ShaderEffect.h"
@@ -525,7 +526,7 @@ void CShadowQuery::GatherShadowCasters(CShadowCacheQueryData& data, int32_t firs
             CAaBox& bbox = entity->m_bbox;
 
             float entityMinRadius = minRadius[band];
-            static CVar* s_shadowRadiusVar = CVar::Lookup("shadowCasterMinRadiusFilter");
+            CVar* s_shadowRadiusVar = CWorldParam::cvar_shadowCasterMinRadiusFilter;
             if (s_shadowRadiusVar && s_shadowRadiusVar->m_intValue != 0 && !isUnit) {
                 entityMinRadius = (band == 0) ? 0.8f : (band == 1 ? 2.5f : 10.0f);
             }
