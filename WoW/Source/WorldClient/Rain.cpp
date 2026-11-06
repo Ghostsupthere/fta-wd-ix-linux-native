@@ -39,7 +39,9 @@ const char* const RainPatterParticleBuffer::s_packetName = ".?AU?$Packet@UPatter
 void Rain::SetStormIntensity(float intensity) {
     uint8_t useShaders = this->m_useWeatherShaders;
     this->m_intensity = intensity;
-    float rate = useShaders ? 35000.0f : 6500.0f;
+    static CVar* s_rainCapVar = CVar::Lookup("weatherRainCap");
+    bool cap = s_rainCapVar && s_rainCapVar->m_intValue != 0;
+    float rate = useShaders ? (cap ? 12000.0f : 35000.0f) : (cap ? 4500.0f : 6500.0f);
     this->m_particlesPerFrame = s_weatherDensity * rate * intensity;
     this->m_maxBuildTime = rate * 0.00016276042f;
     float mistRate = useShaders ? 38.0f : 18.0f;
@@ -272,17 +274,34 @@ void Rain::UpdatePacket(Packet<RainParticleBuffer>* packet, Packet<RainPatterPar
         }
 
         if (drop->m_impactTime != drop->m_startTime && !World::s_weather->m_onTaxi && World::s_weather->m_transportVelocityZ * World::s_weather->m_transportVelocityZ + World::s_weather->m_transportVelocityY * World::s_weather->m_transportVelocityY + World::s_weather->m_transportVelocityX * World::s_weather->m_transportVelocityX <= 2.0f) {
-            RainPatterParticle* splash = &patter->m_particlesBuffer.m_particles[patter->m_currParticle++];
             float dt = drop->m_impactTime - drop->m_startTime;
-            splash->m_position.x = drop->m_velocity.x * dt + drop->m_position.x;
-            splash->m_position.y = drop->m_velocity.y * dt + drop->m_position.y;
-            splash->m_position.z = dt * drop->m_velocity.z + drop->m_position.z;
-            splash->m_startTime = drop->m_impactTime;
-            splash->m_endTime = drop->m_impactTime + 0.25f;
-            uint32_t splashEnd = CMath::fint_(splash->m_endTime * 1024.0f - 0.5f) + patter->m_packetStartTick;
+            float splashX = drop->m_velocity.x * dt + drop->m_position.x;
+            float splashY = drop->m_velocity.y * dt + drop->m_position.y;
+            float splashZ = dt * drop->m_velocity.z + drop->m_position.z;
 
-            if (splashEnd > patter->m_packetEndTick) {
-                patter->m_packetEndTick = splashEnd;
+            static CVar* s_rainCapVar = CVar::Lookup("weatherRainCap");
+            bool skip = false;
+            if (s_rainCapVar && s_rainCapVar->m_intValue != 0) {
+                float dx = splashX - CWorldScene::s_activeWorldView.x;
+                float dy = splashY - CWorldScene::s_activeWorldView.y;
+                float dz = splashZ - CWorldScene::s_activeWorldView.z;
+                if (dx * dx + dy * dy + dz * dz > (35.0f * 35.0f)) {
+                    skip = true;
+                }
+            }
+
+            if (!skip) {
+                RainPatterParticle* splash = &patter->m_particlesBuffer.m_particles[patter->m_currParticle++];
+                splash->m_position.x = splashX;
+                splash->m_position.y = splashY;
+                splash->m_position.z = splashZ;
+                splash->m_startTime = drop->m_impactTime;
+                splash->m_endTime = drop->m_impactTime + 0.25f;
+                uint32_t splashEnd = CMath::fint_(splash->m_endTime * 1024.0f - 0.5f) + patter->m_packetStartTick;
+
+                if (splashEnd > patter->m_packetEndTick) {
+                    patter->m_packetEndTick = splashEnd;
+                }
             }
         }
 
