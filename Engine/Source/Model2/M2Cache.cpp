@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -53,31 +54,42 @@ void CM2Cache::ClearSharedHash() {
 void CM2Cache::BeginThread(void (*func)(void*), void* param) {
     this->m_threadFunc = func;
     this->m_threadParam = param;
-    this->m_threadStart.Set();
+    for (uint32_t i = 0; i < this->m_workerCount; ++i) {
+        this->m_threadStart[i].Set();
+    }
 }
 
 // VERIFY: b68bbc6f auto
 // OFFSET: 0x0081BFD0
 void CM2Cache::WaitThread() {
-    this->m_threadDone.Wait(0xFFFFFFFF);
+    for (uint32_t i = 0; i < this->m_workerCount; ++i) {
+        this->m_threadDone[i].Wait(0xFFFFFFFF);
+    }
 }
 
 // VERIFY: 7d58516f manual
 // OFFSET: 0x0081BFE0
 uint32_t STORMAPI CM2Cache::ThreadProc(void* param) {
-    CM2Cache* cache = static_cast<CM2Cache*>(param);
+    WorkerContext* ctx = static_cast<WorkerContext*>(param);
+    CM2Cache* cache = ctx->cache;
+    const uint32_t idx = ctx->workerIndex;
 
     PropSelectContext(cache->m_propContext);
-    cache->m_flags |= 0x400;
-    cache->m_threadStart.Wait(0xFFFFFFFF);
+    cache->m_activeWorkers.fetch_add(1, std::memory_order_relaxed);
+    cache->m_flags.fetch_or(0x400, std::memory_order_relaxed);
+    cache->m_threadStart[idx].Wait(0xFFFFFFFF);
 
-    while (!(cache->m_flags & 0x800)) {
-        cache->m_threadFunc(cache->m_threadParam);
-        cache->m_threadDone.Set();
-        cache->m_threadStart.Wait(0xFFFFFFFF);
+    while (!(cache->m_flags.load(std::memory_order_relaxed) & 0x800)) {
+        if (cache->m_threadFunc) {
+            cache->m_threadFunc(cache->m_threadParam);
+        }
+        cache->m_threadDone[idx].Set();
+        cache->m_threadStart[idx].Wait(0xFFFFFFFF);
     }
 
-    cache->m_flags &= ~0x400u;
+    if (cache->m_activeWorkers.fetch_sub(1, std::memory_order_relaxed) == 1) {
+        cache->m_flags.fetch_and(~0x400u, std::memory_order_relaxed);
+    }
 
     return 0;
 }
@@ -85,7 +97,9 @@ uint32_t STORMAPI CM2Cache::ThreadProc(void* param) {
 // VERIFY: c0d77014 auto
 // OFFSET: 0x0081C060
 void M2SetGlobalOptFlags(uint32_t flags) {
-    s_cache.m_flags |= flags & 0xE000;
+    uint32_t cur = s_cache.m_flags.load(std::memory_order_relaxed);
+    while (!s_cache.m_flags.compare_exchange_weak(cur, (cur & ~0xE000u) | (flags & 0xE000u), std::memory_order_relaxed)) {}
+    CM2Scene::s_optFlags = flags & 0xE000u;
 }
 
 // VERIFY: 01e775e8 manual
@@ -97,13 +111,13 @@ CM2Scene* M2CreateScene() {
 // VERIFY: 3f7a837f auto
 // OFFSET: 0x0081C0B0
 uint32_t M2GetCacheFlags() {
-    return s_cache.m_flags;
+    return s_cache.m_flags.load(std::memory_order_relaxed);
 }
 
 // VERIFY: 40919c5c auto
 // OFFSET: 0x0081C0C0
 void M2SetCacheFlags(uint32_t flags) {
-    s_cache.m_flags = flags;
+    s_cache.m_flags.store(flags, std::memory_order_relaxed);
 }
 
 // VERIFY: e915f95e manual
@@ -117,15 +131,7 @@ int32_t CM2Cache::Initialize(uint32_t flags) {
     CM2Cache::s_processorFeatures = OsGetProcessorFeatures();
 
     if (OsGetNumberOfProcessors() > 1) {
-        this->m_flags |= flags & 4;
-    }
-
-    if (this->m_flags & 4) {
-        this->m_flags &= ~0xC00u;
-        this->m_threadStart.Reset();
-        this->m_threadDone.Reset();
-        this->m_propContext = PropGetSelectedContext();
-        SThread::Create(CM2Cache::ThreadProc, this, this->m_thread, const_cast<char*>("Model2"), 0);
+        this->m_flags.fetch_or(flags & 4, std::memory_order_relaxed);
     }
 
     if (flags & 8) {
@@ -133,29 +139,45 @@ int32_t CM2Cache::Initialize(uint32_t flags) {
         int32_t pixelTarget = g_theGxDevicePtr->Caps().m_shaderTargets[4];
 
         if (vertexTarget > 0 && pixelTarget > 0) {
-            this->m_flags |= 8;
+            this->m_flags.fetch_or(8, std::memory_order_relaxed);
         }
     }
 
-    if (!(this->m_flags & 8) && !(CM2Cache::s_processorFeatures & 4)) {
-        this->m_flags |= 0x40;
+    if (!(this->m_flags.load(std::memory_order_relaxed) & 8) && !(CM2Cache::s_processorFeatures & 4)) {
+        this->m_flags.fetch_or(0x40, std::memory_order_relaxed);
     }
 
     if (g_theGxDevicePtr->Caps().m_colorWrite) {
-        this->m_flags |= flags & 1;
+        this->m_flags.fetch_or(flags & 1, std::memory_order_relaxed);
     }
 
     if (g_theGxDevicePtr->Caps().m_maxClipPlanes) {
         uint32_t vertexTarget = g_theGxDevicePtr->Caps().m_shaderTargets[0];
 
         if (vertexTarget - 6 > 1) {
-            this->m_flags |= flags & 2;
-        } else if (!(this->m_flags & 8)) {
-            this->m_flags |= flags & 2;
+            this->m_flags.fetch_or(flags & 2, std::memory_order_relaxed);
+        } else if (!(this->m_flags.load(std::memory_order_relaxed) & 8)) {
+            this->m_flags.fetch_or(flags & 2, std::memory_order_relaxed);
         }
     }
 
-    this->m_flags |= flags & 0x1A0;
+    this->m_flags.fetch_or(flags & 0x1A0, std::memory_order_relaxed);
+
+    if (this->m_flags.load(std::memory_order_relaxed) & 4) {
+        this->m_flags.fetch_and(~0xC00u, std::memory_order_relaxed);
+        this->m_propContext = PropGetSelectedContext();
+        uint32_t nCpus = OsGetNumberOfProcessors();
+        this->m_workerCount = std::min<uint32_t>(kMaxWorkerThreads, std::max<uint32_t>(1u, nCpus > 1 ? nCpus - 1 : 1));
+        for (uint32_t i = 0; i < this->m_workerCount; ++i) {
+            this->m_workerCtx[i].cache = this;
+            this->m_workerCtx[i].workerIndex = i;
+            this->m_threadStart[i].Reset();
+            this->m_threadDone[i].Reset();
+            SThread::Create(CM2Cache::ThreadProc, &this->m_workerCtx[i], this->m_threads[i], const_cast<char*>("Model2"), 0);
+        }
+    } else {
+        this->m_workerCount = 0;
+    }
 
     uint32_t high = rand() << 16;
     CRndSeed seed(high | static_cast<uint16_t>(rand()));
@@ -200,10 +222,15 @@ void CM2Cache::GarbageCollect(int32_t force) {
 // VERIFY: 370cb080 auto
 // OFFSET: 0x0081C300
 void CM2Cache::Destroy() {
-    if (this->m_flags & 4) {
-        this->m_flags |= 0x800;
-        this->m_threadStart.Set();
-        this->m_thread.Wait(0xFFFFFFFF);
+    if (this->m_flags.load(std::memory_order_relaxed) & 4) {
+        this->m_flags.fetch_or(0x800, std::memory_order_relaxed);
+        for (uint32_t i = 0; i < this->m_workerCount; ++i) {
+            this->m_threadStart[i].Set();
+        }
+        for (uint32_t i = 0; i < this->m_workerCount; ++i) {
+            this->m_threads[i].Wait(0xFFFFFFFF);
+        }
+        this->m_workerCount = 0;
     }
 
     while (this->m_freeList) {
@@ -459,14 +486,21 @@ CM2Cache::~CM2Cache() {
 
 // VERIFY: 902f5653 manual
 // OFFSET: 0x0081C900
-CM2Cache::CM2Cache() : m_threadStart(0, 0), m_threadDone(0, 0) {
+CM2Cache::CM2Cache() :
+    m_threadStart{
+        SEvent(0, 0), SEvent(0, 0), SEvent(0, 0),
+        SEvent(0, 0), SEvent(0, 0), SEvent(0, 0)
+    },
+    m_threadDone{
+        SEvent(0, 0), SEvent(0, 0), SEvent(0, 0),
+        SEvent(0, 0), SEvent(0, 0), SEvent(0, 0)
+    } {
     this->m_freeList = nullptr;
     this->m_freeListTail = &this->m_freeList;
     this->m_initialized = 0;
-    this->m_flags = 0;
+    this->m_flags.store(0, std::memory_order_relaxed);
     memset(this->m_shared, 0, sizeof(this->m_shared));
+    this->m_workerCount = 0;
     this->m_threadFunc = nullptr;
     this->m_threadParam = nullptr;
-    this->unused_101C[0] = '\0';
-    this->unused_105C[0] = '\0';
 }

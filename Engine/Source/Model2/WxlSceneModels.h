@@ -57,6 +57,18 @@ template<class Scene, class Operation> void WxlVisitSceneModels(Scene* scene, Op
     auto& pending = scratch.pending;
     auto& seen = scratch.seen;
     auto seed = [&](Model* model) {
+        // Models with attachments, parent, or active item physics must be visited.
+        // Pure standalone models without item physics or item path can be skipped if not part of a hierarchy.
+        if (!model->m_attachParent && !model->m_attachList && !model->m_wxlItemPhysics) {
+            const char* path = model->m_shared ? model->m_shared->m_fileName : nullptr;
+            if (!path || (path[0] != 'i' && path[0] != 'I') ||
+                (path[1] != 't' && path[1] != 'T') ||
+                (path[2] != 'e' && path[2] != 'E') ||
+                (path[3] != 'm' && path[3] != 'M') ||
+                (path[4] != '\\' && path[4] != '/')) {
+                return;
+            }
+        }
         uint32_t depth = 0;
         while (model->m_attachParent && model->m_attachParent->m_scene == scene) {
             if (++depth >= 256) return;
