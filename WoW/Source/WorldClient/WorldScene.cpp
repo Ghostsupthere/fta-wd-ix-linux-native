@@ -54,6 +54,8 @@ CTexture* CWorldScene::s_defaultTexture;
 // STATIC: 0x00CD877C
 float CWorldScene::s_fogFovPadding;
 
+bool CWorldScene::s_fadeRebalance = false;
+
 // STATIC: 0x00CD8794
 uint32_t s_liquidTypeId;
 
@@ -136,20 +138,25 @@ void CWorldScene::Initialize() {
 // VERIFY: 45953486 auto
 // OFFSET: 0x0078F570
 void CWorldScene::ScaleFadeDist(float scale) {
+    const bool rebalanced = CWorldScene::s_fadeRebalance;
+    float dist0 = rebalanced ? 25.0f : CWorldScene::s_fadeDistDefault[0];
+    float dist1 = rebalanced ? 55.0f : CWorldScene::s_fadeDistDefault[1];
+    float dist2 = rebalanced ? 130.0f : CWorldScene::s_fadeDistDefault[2];
+
     CWorldView::s_fadeSize[0] = CWorldScene::s_fadeSizeDefault[0];
-    CWorldScene::s_fadeDist[0] = CWorldScene::s_fadeDistDefault[0];
+    CWorldScene::s_fadeDist[0] = dist0;
     CWorldScene::s_fadeDistMin[0] = CWorldScene::s_fadeDist[0] - CWorldScene::s_fadeRangeDefault[0];
     CWorldView::s_fadeDistSqr[0] = CWorldScene::s_fadeDist[0] * CWorldScene::s_fadeDist[0];
     CWorldScene::s_fadeDistMinSqr[0] = CWorldScene::s_fadeDistMin[0] * CWorldScene::s_fadeDistMin[0];
 
     CWorldView::s_fadeSize[1] = CWorldScene::s_fadeSizeDefault[1];
-    CWorldScene::s_fadeDist[1] = CWorldScene::s_fadeDistDefault[1] * scale;
+    CWorldScene::s_fadeDist[1] = dist1 * scale;
     CWorldScene::s_fadeDistMin[1] = CWorldScene::s_fadeDist[1] - CWorldScene::s_fadeRangeDefault[1];
     CWorldView::s_fadeDistSqr[1] = CWorldScene::s_fadeDist[1] * CWorldScene::s_fadeDist[1];
     CWorldScene::s_fadeDistMinSqr[1] = CWorldScene::s_fadeDistMin[1] * CWorldScene::s_fadeDistMin[1];
 
     CWorldView::s_fadeSize[2] = CWorldScene::s_fadeSizeDefault[2];
-    CWorldScene::s_fadeDist[2] = CWorldScene::s_fadeDistDefault[2] * scale;
+    CWorldScene::s_fadeDist[2] = dist2 * scale;
     CWorldScene::s_fadeDistMin[2] = CWorldScene::s_fadeDist[2] - CWorldScene::s_fadeRangeDefault[2];
     CWorldView::s_fadeDistSqr[2] = CWorldScene::s_fadeDist[2] * CWorldScene::s_fadeDist[2];
     CWorldScene::s_fadeDistMinSqr[2] = CWorldScene::s_fadeDistMin[2] * CWorldScene::s_fadeDistMin[2];
