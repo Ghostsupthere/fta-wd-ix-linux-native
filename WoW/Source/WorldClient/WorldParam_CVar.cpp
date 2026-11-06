@@ -113,6 +113,8 @@ CVar* CWorldParam::cvar_projectedTextures;
 
 // STATIC: 0x00CD85E4
 CVar* CWorldParam::cvar_gxTextureCacheSize;
+CVar* CWorldParam::cvar_cullFogCutoff;
+CVar* CWorldParam::cvar_cullSubPixelDoodads;
 
 // VERIFY: 54f5415a manual
 // OFFSET: 0x004023C0
@@ -687,6 +689,9 @@ void CWorldParam::Initialize() {
     CWorldParam::cvar_objectFadeZFill = CVar::Register("objectFadeZFill", "Fade objects using ZFill pass ", 1, "0", CWorldParam::ObjectFadeZFillCallback, CATEGORY_GRAPHICS, false, nullptr, false);
     CWorldParam::cvar_environmentDetail = CVar::Register("environmentDetail", "Environment detail", 1, "1.0", CWorldParam::EnvironmentDetailCallback, CATEGORY_GRAPHICS, false, nullptr, false);
     CWorldParam::cvar_hwPCF = CVar::Register("hwPCF", "Hardware PCF Filtering", 1, "1", CWorldParam::HWPCFCallback, CATEGORY_GRAPHICS, false, nullptr, false);
+    // Opt-in culling (not in the original client).
+    CWorldParam::cvar_cullFogCutoff = CVar::Register("cullFogCutoff", "Skip terrain chunks and doodads past the fog end (0/1); only valid while stock fog is fully opaque at its end distance", 1, "0", nullptr, CATEGORY_GRAPHICS, false, nullptr, false);
+    CWorldParam::cvar_cullSubPixelDoodads = CVar::Register("cullSubPixelDoodads", "Skip distant doodads smaller than about 8 pixels across (0/1)", 1, "0", nullptr, CATEGORY_GRAPHICS, false, nullptr, false);
     CWorldParam::cvar_extShadowQuality = CVar::Register("extShadowQuality", "Quality of exterior shadows (0-5)", 1, "0", CWorldParam::ExtShadowQualityCallback, CATEGORY_GRAPHICS, false, nullptr, false);
     CWorldParam::cvar_projectedTextures = CVar::Register("projectedTextures", "Projected Textures", 1, "0", CWorldParam::ProjectedTexturesCallback, CATEGORY_GRAPHICS, false, nullptr, false);
     CWorldParam::cvar_gxTextureCacheSize = CVar::Register("gxTextureCacheSize", "GX Texture Cache Size", 1, "0", CWorldParam::GxTextureCacheSizeCallback, CATEGORY_GRAPHICS, false, nullptr, false);

@@ -38,6 +38,9 @@ class CWorldParam {
     static CVar* cvar_extShadowQuality;
     static CVar* cvar_projectedTextures;
     static CVar* cvar_gxTextureCacheSize;
+    // Not in the original client: opt-in doodad culling (both default to off).
+    static CVar* cvar_cullFogCutoff;
+    static CVar* cvar_cullSubPixelDoodads;
     // Not in the original client; see Liquid::RotationScale().
     static CVar* cvar_liquidRotationDegrees;
 

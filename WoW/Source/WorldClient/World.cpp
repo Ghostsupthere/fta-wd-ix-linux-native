@@ -3034,12 +3034,15 @@ void CWorldScene::LocateViewer3() {
 
 namespace {
 bool ShouldCullFog() {
-    static CVar* s_cullFogCutoff = CVar::Lookup("cullFogCutoff");
-    return s_cullFogCutoff && s_cullFogCutoff->m_intValue != 0;
+    return CWorldParam::cvar_cullFogCutoff && CWorldParam::cvar_cullFogCutoff->m_intValue != 0;
+}
+
+bool ShouldCullSubPixel() {
+    return CWorldParam::cvar_cullSubPixelDoodads && CWorldParam::cvar_cullSubPixelDoodads->m_intValue != 0;
 }
 
 bool IsSubPixelDoodad(const CMapDoodadDef* doodadDef, float distSq) {
-    if (distSq <= 225.0f) {
+    if (!ShouldCullSubPixel() || distSq <= 225.0f) {
         return false;
     }
     if (CM2Model* m = doodadDef->m_model) {
@@ -3054,8 +3057,20 @@ bool IsSubPixelDoodad(const CMapDoodadDef* doodadDef, float distSq) {
             return false;
         }
     }
-    float vpHeight = g_theGxDevicePtr ? (g_theGxDevicePtr->m_curWindowRect.maxY - g_theGxDevicePtr->m_curWindowRect.minY) : 1080.0f;
-    if (vpHeight <= 0.0f) vpHeight = 1080.0f;
+    // Window height in pixels, scaled by the fraction of it the current viewport covers.
+    float vpHeight = 1080.0f;
+    if (g_theGxDevicePtr) {
+        float windowHeight = g_theGxDevicePtr->m_curWindowRect.maxY - g_theGxDevicePtr->m_curWindowRect.minY;
+        float fraction = g_theGxDevicePtr->m_viewport.m_y.m_h - g_theGxDevicePtr->m_viewport.m_y.m_l;
+
+        if (fraction <= 0.0f || fraction > 1.0f) {
+            fraction = 1.0f;
+        }
+
+        if (windowHeight > 0.0f) {
+            vpHeight = windowHeight * fraction;
+        }
+    }
     float projY = (g_theGxDevicePtr && g_theGxDevicePtr->m_projection.b1 > 0.0f) ? g_theGxDevicePtr->m_projection.b1 : 2.4142f;
     float minRatio = 8.0f / (projY * vpHeight);
     return (doodadDef->m_sphere.r * doodadDef->m_sphere.r < distSq * (minRatio * minRatio));
