@@ -7,6 +7,7 @@
 #   tools/make-linux-portable.sh [OUTPUT_DIR]       (default: <fta-linux-client>/dist)
 #
 # PORTABLE_REPO selects the fta-linux-client checkout (default: ../../fta-linux-client next to this tree).
+# RELEASE_TAG (for example v0.2.10) is recorded in the release so the launcher can tell which one is installed.
 #
 # Needs the built bin/Linux/Wow64 and the dxvk-native build under .deps (see shell-native.nix), and patchelf.
 # The executable is built against a Nix glibc, so the overlay carries that glibc and starts through its
@@ -64,6 +65,22 @@ cp -- "$exe" "$payload/Wow64"
 chmod u+w -- "$payload/Wow64"
 patchelf --set-interpreter 'FTA-Linux/lib/ld-linux-x86-64.so.2' --set-rpath '$ORIGIN/FTA-Linux/lib' "$payload/Wow64"
 strip --strip-unneeded "$payload/Wow64" 2>/dev/null || true
+
+# The launcher (built by the fta-linux-client repository, against this same glibc). LAUNCHER_BIN names a prebuilt
+# one; otherwise it is built now. Without Nix the build is skipped and the release carries no launcher.
+launcher_bin=${LAUNCHER_BIN:-}
+if [[ -z $launcher_bin && -x $portable_repo/tools/build-launcher.sh ]] && command -v nix-shell >/dev/null; then
+    "$portable_repo/tools/build-launcher.sh" "$portable_repo/dist/fta-launcher"
+    launcher_bin=$portable_repo/dist/fta-launcher
+fi
+if [[ -n $launcher_bin && -f $launcher_bin ]]; then
+    cp -- "$launcher_bin" "$payload/FTA-Linux/fta-launcher"
+    chmod u+w -- "$payload/FTA-Linux/fta-launcher"
+    patchelf --set-interpreter 'FTA-Linux/lib/ld-linux-x86-64.so.2' --set-rpath '$ORIGIN/lib' "$payload/FTA-Linux/fta-launcher"
+    chmod +x "$payload/FTA-Linux/fta-launcher"
+else
+    printf 'note: no launcher; the release will not carry one\n' >&2
+fi
 
 # Offline-built shader packs (derived from the client's own shaders; building them needs Wine).
 for pack in grass_instanced grass_shaders light_shaders wmo_shaders; do
