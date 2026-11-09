@@ -1262,8 +1262,9 @@ session from the overlay, and glibc newer than 2.44 on the host.
 Both were written natively for this tree; neither is part of the Windows WarcraftXL product. The ideas came from reading
 the public documentation of other wowdecomp forks (RosemyneH's performance docs, the AwesomeWotLK spec); no code was copied.
 
-**Profiler.** `Engine/Source/Base/Profiler` records, per frame, self and total time of six main-thread zones (world render,
-world scene, terrain, M2 animate, M2 draw, present) plus draw calls and triangles, averaged over the last 120 frames
+**Profiler.** `Engine/Source/Base/Profiler` records, per frame, self and total time of 14 main-thread zones (world render,
+world scene, terrain, WMO draw, weather, M2 animate, M2 draw, present, paint, client idle, world update, UI idle, UI update,
+UI render; the WMO draw and weather zones came from Babasaba's PR #2) plus draw calls and triangles, averaged over the last 120 frames
 (240 kept). `GetProfilerZones([frames])` returns it to Lua as `{frames, frameMs, fps, drawCalls, triangles, zones =
 { {name, selfMs, totalMs, calls}, ... }}`; `SetProfilerEnabled` / `IsProfilerEnabled` switch it. `WXL_PROFILE_LOG=N` logs a
 summary line every N seconds to the launch log; `WXL_PROFILER=0` disables recording. "Present" includes waiting for the
