@@ -2420,7 +2420,9 @@ void PendingSpellCast::OnSpellGo(CDataStore* msg) {
 // VERIFY: 2af0e265 manual
 // OFFSET: 0x007FDE00
 uint32_t Spell_C_GetPowerDisplayMod(POWER_TYPE powerType) {
-    if (static_cast<int32_t>(powerType) < 0) {
+    // Native Linux: an out-of-range type (a unit whose power-type byte is not a known type) read past the table and
+    // could return 0, which the callers divide by (SIGFPE in UnitPowerMax, 2026-11-08).
+    if (static_cast<int32_t>(powerType) < 0 || static_cast<uint32_t>(powerType) >= NUM_POWER_TYPES) {
         return 1;
     }
 

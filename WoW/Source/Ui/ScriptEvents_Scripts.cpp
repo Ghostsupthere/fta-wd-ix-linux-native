@@ -973,7 +973,9 @@ static int32_t Script_UnitPowerMax(lua_State* L) {
             powerType = unit->m_unit->m_unitFieldBytes0[3];
         }
 
-        power = unit->m_unit->m_unitFieldMaxpower[powerType] / Spell_C_GetPowerDisplayMod(static_cast<POWER_TYPE>(powerType));
+        if (powerType < NUM_POWER_TYPES) {  // native Linux: the unit's power-type byte can be outside the field array
+            power = unit->m_unit->m_unitFieldMaxpower[powerType] / Spell_C_GetPowerDisplayMod(static_cast<POWER_TYPE>(powerType));
+        }
     } else if (CGPartyMemberState* state = CGPartyMemberStateRepository::GetState(unitGuid)) {
         if (powerType == 7 || powerType == state->m_powerType) {
             power = state->m_maxPower / Spell_C_GetPowerDisplayMod(static_cast<POWER_TYPE>(state->m_powerType));
