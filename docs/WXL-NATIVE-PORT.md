@@ -1333,3 +1333,24 @@ race, so the test does detect this class of bug.
 (only the base class does), and the constructors leave `m_parentVelocity` and `m_burstOffset` unset, so with a life
 variation or a parent velocity the values come from whatever the heap held. The test fills the allocator with 0xA5 so
 both runs see the same bytes. If the original sets these, a particle's lifetime in game can vary by a stale value.
+
+## Shield shadows detached from their shields (2026-11-08)
+
+**Symptom.** With the shadow tiers on, a shield-shaped shadow lay on the ground away from its owner and moved with the
+camera. Reported by another user (older hardware) and reproduced here with 25 bots: Bulwark of Azzinoth, Sword Breaker's
+Bulwark and Aegis of Rapt Concentration. Only shields were affected.
+
+**Cause.** `CM2Model::RenderBatchShadowMap` picks its vertex shader with `CShaderEffect::SetDefaultShaders(section->m_boneInfluences)`
+(the argument is the bone-influence slot of the permutation). Item shields have skin sections with **0 bone influences**
+(`shield_2h_outlandraid_d_06`, `shield_hyjal_d_01/_03`, `shield_sunwell_d_01`, `shield_wxl_legionbreaker_fx`; every weapon,
+shoulder, helm and belt reports 1 or more), which selects the zero-influence variant. That variant does not use the bone
+constants the shadow pass uploads, and the pass sets no world matrix, so the shield was transformed by a stale matrix. The
+shield's own matrix was correct all along (checked with a per-caster diagnostic: 1.2-1.6 yd from the owner, animated this
+frame), and the instancing bone budget was ruled out (0 of ~39,000 groups per 2 s over it).
+
+**Fix.** The shadow pass now uses the one-bone shader for sections with no influences (`WXL_SHADOW_MIN_INFLUENCES`, default
+1; `0` restores the stock selection). Confirmed in game with the switch set to 1: the shield shadows attach to the shields.
+This is stock engine code, so the Windows client very likely has the same fault.
+
+**Also added.** `WXL_SHADOW_CASTERS=<hex mask>` limits what casts into the shadow map (1 units, 2 other entities, 4 building
+groups, 8 terrain doodads; default F) to find where a shadow comes from.

@@ -3075,7 +3075,22 @@ void CM2Model::RenderBatchShadowMap(int32_t untextured, M2Batch* batch, const CM
         }
 
         if (!prevSection || section->m_boneInfluences != prevSection->m_boneInfluences) {
+#if defined(WOWDECOMP_LINUX)
+            // FIX (2026-11-08): a skin section with no bone influences (item shields, 0 of them in a typical raid set,
+            // while every weapon, shoulder and helm reports 1 or more) selected the zero-influence vertex shader. That
+            // variant does not read the bone constants uploaded just above, and nothing in the shadow pass sets a world
+            // matrix, so the shadow was drawn with a stale transform: a shield-shaped shadow away from its owner that
+            // moved with the camera. The one-bone variant reads bone 0, which AnimateSM/Animate leave as the model's
+            // full view-space matrix, so the shadow lands on the shield. WXL_SHADOW_MIN_INFLUENCES=0 restores the stock
+            // selection for comparison.
+            static const uint32_t minInfluences = [] {
+                const char* value = std::getenv("WXL_SHADOW_MIN_INFLUENCES");
+                return (value && value[0]) ? static_cast<uint32_t>(std::atoi(value)) : 1u;
+            }();
+            CShaderEffect::SetDefaultShaders(section->m_boneInfluences < minInfluences ? minInfluences : section->m_boneInfluences);
+#else
             CShaderEffect::SetDefaultShaders(section->m_boneInfluences);
+#endif
         }
 
         gxBatch.m_count = instances * section->m_indexCount;

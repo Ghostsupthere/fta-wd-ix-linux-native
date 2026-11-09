@@ -4,6 +4,8 @@
 #include "Engine/Source/ConsoleBase/Types.h"
 #include "Engine/Source/Storm/H/storm.h"
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include "Engine/Source/Model2/M2Light.h"
 #include "Engine/Source/ShaderEffect/ShadowCache.h"
 #include "WoW/Source/ObjectMgrClient/ObjectMgrClient.h"
@@ -440,6 +442,26 @@ int32_t CShadowQuery::RenderCallback(CShadowCacheQueryData& data, int32_t band, 
     return 1;
 }
 
+#if defined(WOWDECOMP_LINUX)
+// WXL_SHADOW_CASTERS=<hex mask> (diagnostic): which kinds of object cast into the shadow map. 1 = units (players, NPCs,
+// pets), 2 = other map entities (game objects, doodads placed as entities), 4 = building (WMO) groups and their doodads,
+// 8 = terrain-placed doodads. Default 0xF (all). Used to find which kind a detached shadow comes from.
+static uint32_t ShadowCasterMask() {
+    static const uint32_t mask = [] {
+        const char* value = std::getenv("WXL_SHADOW_CASTERS");
+        const uint32_t parsed = (value && value[0]) ? static_cast<uint32_t>(std::strtoul(value, nullptr, 16)) : 0xF;
+
+        if (parsed != 0xF) {
+            std::fprintf(stderr, "WarcraftXL: WXL_SHADOW_CASTERS=%x (units %d, entities %d, buildings %d, terrain doodads %d)\n", parsed,
+                         (parsed & 1) != 0, (parsed & 2) != 0, (parsed & 4) != 0, (parsed & 8) != 0);
+        }
+
+        return parsed;
+    }();
+    return mask;
+}
+#endif
+
 // VERIFY: f464b8c3 manual
 // OFFSET: 0x007BB9D0
 void CShadowQuery::GatherShadowCasters(CShadowCacheQueryData& data, int32_t firstBand, int32_t lastBand) {
@@ -475,6 +497,12 @@ void CShadowQuery::GatherShadowCasters(CShadowCacheQueryData& data, int32_t firs
         }
 
         uint32_t doodad = (model->m_fFlags & 0x1) ? model->m_shared->m_billboardBoneCount : 0;
+
+#if defined(WOWDECOMP_LINUX)
+        if (!(ShadowCasterMask() & (isUnit ? 1u : 2u))) {
+            continue;
+        }
+#endif
 
         for (int32_t band = firstBand; band <= lastBand; band++) {
             int32_t queryFlags = data.m_queryFlags[band];
@@ -630,6 +658,11 @@ static void GetChunkRect(const CAaBox& box, CiRect& rect) {
 // VERIFY: 9b4413e5 manual
 // OFFSET: 0x007BC890
 void CShadowQuery::QueryMapObjDefsBand(CShadowCacheQueryData& data, int32_t band) {
+#if defined(WOWDECOMP_LINUX)
+    if (!(ShadowCasterMask() & 4)) {
+        return;
+    }
+#endif
     float minSize;
     float maxSize;
     CShadowQuery::GetSize(data, band, &minSize, &maxSize);
@@ -803,6 +836,11 @@ void CShadowQuery::QueryMapObjDefs(CShadowCacheQueryData& data, int32_t firstBan
 // VERIFY: 896bfb08 manual
 // OFFSET: 0x007BCF20
 void CShadowQuery::QueryTerrainBand(CShadowCacheQueryData& data, int32_t band) {
+#if defined(WOWDECOMP_LINUX)
+    if (!(ShadowCasterMask() & 8)) {
+        return;
+    }
+#endif
     float minSize;
     float maxSize;
     CShadowQuery::GetSize(data, band, &minSize, &maxSize);
