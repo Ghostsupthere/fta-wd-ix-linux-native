@@ -141,7 +141,7 @@ add_subdirectory(WoW/Source/WorldClient)
 add_subdirectory(WoW/Source/WowServices)
 add_subdirectory(WoW/Source/WowSvcs)
 add_subdirectory(WoW/Source)
-# The client executable. In the rosemyne model this is built on every platform
+# The client executable. In the upstream fork's model this is built on every platform
 # (its entry point is WoW/Source/<platform>/WinMain.cpp); on Linux it links the
 # stock D3D9 renderer running on dxvk-native.
 add_subdirectory(Tools/WowClient)

@@ -165,7 +165,7 @@ typedef short INT16;
  * gets back -- an ACCESS_VIOLATION at 0x2800, deep inside libjpeg and nowhere
  * near the screenshot code that triggered it.
  *
- * Fix taken from the rosemyne fork, which hit the identical crash at the
+ * Fix taken from another wowdecomp fork, which hit the identical crash at the
  * identical address. */
 #ifndef XMD_H			/* X11/xmd.h correctly defines INT32 */
 #if defined(__LP64__) || defined(_WIN64)

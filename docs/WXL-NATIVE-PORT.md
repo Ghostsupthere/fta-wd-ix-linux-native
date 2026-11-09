@@ -1260,7 +1260,7 @@ session from the overlay, and glibc newer than 2.44 on the host.
 ## Frame profiler and the nameplate API (2026-11-01)
 
 Both were written natively for this tree; neither is part of the Windows WarcraftXL product. The ideas came from reading
-the public documentation of other wowdecomp forks (RosemyneH's performance docs, the AwesomeWotLK spec); no code was copied.
+the public documentation of other wowdecomp forks (performance docs, the AwesomeWotLK spec); no code was copied.
 
 **Profiler.** `Engine/Source/Base/Profiler` records, per frame, self and total time of 14 main-thread zones (world render,
 world scene, terrain, WMO draw, weather, M2 animate, M2 draw, present, paint, client idle, world update, UI idle, UI update,

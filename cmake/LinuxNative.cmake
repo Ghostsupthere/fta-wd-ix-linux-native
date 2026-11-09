@@ -4,14 +4,14 @@
 # BEFORE the per-module add_subdirectory() calls, so the options and targets it
 # establishes are visible to every module's CMakeLists.
 #
-# This follows the rosemyne Linux model: a NATIVE Os layer, no Win32-API shim,
+# This follows the upstream fork's Linux model: a NATIVE Os layer, no Win32-API shim,
 # no force-included compatibility header. The MSVC-only spellings the decompiled
 # tree uses (__stdcall, __int64, _alloca) are neutralised as preprocessor
 # definitions; everything else is real POSIX/SDL code under Engine/Source/*/Linux.
 #
 # PR1 renders through the stock CGxDeviceD3d9Ex on dxvk-native's libdxvk_d3d9.so
 # (loaded dynamically; see cmake/DxvkD3d9.cmake and OsLibrary's d3d9.dll map).
-# The native-Vulkan backend rosemyne ships is deliberately OFF here.
+# The native-Vulkan backend the upstream fork ships is deliberately OFF here.
 
 # --- backend selection -------------------------------------------------------
 # D3D9-on-dxvk is PR1's renderer; the Vulkan Gx backend is not built. The Gx and
@@ -36,7 +36,7 @@ find_package(Threads REQUIRED)
 # unconditionally, while the CMake config package depends on the version.
 pkg_check_modules(SDL3 REQUIRED IMPORTED_TARGET sdl3)
 
-# The rosemyne per-module CMakeLists link the SDL window system as SDL2::SDL2.
+# The upstream per-module CMakeLists link the SDL window system as SDL2::SDL2.
 # PR1 targets SDL3 directly, so alias that name onto the SDL3 imported target:
 # the module CMakeLists stay untouched and the source is ported to the SDL3 API.
 if (NOT TARGET SDL2::SDL2)

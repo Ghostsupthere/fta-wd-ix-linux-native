@@ -140,7 +140,9 @@ FMOD Ex).
 ## Credits
 
 - **[From The Ashes](https://discord.gg/DsZMGUD8aT)** is the server this client is made for.
-- **wowdecomp**, the C++ reconstruction of the 3.3.5a client this is built on, and the forks of it.
+- **wowdecomp**, the C++ reconstruction of the 3.3.5a client this is built on,
+  and the forks of it. The decompilation, the original-address tagging and the engine this project builds on are theirs;
+  see [LICENSING.md](LICENSING.md) for where that stands.
 - [binana](https://github.com/thunderbrewhq/binana), [thunderbrew](https://github.com/thunderbrewhq/thunderbrew) and
   [whoa](https://github.com/whoahq/whoa), which wowdecomp credits as well
 - [dxvk](https://github.com/doitsujin/dxvk) and SDL3, which the Linux client renders and runs through
