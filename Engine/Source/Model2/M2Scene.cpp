@@ -28,6 +28,7 @@
 #include "Engine/Source/ShaderEffect/ShaderEffect.h"
 #include "Engine/Source/ShaderEffect/ShadowCache.h"
 #include "Engine/Source/Storm/H/storm.h"
+#include "Engine/Source/Model2/M2ParticleJobs.h"
 #include "Engine/Source/Tempest/C33Matrix.h"
 #include "Engine/Source/Tempest/C3Ray.h"
 #include "Engine/Source/Tempest/NTempest.h"
@@ -248,6 +249,16 @@ struct M2AnimateJob {
     std::atomic<uint32_t> nextIndex{0};
 };
 }
+
+#if defined(WOWDECOMP_LINUX)
+// Runs `work` on the model worker threads and the calling thread, then waits for all of them.
+void CM2Scene::DispatchParticleWork(void* context, void (*work)(void*), void* param) {
+    CM2Cache* cache = static_cast<CM2Cache*>(context);
+    cache->BeginThread(work, param);
+    work(param);
+    cache->WaitThread();
+}
+#endif
 
 // VERIFY: f41c995e auto
 // OFFSET: 0x0081CE70
@@ -1761,7 +1772,14 @@ int32_t CM2Scene::Animate(const C3Vector& cameraPos) {
     }
 
     const uint32_t rootCount = static_cast<uint32_t>(s_rootModels.size());
-    if (rootCount < 8 || !(this->m_cache->m_flags.load(std::memory_order_relaxed) & 4) || this->m_cache->m_workerCount == 0) {
+    const bool animateOnWorkers = !(rootCount < 8 || !(this->m_cache->m_flags.load(std::memory_order_relaxed) & 4) || this->m_cache->m_workerCount == 0);
+#if defined(WOWDECOMP_LINUX)
+    M2ParticleJobs::NoteAnimate(rootCount, this->m_cache->m_workerCount, animateOnWorkers);
+#endif
+#if defined(WOWDECOMP_LINUX)
+    const uint64_t boneStartNs = M2ParticleJobs::LoggingEnabled() ? M2ParticleJobs::NowNs() : 0;
+#endif
+    if (!animateOnWorkers) {
         for (uint32_t i = 0; i < rootCount; ++i) {
             CM2Model* model = s_rootModels[i];
             if (model->m_fFlags & 0x1000) {
@@ -1783,17 +1801,29 @@ int32_t CM2Scene::Animate(const C3Vector& cameraPos) {
     }
 
 #if defined(WOWDECOMP_LINUX)
+    if (boneStartNs) {
+        M2ParticleJobs::NoteBonePhase(M2ParticleJobs::NowNs() - boneStartNs);
+    }
+#endif
+#if defined(WOWDECOMP_LINUX)
     // All native animation workers have joined; collection palette copies are
     // refreshed from current parents, including cached attachment graphs.
     WxlVisitSceneModels(this, [](CM2Model* model) { model->RefreshWxlCollectionPalette(); });
     // Physics writes precede particles, lights and draw preparation.
     ApplyNativeItemPhysics(this);
 #endif
+#if defined(WOWDECOMP_LINUX)
+    // Emitter simulation is queued during this pass and run on the model worker threads once it ends.
+    M2ParticleJobs::Begin((this->m_cache->m_flags.load(std::memory_order_relaxed) & 4) && this->m_cache->m_workerCount != 0);
+#endif
     for (CM2Model* model = this->m_animateList; model; model = model->m_animateNext) {
         if (!model->m_attachParent) {
             model->AnimateST();
         }
     }
+#if defined(WOWDECOMP_LINUX)
+    M2ParticleJobs::End(&CM2Scene::DispatchParticleWork, this->m_cache);
+#endif
 
     while (this->m_animateList) {
         CM2Model* model = this->m_animateList;

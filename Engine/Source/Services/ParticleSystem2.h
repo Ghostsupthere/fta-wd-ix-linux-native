@@ -151,7 +151,9 @@ class CParticleEmitter2 {
     static uint8_t s_noIndexBuffer;
     static CSortableParticleQueue s_pq;
     static float s_rndTable[128];
-    static float s_viewDist;
+    // Set at the top of Update() and read by EmitNewParticles() in the same call, so each thread keeps its own:
+    // emitters may update on the model worker threads (see Model2/M2ParticleJobs.h).
+    static thread_local float s_viewDist;
 
     static void Destroy();
     static void Init();
@@ -249,6 +251,9 @@ class CParticleEmitter2 {
     CM2Model* GetParticleModelInternal(uint32_t& index);
     void GetReplacementColors(CImVector& color0, CImVector& color1, CImVector& color2);
     int32_t HasLiveParticles();
+    // True when Update() touches only this emitter's own state (no particle models, no terrain projection callback),
+    // here and in every child emitter, so it may run on a worker thread.
+    bool CanUpdateOffThread() const;
     void InternalUpdate(float deltaTime, int32_t child);
     void InterpolateAllTracks(const CParticle2& particle, CImVector* color, C2Vector* scale, int32_t* headCell, int32_t* tailCell);
     void InterpolateAllTracksSimple(const CParticle2& particle, CImVector* color, C2Vector* scale, int32_t* headCell, int32_t* tailCell);

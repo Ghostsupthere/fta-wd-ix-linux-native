@@ -1284,3 +1284,36 @@ parity; addons that feature-detect it (DBM-Core target scanning, Questie, Immers
 The bookkeeping (`Engine/Source/ModernAssets/WxlNamePlates/Registry.hpp`) has a sanitizer test; the engine hooks build and
 the client starts, but **nothing has been exercised in a world yet**. To check in game: `/run print(C_NamePlate and
 #C_NamePlate.GetNamePlates())`, `/run print(UnitName("nameplate1"))`, and a frame listening for the events.
+
+## Particle updates on worker threads (2026-11-08)
+
+Profiling a busy scene (Molten Core, 2,400 draws, 13700K) with `WXL_SAMPLE_PROFILE` showed particle code at about 20% of
+the render thread's CPU: the emitter simulation inside `M2 animate` (`StepUpdate`, `MoveParticle`, about 20% of that
+zone) and the vertex building inside `M2 draw` (`BuildVertex`, interpolation and spin, about 40% of that zone).
+
+**What is threaded.** `Engine/Source/Model2/M2ParticleJobs` queues `CParticleEmitter2::Update` during
+`CM2Scene::Animate`'s `AnimateST` pass and runs the queue on the model worker pool (the same threads the bone animation
+uses) once the pass ends, before anything reads the particles. Eligible emitters are self-contained ones:
+`CParticleEmitter2::CanUpdateOffThread` excludes particle-model emitters and the terrain-projection flag (0x40000), which
+call into models and the world and stay on the main thread. The queued job copies the transform, view position and frame
+of reference, and `CParticleEmitter2::s_viewDist` (set and read inside one `Update`) became `thread_local`. Each emitter
+has its own random seed and arrays, so the result is the same as the serial order. `WXL_PARTICLE_THREADS=0` turns it off.
+`CM2Scene::Animate` also logs, with `WXL_PROFILE_LOG=N`, a `WarcraftXL threads:` line: worker count, how many frames the
+bone animation actually used the workers (it needs 8 root models), and how many particle updates were queued.
+
+**Not threaded.** The vertex building in `M2 draw` (`BuildParticleVertices`, which writes into a locked GPU buffer and has
+a sorted path) is the larger cost and is untouched. The simulation step is the smaller one: a standalone benchmark
+(`tools/run-particle-jobs-test.sh plain bench`) puts 150 busy emitters (50,000 particles) at 0.29 ms serial, so the
+expected saving in game is roughly 0.1 to 0.2 ms a frame. **Not yet measured in game.**
+
+**Tests.** `tests/wxl_particle_jobs_test.cpp` (`tools/run-particle-jobs-test.sh [plain|tsan|asan]`) updates the same
+emitters serially and through the queue on helper threads for 90 frames (plane, sphere and spline emitters, both
+life-variation branches, long frames, a frame of reference changed after queueing) and requires every particle to match
+bit for bit, plus the queue rules (window, eligibility, threshold, nesting). It passes plain, under ThreadSanitizer and
+under AddressSanitizer with leak checking. Putting `s_viewDist` back to a plain static makes ThreadSanitizer report the
+race, so the test does detect this class of bug.
+
+**Found on the way (not changed).** The plane, sphere and spline `CreateParticle` overrides never set `m_lifeSeed`
+(only the base class does), and the constructors leave `m_parentVelocity` and `m_burstOffset` unset, so with a life
+variation or a parent velocity the values come from whatever the heap held. The test fills the allocator with 0xA5 so
+both runs see the same bytes. If the original sets these, a particle's lifetime in game can vary by a stale value.

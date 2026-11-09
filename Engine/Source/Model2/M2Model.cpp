@@ -44,6 +44,7 @@
 #include "Engine/Source/Tempest/CFacet.h"
 #include "Engine/Source/Tempest/CImVector.h"
 #include "Engine/Source/Tempest/CMath.h"
+#include "Engine/Source/Model2/M2ParticleJobs.h"
 #include "WoW/Source/DB/DBClient/DBClient.h"
 #include "WoW/Source/Object/ObjectClient/Types.h"
 
@@ -5922,7 +5923,21 @@ void CM2Model::AnimateParticleST(float deltaTime, uint32_t index) {
     static C44Matrix s_emitterRotation(0.0f, 1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
 
     transform = s_emitterRotation * transform;
-    emitter->Update(deltaTime, transform, *reinterpret_cast<const C3Vector*>(&this->m_scene->m_viewInv.d0), static_cast<const C44Matrix*>(this->m_frameOfReference));
+
+#if defined(WOWDECOMP_LINUX)
+    // The simulation step is queued and run on the worker threads when CM2Scene::Animate opened a window. Only
+    // self-contained emitters are queued, so there are no particle models to animate below.
+    if (M2ParticleJobs::Defer(emitter, deltaTime, transform, *reinterpret_cast<const C3Vector*>(&this->m_scene->m_viewInv.d0), static_cast<const C44Matrix*>(this->m_frameOfReference))) {
+        return;
+    }
+#endif
+
+    {
+#if defined(WOWDECOMP_LINUX)
+        M2ParticleJobs::InlineTimer inlineTimer(emitter);  // WXL_PROFILE_LOG: the cost of updates that stay on this thread
+#endif
+        emitter->Update(deltaTime, transform, *reinterpret_cast<const C3Vector*>(&this->m_scene->m_viewInv.d0), static_cast<const C44Matrix*>(this->m_frameOfReference));
+    }
 
     uint32_t modelCount = emitter->GetNumParticleModels();
 

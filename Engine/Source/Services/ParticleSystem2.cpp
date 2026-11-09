@@ -62,7 +62,7 @@ CGxBuf* CParticleEmitter2::s_indexBuf;
 CGxPool* CParticleEmitter2::s_indexPool;
 
 // STATIC: 0x00DCE68C
-float CParticleEmitter2::s_viewDist;
+thread_local float CParticleEmitter2::s_viewDist;
 
 // STATIC: 0x00DCE690
 float CParticleEmitter2::s_rndTable[128];
@@ -468,6 +468,24 @@ CImVector CParticleEmitter2::InterpolateColorTrack(float t) {
     color.g = static_cast<uint8_t>(CMath::fint_(g));
 
     return color;
+}
+
+bool CParticleEmitter2::CanUpdateOffThread() const {
+    // PT_MODEL emitters drive real CM2Models (PlaceParticleModels, per-particle model animation) and the 0x40000
+    // flag calls the world's terrain-height callback while creating particles; both stay on the main thread.
+    if (this->m_params.m_hasModel || (this->m_flags & 0x40000)) {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < this->m_childEmitterCount; i++) {
+        const CParticleEmitter2* child = this->m_childEmitters[i];
+
+        if (child && !child->CanUpdateOffThread()) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 // VERIFY: 0e21dad3 auto
