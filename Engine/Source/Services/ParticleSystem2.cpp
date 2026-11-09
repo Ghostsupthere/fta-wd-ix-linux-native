@@ -6,6 +6,9 @@
 #include <new>
 #include <typeinfo>
 #include "Engine/Source/Services/ParticleSystem2.h"
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/Model2/M2ParticleBuild.h"
+#endif
 #include "Engine/Source/Base/Handle.h"
 #include "Engine/Source/Gx/CGxBuf.h"
 #include "Engine/Source/Gx/CGxPool.h"
@@ -38,13 +41,15 @@ static int32_t s_particleRenderEnable = 1;
 static float s_stepRound = 0.5f;
 
 // STATIC: 0x00B2D540
-static C3Vector s_particleNormal(0.0f, 0.0f, 1.0f);
+// Native Linux: the three transforms below are set by RenderParticlesPrep() and read by BuildVertex(), so each thread
+// that builds vertices keeps its own copy.
+static thread_local C3Vector s_particleNormal(0.0f, 0.0f, 1.0f);
 
 // STATIC: 0x00B2D550
-static C44Matrix s_particleXform(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+static thread_local C44Matrix s_particleXform(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
 
 // STATIC: 0x00B2D590
-static C33Matrix s_billboardXform(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+static thread_local C33Matrix s_billboardXform(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
 
 // STATIC: 0x00B2D5B4
 static const float s_cornerOffsets[4][2] = { { -1.0f, 1.0f }, { -1.0f, -1.0f }, { 1.0f, 1.0f }, { 1.0f, -1.0f } };
@@ -73,7 +78,7 @@ uint8_t CParticleEmitter2::s_noIndexBuffer;
 static const uint32_t s_pqParams[2] = { 32, 32 };
 
 // STATIC: 0x00DCE894
-CSortableParticleQueue CParticleEmitter2::s_pq(s_pqParams);
+thread_local CSortableParticleQueue CParticleEmitter2::s_pq(s_pqParams);
 
 // STATIC: 0x00DCE8C4
 void* ParticleSystemManager::sm_projectParam;
@@ -800,7 +805,7 @@ void CParticleEmitter2::FillOutParticleVertex(void* buffer, EGxVertexBufferForma
         vertex->m_normalStride = stride;
         vertex->m_normal = static_cast<uint8_t*>(buffer) + GxVertexAttribOffset(format, GxVA_Normal);
     } else {
-        static C3Vector s_zeroNormal(0.0f, 0.0f, 0.0f);
+        static thread_local C3Vector s_zeroNormal(0.0f, 0.0f, 0.0f);  // AddVertex() writes the normal here: one per thread
         vertex->m_normal = reinterpret_cast<uint8_t*>(&s_zeroNormal);
         vertex->m_normalStride = 0;
     }
@@ -1497,6 +1502,10 @@ uint32_t CParticleEmitter2::GetNumPrimitives() {
 // VERIFY: 09c24957 manual
 // OFFSET: [0x0097BCC0, 0x0097D890]
 CParticleEmitter2::~CParticleEmitter2() {
+#if defined(WOWDECOMP_LINUX)
+    M2ParticleBuild::Forget(this);  // a block built for this emitter must not outlive it
+#endif
+
     if (this->m_texture) {
         HandleClose(reinterpret_cast<HOBJECT>(this->m_texture));
         this->m_texture = nullptr;
@@ -2354,6 +2363,59 @@ void CParticleEmitter2::BuildParticleVertices(ParticleVertex& vertex, uint32_t c
     this->m_renderedParticles = vertex.m_count / this->m_vertsPerParticle;
 }
 
+bool CParticleEmitter2::PlanVertexBuild(EGxVertexBufferFormat& format, uint32_t& count) {
+    if (!s_particleRenderEnable || !this->m_vertsPerParticle || !this->m_liveList.Count()) {
+        return false;
+    }
+
+    if (!TextureGetGxTex(this->m_texture, 0, nullptr)) {
+        return false;
+    }
+
+    count = 0x4000 / this->m_vertsPerParticle;
+
+    if (count >= this->m_liveList.Count()) {
+        count = this->m_liveList.Count();
+    }
+
+    format = (this->m_params.m_materialFlags & 0x1) ? GxVBF_PNCT : GxVBF_PCT;
+    return count != 0;
+}
+
+void CParticleEmitter2::BuildVertexBlock(const C44Matrix* frameOfReference, const C44Matrix& view, EGxVertexBufferFormat format, uint32_t count, void* buffer, VertexBlock& out) {
+    const CAaBox savedBounds = this->m_worldBounds;
+    const uint32_t savedRendered = this->m_renderedParticles;
+    const C3Vector savedAxis = this->m_billboardAxis;
+
+    // Render() starts every draw from empty bounds.
+    this->m_worldBounds.b.x = 3.4028235e38f;
+    this->m_worldBounds.b.y = 3.4028235e38f;
+    this->m_worldBounds.b.z = 3.4028235e38f;
+    this->m_worldBounds.t.x = -3.4028235e38f;
+    this->m_worldBounds.t.y = -3.4028235e38f;
+    this->m_worldBounds.t.z = -3.4028235e38f;
+
+    this->RenderParticlesPrep(frameOfReference, view);
+
+    ParticleVertex vertex;
+    vertex.m_count = 0;
+    this->FillOutParticleVertex(buffer, format, &vertex);
+    this->BuildParticleVertices(vertex, count, view.AffineInverse());
+
+    out.vertexCount = vertex.m_count;
+    out.renderedParticles = this->m_renderedParticles;
+    out.bounds = this->m_worldBounds;
+
+    this->m_worldBounds = savedBounds;
+    this->m_renderedParticles = savedRendered;
+    this->m_billboardAxis = savedAxis;
+}
+
+void CParticleEmitter2::ApplyVertexBlock(const VertexBlock& block) {
+    this->m_worldBounds = block.bounds;
+    this->m_renderedParticles = block.renderedParticles;
+}
+
 // VERIFY: 722cfea2 manual
 // OFFSET: 0x0097E730
 void CParticleEmitter2::RenderParticles(const C44Matrix* frameOfReference, void* buffer) {
@@ -2393,7 +2455,16 @@ void CParticleEmitter2::RenderParticles(const C44Matrix* frameOfReference, void*
     ParticleVertex vertex;
     vertex.m_count = 0;
     this->FillOutParticleVertex(buffer, format, &vertex);
+
+#if defined(WOWDECOMP_LINUX)
+    // Vertices built ahead of time on the worker threads (CM2Scene::PrebuildParticleVertices) are copied in when they
+    // were built for exactly this view, frame of reference, format and particle count; otherwise build them here.
+    if (!M2ParticleBuild::Apply(this, frameOfReference, view, format, count, buffer, vertex)) {
+        this->BuildParticleVertices(vertex, count, view.AffineInverse());
+    }
+#else
     this->BuildParticleVertices(vertex, count, view.AffineInverse());
+#endif
 
     if (buf) {
         g_theGxDevicePtr->BufUnlock(buf, 0);

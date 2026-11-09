@@ -28,6 +28,7 @@
 #include "Engine/Source/ShaderEffect/ShaderEffect.h"
 #include "Engine/Source/ShaderEffect/ShadowCache.h"
 #include "Engine/Source/Storm/H/storm.h"
+#include "Engine/Source/Model2/M2ParticleBuild.h"
 #include "Engine/Source/Model2/M2ParticleJobs.h"
 #include "Engine/Source/Tempest/C33Matrix.h"
 #include "Engine/Source/Tempest/C3Ray.h"
@@ -257,6 +258,31 @@ void CM2Scene::DispatchParticleWork(void* context, void (*work)(void*), void* pa
     cache->BeginThread(work, param);
     work(param);
     cache->WaitThread();
+}
+
+// Builds the vertices of every particle emitter that has a draw element, on the worker threads, so CM2SceneRender's
+// draw calls copy them instead of building them one emitter at a time (see M2ParticleBuild.h).
+void CM2Scene::PrebuildParticleVertices() {
+    static thread_local std::vector<M2ParticleBuild::Item> s_items;
+    s_items.clear();
+
+    for (uint32_t i = 0; i < this->m_elements.m_count; ++i) {
+        const M2Element& element = this->m_elements.m_data[i];
+
+        if (element.m_type == 4 && element.m_emitter && element.m_model) {
+            M2ParticleBuild::Item item;
+            item.emitter = element.m_emitter;
+            item.frameOfReference = static_cast<const C44Matrix*>(element.m_model->m_frameOfReference);
+            s_items.push_back(item);
+        }
+    }
+
+    // The view every particle draw uses: CM2SceneRender::SetupBillboardView sets the device's view to this.
+    C44Matrix view = this->m_view;
+    view.Translate(*reinterpret_cast<const C3Vector*>(&this->m_viewInv.d0));
+
+    const bool threads = (this->m_cache->m_flags.load(std::memory_order_relaxed) & 4) && this->m_cache->m_workerCount != 0;
+    M2ParticleBuild::Prebuild(this, s_items.data(), static_cast<uint32_t>(s_items.size()), view, &CM2Scene::DispatchParticleWork, this->m_cache, threads);
 }
 #endif
 
@@ -1685,6 +1711,9 @@ CM2Scene::CM2Scene(CM2Cache* cache) {
 // VERIFY: aa195899 manual
 // OFFSET: 0x00821850
 CM2Scene::~CM2Scene() {
+#if defined(WOWDECOMP_LINUX)
+    M2ParticleBuild::Clear(this);
+#endif
     for (CM2Model* model = this->m_modelList; model; model = this->m_modelList) {
         while (model->Release()) {
         }
@@ -2202,6 +2231,10 @@ int32_t CM2Scene::Animate(const C3Vector& cameraPos) {
             }
         }
     }
+
+#if defined(WOWDECOMP_LINUX)
+    this->PrebuildParticleVertices();
+#endif
 
     uint32_t doodadCount = this->m_doodadElements.m_count;
 

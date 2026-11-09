@@ -1301,8 +1301,24 @@ has its own random seed and arrays, so the result is the same as the serial orde
 `CM2Scene::Animate` also logs, with `WXL_PROFILE_LOG=N`, a `WarcraftXL threads:` line: worker count, how many frames the
 bone animation actually used the workers (it needs 8 root models), and how many particle updates were queued.
 
-**Not threaded.** The vertex building in `M2 draw` (`BuildParticleVertices`, which writes into a locked GPU buffer and has
-a sorted path) is the larger cost and is untouched. The simulation step is the smaller one: a standalone benchmark
+**Measured in Ironforge (2026-11-08).** `particle update` went from 0.33-0.37 ms (in place) to 0.08-0.09 ms per frame, a 3.4-4.1x
+speedup over 6 workers; typical emitters hold about 12 live particles, so there are thousands of small ones.
+
+**Vertex building (M2ParticleBuild, 2026-11-08).** `Engine/Source/Model2/M2ParticleBuild` builds the vertices of every
+drawn particle emitter on the worker pool at the end of `CM2Scene::Animate` (`PrebuildParticleVertices`), into one scratch
+arena, and `CParticleEmitter2::RenderParticles` copies the block into the locked GPU buffer instead of calling
+`BuildParticleVertices`. A block is used only if it was built for the same view matrix, frame of reference, format, particle
+count and live count as the draw; otherwise (another camera, a second pass, a changed emitter) the draw builds in place as
+before, and a block is dropped when its emitter is destroyed. The view is the one `SetupBillboardView` sets (scene view
+translated by the camera position). The per-build transforms (`s_particleXform`, `s_particleNormal`, `s_billboardXform`), the
+sort queue `s_pq` and the dummy normal used by unlit emitters are `thread_local`. Nothing is built when fewer than 256
+particles are drawn. `WXL_PARTICLE_BUILD_THREADS=0` turns it off; `WXL_PROFILE_LOG` adds a `particle build` line (prebuild wall
+time, blocks, how many were applied, rejected or built in place). Tests build ten emitter variants (lit and unlit, sorted,
+billboard, spinning, twinkling, velocity-aligned; argb and rgba colors) both ways and require identical bytes, bounds and
+counts, plus the rejection rules; they pass plain, under ThreadSanitizer and AddressSanitizer, and re-sharing the dummy normal,
+the view transform or the sort queue is caught. **Not yet measured in game.**
+
+**Not threaded.** The simulation step stays as above; the rest of `M2 animate` (draw-list sorting) is untouched. The simulation step is the smaller one: a standalone benchmark
 (`tools/run-particle-jobs-test.sh plain bench`) puts 150 busy emitters (50,000 particles) at 0.29 ms serial, so the
 expected saving in game is roughly 0.1 to 0.2 ms a frame. **Not yet measured in game.**
 

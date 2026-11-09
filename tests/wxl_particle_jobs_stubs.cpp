@@ -11,15 +11,29 @@
     std::abort();
 }
 
-void* g_theGxDevicePtr = nullptr;
+alignas(16) static char s_fakeDevice[64];
+void* g_theGxDevicePtr = s_fakeDevice;  // only its (stubbed) member functions are called
 
 extern "C" void _Z11HandleCloseP9HOBJECT__() { Unexpected("_Z11HandleCloseP9HOBJECT__"); }
-extern "C" void _Z12GxVertexSize21EGxVertexBufferFormat() { Unexpected("_Z12GxVertexSize21EGxVertexBufferFormat"); }
+extern "C" uint32_t _Z12GxVertexSize21EGxVertexBufferFormat(int format) {  // Engine/Source/Gx/Gx.cpp s_vertexSize
+    static const uint32_t sizes[14] = { 12, 24, 28, 32, 36, 40, 44, 16, 24, 32, 20, 28, 48, 48 };
+    return sizes[format];
+}
 extern "C" void _Z15GxPrimVertexPtrP6CGxBuf21EGxVertexBufferFormat() { Unexpected("_Z15GxPrimVertexPtrP6CGxBuf21EGxVertexBufferFormat"); }
 extern "C" void _Z15HandleDuplicateP9HOBJECT__() { Unexpected("_Z15HandleDuplicateP9HOBJECT__"); }
-extern "C" void _Z15TextureGetGxTexP8CTextureiP7CStatus() { Unexpected("_Z15TextureGetGxTexP8CTextureiP7CStatus"); }
+extern "C" void* _Z15TextureGetGxTexP8CTextureiP7CStatus(void*, int, void*) { return reinterpret_cast<void*>(1); }  // "loaded"
 extern "C" void* _Z16GetModuleHandleAPKc(const char*) { return nullptr; }
-extern "C" void _Z20GxVertexAttribOffset21EGxVertexBufferFormat15EGxVertexAttrib() { Unexpected("_Z20GxVertexAttribOffset21EGxVertexBufferFormat15EGxVertexAttrib"); }
+extern "C" uint32_t _Z20GxVertexAttribOffset21EGxVertexBufferFormat15EGxVertexAttrib(int format, int attrib) {  // s_vertexAttribOffset
+    static const int32_t offsets[14][14] = {
+        { 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 }, { 0, -1, -1, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 },
+        { 0, -1, -1, 12, 24, -1, -1, -1, -1, -1, -1, -1, -1, -1 }, { 0, -1, -1, 12, -1, -1, 24, -1, -1, -1, -1, -1, -1, -1 },
+        { 0, -1, -1, 12, 24, -1, 28, -1, -1, -1, -1, -1, -1, -1 }, { 0, -1, -1, 12, -1, -1, 24, 32, -1, -1, -1, -1, -1, -1 },
+        { 0, -1, -1, 12, 24, -1, 28, 36, -1, -1, -1, -1, -1, -1 }, { 0, -1, -1, -1, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1 },
+        { 0, -1, -1, -1, 12, -1, 16, -1, -1, -1, -1, -1, -1, -1 }, { 0, -1, -1, -1, 12, -1, 16, 24, -1, -1, -1, -1, -1, -1 },
+        { 0, -1, -1, -1, -1, -1, 12, -1, -1, -1, -1, -1, -1, -1 }, { 0, -1, -1, -1, -1, -1, 12, 20, -1, -1, -1, -1, -1, -1 },
+        { 0, 12, 16, 20, -1, -1, 32, 40, -1, -1, -1, -1, -1, -1 }, { 0, -1, -1, 12, 24, 28, 32, 40, -1, -1, -1, -1, -1, -1 } };
+    return static_cast<uint32_t>(offsets[format][attrib]);
+}
 extern "C" void _ZN13CShaderEffect17SetDefaultShadersEj() { Unexpected("_ZN13CShaderEffect17SetDefaultShadersEj"); }
 extern "C" void _ZN13CShaderEffect18SetTexMtx_IdentityEj() { Unexpected("_ZN13CShaderEffect18SetTexMtx_IdentityEj"); }
 extern "C" void _ZN13CShaderEffect21UpdateWorldViewMatrixEv() { Unexpected("_ZN13CShaderEffect21UpdateWorldViewMatrixEv"); }
@@ -44,7 +58,8 @@ extern "C" void _ZN8CM2Scene11CreateModelEPKcj() { Unexpected("_ZN8CM2Scene11Cre
 extern "C" void _ZN9CGxDevice10BufDestroyERP6CGxBuf() { Unexpected("_ZN9CGxDevice10BufDestroyERP6CGxBuf"); }
 extern "C" void _ZN9CGxDevice10PoolCreateE13EGxPoolTarget12EGxPoolUsagei15EGxPoolHintBitsPKc() { Unexpected("_ZN9CGxDevice10PoolCreateE13EGxPoolTarget12EGxPoolUsagei15EGxPoolHintBitsPKc"); }
 extern "C" void _ZN9CGxDevice12PrimIndexPtrEP6CGxBuf() { Unexpected("_ZN9CGxDevice12PrimIndexPtrEP6CGxBuf"); }
-extern "C" void _ZN9CGxDevice4CapsEv() { Unexpected("_ZN9CGxDevice4CapsEv"); }
+alignas(16) char g_testCaps[512];  // CGxCaps, all zero: m_colorFormat (offset 0x14) 0 = argb; a test can set 1 for rgba
+extern "C" void* _ZN9CGxDevice4CapsEv() { return g_testCaps; }
 extern "C" void _ZN9CGxDevice9BufCreateEP7CGxPooljjj() { Unexpected("_ZN9CGxDevice9BufCreateEP7CGxPooljjj"); }
 extern "C" void _ZN9CGxDevice9BufStreamE13EGxPoolTargetjj() { Unexpected("_ZN9CGxDevice9BufStreamE13EGxPoolTargetjj"); }
 

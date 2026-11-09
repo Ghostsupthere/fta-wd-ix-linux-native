@@ -90,6 +90,7 @@ class CM2Scene {
 
     static void AnimateThread(void* param);
     static void DispatchParticleWork(void* context, void (*work)(void*), void* param);  // native Linux
+    void PrebuildParticleVertices();  // native Linux
     static void __stdcall ComputeElementShaders(M2Element* element);
     static int32_t SortAdditiveParticles(uint32_t a, uint32_t b, const void* param);
     static int32_t SortDoodad(uint32_t a, uint32_t b, const void* param);

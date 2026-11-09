@@ -6,6 +6,7 @@
 //
 // Build with ThreadSanitizer to check the emitter code for data races as well:
 //   see the command in the header of tools/run-particle-jobs-test.sh
+#include "Engine/Source/Model2/M2ParticleBuild.h"
 #include "Engine/Source/Model2/M2ParticleJobs.h"
 #include "Engine/Source/Services/ParticleSystem2.h"
 
@@ -20,6 +21,8 @@
 #include <cstdlib>
 #include <thread>
 #include <vector>
+
+extern char g_testCaps[512];  // the stubbed CGxCaps (tests/wxl_particle_jobs_stubs.cpp)
 
 namespace {
 
@@ -37,6 +40,7 @@ struct Config {
 // start identical, which is what a bit-for-bit comparison needs.
 struct EmitterDeleter {
     void operator()(CParticleEmitter2* e) const {
+        e->m_texture = nullptr;  // a fake handle in the render tests; the destructor would close it
         e->~CParticleEmitter2();
         std::free(e);
     }
@@ -323,6 +327,273 @@ void TestRules() {
     std::printf("queue rules: ok\n");
 }
 
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Prebuilt vertices (Engine/Source/Model2/M2ParticleBuild.*): building ahead on worker threads and copying at draw time
+// must give the same bytes, bounds and counts as building in place.
+
+struct RenderVariant {
+    bool lit;          // material flag 1: vertices carry a normal (the unlit case writes a shared dummy normal)
+    bool sorted;       // flag 0x20: sorted through the particle queue
+    bool billboard;    // flag 0x4000
+    float spin;        // m_params.m_spin: non-zero takes the rotating branch
+    float twinkle;     // m_twinkleOnOff < 1 drops some particles and uses the address-based random table
+    bool velocityAligned;  // flag 0x200000
+};
+
+void ConfigureForRender(CParticleEmitter2& e, const RenderVariant& v, uint32_t index) {
+    e.m_vertsPerParticle = 4;
+    e.m_indicesPerParticle = 6;
+    e.m_textureRows = 1;
+    e.m_textureCols = 1;
+    e.m_textureCellShift = 0;
+    e.m_textureCellWidth = 1.0f;
+    e.m_textureCellHeight = 1.0f;
+    e.m_texture = reinterpret_cast<CTexture*>(static_cast<uintptr_t>(1));  // "loaded" through the TextureGetGxTex stub
+    e.m_flags |= 0x1000000;  // the simple color/scale keys below
+    if (v.sorted) e.m_flags |= 0x20;
+    if (v.billboard) e.m_flags |= 0x4000;
+    if (v.velocityAligned) e.m_flags |= 0x200000;
+    e.m_params.m_materialFlags = v.lit ? 1 : 0;
+    e.m_params.m_spin = v.spin;
+    e.m_params.m_spinVariation = v.spin * 0.5f;
+    e.m_twinkleOnOff = v.twinkle;
+    e.m_twinkleScaleSpan = v.twinkle < 1.0f ? 0.25f : 0.0f;
+    e.m_alphaScale = 0.9f;
+    e.m_xformScale = 1.0f + 0.1f * (index % 3);
+
+    CParticleEmitter2::SimpleKey* keys = new CParticleEmitter2::SimpleKey[2];
+    for (int k = 0; k < 2; ++k) {
+        keys[k].m_color.r = static_cast<uint8_t>(40 + 90 * k + index);
+        keys[k].m_color.g = static_cast<uint8_t>(200 - 60 * k);
+        keys[k].m_color.b = static_cast<uint8_t>(10 + 30 * k);
+        keys[k].m_color.a = 255;
+        keys[k].m_deltaR = 20; keys[k].m_deltaG = -30; keys[k].m_deltaB = 15; keys[k].m_deltaA = -200;
+        keys[k].m_scale = 0.5f + 0.25f * k;
+        keys[k].m_deltaScale = 0.4f;
+        keys[k].m_headCell = 0; keys[k].m_deltaHeadCell = 0; keys[k].m_tailCell = 0; keys[k].m_deltaTailCell = 0;
+    }
+    delete[] e.m_params.m_simpleKeys;
+    e.m_params.m_simpleKeys = keys;
+    e.m_params.m_simpleMidTime = 0.5f;
+}
+
+std::vector<RenderVariant> RenderVariants() {
+    return {
+        {false, false, false, 0.0f, 1.0f, false}, {true, false, false, 0.0f, 1.0f, false},
+        {false, true, false, 0.0f, 1.0f, false},  {true, true, true, 0.0f, 1.0f, false},
+        {false, false, true, 0.0f, 1.0f, false},  {false, false, false, 1.5f, 1.0f, false},
+        {true, false, true, 2.0f, 1.0f, false},   {false, false, false, 0.0f, 0.6f, false},
+        {true, false, false, 0.0f, 1.0f, true},   {false, true, true, 1.0f, 0.7f, false},
+    };
+}
+
+C44Matrix ViewMatrix(uint32_t salt) {
+    const float t = 0.3f + salt * 0.1f;
+    return C44Matrix(std::cos(t), 0.0f, std::sin(t), 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, -std::sin(t), 0.0f, std::cos(t), 0.0f, 1.5f, -2.0f, 30.0f + salt, 1.0f);
+}
+
+struct DirectBuild {
+    std::vector<uint8_t> bytes;
+    uint32_t vertexCount;
+    uint32_t rendered;
+    CAaBox bounds;
+};
+
+// What CParticleEmitter2::Render + RenderParticles do in place for one emitter.
+DirectBuild BuildInPlace(CParticleEmitter2& e, const C44Matrix* frame, const C44Matrix& view, EGxVertexBufferFormat format, uint32_t count) {
+    e.m_worldBounds.b.x = e.m_worldBounds.b.y = e.m_worldBounds.b.z = 3.4028235e38f;
+    e.m_worldBounds.t.x = e.m_worldBounds.t.y = e.m_worldBounds.t.z = -3.4028235e38f;
+    DirectBuild out;
+    const uint32_t stride = GxVertexSize(format);
+    out.bytes.assign(static_cast<size_t>(count) * e.m_vertsPerParticle * stride, 0xCD);
+    e.RenderParticlesPrep(frame, view);
+    CParticleEmitter2::ParticleVertex vertex;
+    vertex.m_count = 0;
+    e.FillOutParticleVertex(out.bytes.data(), format, &vertex);
+    e.BuildParticleVertices(vertex, count, view.AffineInverse());
+    out.vertexCount = vertex.m_count;
+    out.rendered = e.m_renderedParticles;
+    out.bounds = e.m_worldBounds;
+    return out;
+}
+
+void TestPrebuild(uint32_t emitterCount, uint32_t helpers, bool rgbaColors, const char* label) {
+    g_testCaps[0x14] = rgbaColors ? 1 : 0;
+    const std::vector<RenderVariant> variants = RenderVariants();
+    const std::vector<Config> configs = BuildConfigs(emitterCount);
+    std::vector<EmitterPtr> emitters;
+
+    for (uint32_t i = 0; i < emitterCount; ++i) {
+        Config c = configs[i];
+        c.rate *= 4.0f;
+        emitters.push_back(MakeEmitter(c, i));
+        ConfigureForRender(*emitters.back(), variants[i % variants.size()], i);
+    }
+
+    const C3Vector eye(0.0f, 0.0f, 2.0f);
+    C44Matrix frame(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 3.0f, -2.0f, 0.5f, 1.0f);
+
+    for (uint32_t f = 0; f < 70; ++f) {
+        for (uint32_t i = 0; i < emitterCount; ++i) {
+            emitters[i]->Update(0.02f, FrameMatrix(f, i), eye, (i % 3 == 0) ? &frame : nullptr);
+        }
+    }
+
+    ThreadPool pool;
+    pool.helpers = helpers;
+    const void* scene = &pool;
+    const C44Matrix view = ViewMatrix(1);
+    std::vector<M2ParticleBuild::Item> items;
+    uint32_t particles = 0;
+
+    for (uint32_t i = 0; i < emitterCount; ++i) {
+        M2ParticleBuild::Item item;
+        item.emitter = emitters[i].get();
+        item.frameOfReference = (i % 3 == 0) ? &frame : nullptr;
+        items.push_back(item);
+        particles += emitters[i]->m_liveList.Count();
+    }
+
+    items.push_back(items[0]);  // an emitter listed twice must be built once
+
+    // Snapshot the emitters: Prebuild must not change them.
+    std::vector<CAaBox> boundsBefore;
+    std::vector<uint32_t> renderedBefore;
+    std::vector<C3Vector> axisBefore;
+    for (auto& e : emitters) {
+        boundsBefore.push_back(e->m_worldBounds);
+        renderedBefore.push_back(e->m_renderedParticles);
+        axisBefore.push_back(e->m_billboardAxis);
+    }
+
+    const uint32_t built = M2ParticleBuild::Prebuild(scene, items.data(), static_cast<uint32_t>(items.size()), view, &ThreadDispatch, &pool, true);
+    assert(built > 0 && built <= emitterCount);
+
+    for (uint32_t i = 0; i < emitterCount; ++i) {
+        assert(std::memcmp(&boundsBefore[i], &emitters[i]->m_worldBounds, sizeof(CAaBox)) == 0);
+        assert(renderedBefore[i] == emitters[i]->m_renderedParticles);
+        assert(SameVec(axisBefore[i], emitters[i]->m_billboardAxis));
+    }
+
+    uint32_t applied = 0;
+    uint32_t checked = 0;
+
+    for (uint32_t i = 0; i < emitterCount; ++i) {
+        CParticleEmitter2& e = *emitters[i];
+        const C44Matrix* fr = (i % 3 == 0) ? &frame : nullptr;
+        EGxVertexBufferFormat format;
+        uint32_t count;
+
+        if (!e.PlanVertexBuild(format, count)) {
+            continue;
+        }
+
+        // Reference: build in place, then restore the emitter so the prebuilt path starts from the same state.
+        const CAaBox keepBounds = e.m_worldBounds;
+        const uint32_t keepRendered = e.m_renderedParticles;
+        DirectBuild direct = BuildInPlace(e, fr, view, format, count);
+        e.m_worldBounds = keepBounds;
+        e.m_renderedParticles = keepRendered;
+
+        e.m_worldBounds.b.x = e.m_worldBounds.b.y = e.m_worldBounds.b.z = 3.4028235e38f;  // Render() resets before drawing
+        e.m_worldBounds.t.x = e.m_worldBounds.t.y = e.m_worldBounds.t.z = -3.4028235e38f;
+        std::vector<uint8_t> buffer(direct.bytes.size(), 0xCD);
+        CParticleEmitter2::ParticleVertex vertex;
+        vertex.m_count = 0;
+        const bool used = M2ParticleBuild::Apply(&e, fr, view, format, count, buffer.data(), vertex);
+        ++checked;
+
+        if (!used) {
+            // Allowed only if the emitter was not part of the prebuild (under the particle threshold, say).
+            continue;
+        }
+
+        ++applied;
+        assert(direct.vertexCount > 0 || variants[i % variants.size()].twinkle < 1.0f);  // the comparison is not of two empty builds
+        const size_t used_bytes = static_cast<size_t>(vertex.m_count) * GxVertexSize(format);
+        if (vertex.m_count != direct.vertexCount || e.m_renderedParticles != direct.rendered ||
+            std::memcmp(&e.m_worldBounds, &direct.bounds, sizeof(CAaBox)) != 0 ||
+            std::memcmp(buffer.data(), direct.bytes.data(), used_bytes) != 0) {
+            std::fprintf(stderr, "%s: emitter %u (variant %u) prebuilt block differs: vertices %u/%u rendered %u/%u\n", label, i,
+                         i % static_cast<uint32_t>(variants.size()), vertex.m_count, direct.vertexCount, e.m_renderedParticles, direct.rendered);
+            assert(false);
+        }
+
+        // Rejection rules: any change in what the draw sees sends it back to building in place, touching nothing.
+        std::vector<uint8_t> spare(buffer.size(), 0xEE);
+        CParticleEmitter2::ParticleVertex other;
+        other.m_count = 77;
+        assert(!M2ParticleBuild::Apply(&e, fr, ViewMatrix(2), format, count, spare.data(), other));          // another view
+        assert(!M2ParticleBuild::Apply(&e, (fr ? nullptr : &frame), view, format, count, spare.data(), other));  // another frame
+        assert(!M2ParticleBuild::Apply(&e, fr, view, format, count - 1, spare.data(), other));              // another count
+        assert(other.m_count == 77);
+        for (uint8_t b : spare) assert(b == 0xEE);
+    }
+
+    assert(applied > emitterCount / 2);  // most emitters have enough particles to have been prebuilt and used
+    M2ParticleBuild::Stats stats = M2ParticleBuild::GetStats();
+    assert(stats.applied >= applied && stats.rejected > 0);
+
+    // A changed emitter (one more update) no longer matches its block.
+    {
+        CParticleEmitter2& e = *emitters[1];
+        EGxVertexBufferFormat format;
+        uint32_t count;
+        assert(e.PlanVertexBuild(format, count));
+        e.Update(0.05f, FrameMatrix(99, 1), eye, nullptr);
+        std::vector<uint8_t> buf(static_cast<size_t>(count) * 4 * GxVertexSize(format), 0);
+        CParticleEmitter2::ParticleVertex vertex;
+        vertex.m_count = 0;
+        EGxVertexBufferFormat format2;
+        uint32_t count2;
+        e.PlanVertexBuild(format2, count2);
+        const bool used = M2ParticleBuild::Apply(&e, nullptr, view, format2, count2, buf.data(), vertex);
+        assert(!used || e.m_liveList.Count() == count);  // a block is used only when the live count still matches
+    }
+
+    // Forget (the destructor hook) drops the block; Clear drops the scene's.
+    {
+        CParticleEmitter2& e = *emitters[0];
+        EGxVertexBufferFormat format;
+        uint32_t count;
+        if (e.PlanVertexBuild(format, count)) {
+            M2ParticleBuild::Forget(&e);
+            std::vector<uint8_t> buf(static_cast<size_t>(count) * 4 * GxVertexSize(format));
+            CParticleEmitter2::ParticleVertex vertex;
+            assert(!M2ParticleBuild::Apply(&e, &frame, view, format, count, buf.data(), vertex));
+        }
+        M2ParticleBuild::Clear(scene);
+    }
+
+    std::printf("%s: %u emitters, %u live particles, %u blocks prebuilt, %u of %u applied bit-identical, rejections ok\n", label,
+                emitterCount, particles, built, applied, checked);
+}
+
+void TestPrebuildThreshold() {
+    // Below the particle threshold nothing is prebuilt and every draw builds in place.
+    M2ParticleBuild::ResetStats();
+    std::vector<EmitterPtr> few;
+    Config c = BuildConfigs(1)[0];
+    c.rate = 5.0f;
+    few.push_back(MakeEmitter(c, 0));
+    ConfigureForRender(*few[0], RenderVariants()[0], 0);
+    for (uint32_t f = 0; f < 5; ++f) few[0]->Update(0.02f, FrameMatrix(f, 0), C3Vector(0, 0, 2), nullptr);
+    M2ParticleBuild::Item item;
+    item.emitter = few[0].get();
+    item.frameOfReference = nullptr;
+    ThreadPool pool;
+    pool.helpers = 2;
+    assert(M2ParticleBuild::Prebuild(&pool, &item, 1, ViewMatrix(1), &ThreadDispatch, &pool, true) == 0);
+    EGxVertexBufferFormat format;
+    uint32_t count;
+    assert(few[0]->PlanVertexBuild(format, count));
+    std::vector<uint8_t> buf(static_cast<size_t>(count) * 4 * GxVertexSize(format));
+    CParticleEmitter2::ParticleVertex vertex;
+    assert(!M2ParticleBuild::Apply(few[0].get(), nullptr, ViewMatrix(1), format, count, buf.data(), vertex));
+    std::printf("prebuild threshold: ok\n");
+}
+
 // Informational (run with "bench"): the same emitter set updated serially and through the queue on helper threads.
 void Benchmark(uint32_t emitterCount, uint32_t helpers) {
     std::vector<Config> configs = BuildConfigs(emitterCount);
@@ -384,6 +655,9 @@ int main(int argc, char** argv) {
     }
 
     TestRules();
+    TestPrebuildThreshold();
+    TestPrebuild(30, 3, false, "prebuild, argb colors, 3 helpers");
+    TestPrebuild(45, 5, true, "prebuild, rgba colors, 5 helpers");
     TestEquivalence(24, 3, true, "parallel, 3 helpers");
     TestEquivalence(40, 5, true, "parallel, 5 helpers");
     TestEquivalence(24, 3, false, "threads not allowed (serial queue)");

@@ -149,11 +149,20 @@ class CParticleEmitter2 {
     static CGxPool* s_indexPool;
     static uint32_t s_initCount;
     static uint8_t s_noIndexBuffer;
-    static CSortableParticleQueue s_pq;
+    // Per thread: BuildParticleVertices may run on the worker threads (see Model2/M2ParticleBuild.h), and it sorts
+    // through this queue.
+    static thread_local CSortableParticleQueue s_pq;
     static float s_rndTable[128];
     // Set at the top of Update() and read by EmitNewParticles() in the same call, so each thread keeps its own:
     // emitters may update on the model worker threads (see Model2/M2ParticleJobs.h).
     static thread_local float s_viewDist;
+
+    // The output of one vertex build, kept apart from the emitter so it can be built early and applied at draw time.
+    struct VertexBlock {
+        uint32_t vertexCount;
+        uint32_t renderedParticles;
+        CAaBox bounds;
+    };
 
     static void Destroy();
     static void Init();
@@ -254,6 +263,14 @@ class CParticleEmitter2 {
     // True when Update() touches only this emitter's own state (no particle models, no terrain projection callback),
     // here and in every child emitter, so it may run on a worker thread.
     bool CanUpdateOffThread() const;
+    // Main thread: whether RenderParticles() would build vertices now, and the vertex format and particle count it
+    // would use. False when particle rendering is off, the texture is not ready or nothing is live.
+    bool PlanVertexBuild(EGxVertexBufferFormat& format, uint32_t& count);
+    // Any thread, one thread per emitter: builds the vertices RenderParticles() would build for this view into
+    // `buffer` (laid out as the vertex format says) and returns the result in `out`. Leaves the emitter's own bounds,
+    // rendered count and billboard axis as they were; ApplyVertexBlock() sets them at draw time.
+    void BuildVertexBlock(const C44Matrix* frameOfReference, const C44Matrix& view, EGxVertexBufferFormat format, uint32_t count, void* buffer, VertexBlock& out);
+    void ApplyVertexBlock(const VertexBlock& block);
     void InternalUpdate(float deltaTime, int32_t child);
     void InterpolateAllTracks(const CParticle2& particle, CImVector* color, C2Vector* scale, int32_t* headCell, int32_t* tailCell);
     void InterpolateAllTracksSimple(const CParticle2& particle, CImVector* color, C2Vector* scale, int32_t* headCell, int32_t* tailCell);

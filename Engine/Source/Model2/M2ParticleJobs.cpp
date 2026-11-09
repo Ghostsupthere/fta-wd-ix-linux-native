@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <vector>
 
+#include "Engine/Source/Model2/M2ParticleBuild.h"
 #include "Engine/Source/Services/ParticleSystem2.h"
 
 // All queue state belongs to the main thread: Begin, Defer and End are called from CM2Scene::Animate and the
@@ -285,6 +286,8 @@ void NoteAnimate(uint32_t rootModels, uint32_t workerCount, bool animationUsedWo
                  g_timing.longestJobNs.load() * ms, liveQueued, liveInPlace,
                  static_cast<unsigned long long>(frames ? g_timing.inlineCount / frames : 0),
                  g_timing.passWallNs * ms * perFrame, g_timing.boneNs * ms * perFrame);
+
+    M2ParticleBuild::LogAndReset(frames);
 
     last = now;
     frames = 0;

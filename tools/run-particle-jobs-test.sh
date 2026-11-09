@@ -29,7 +29,7 @@ defs=(-DDISABLE_SIGNATURE_CHECKS=1 -DWOWDECOMP_ARCH_64=1 -DWOWDECOMP_LINUX=1 -DW
 flags=("-I$root" "-I$root/build/linux/generated" "-I$root/ThirdParty/freetype/include" -O1 -g -std=gnu++17 -fpermissive -w -fno-strict-aliasing)
 
 pids=()
-for source in Engine/Source/Services/ParticleSystem2.cpp Engine/Source/Model2/M2ParticleJobs.cpp tests/wxl_particle_jobs_test.cpp tests/wxl_particle_jobs_stubs.cpp; do
+for source in Engine/Source/Services/ParticleSystem2.cpp Engine/Source/Model2/M2ParticleJobs.cpp Engine/Source/Model2/M2ParticleBuild.cpp tests/wxl_particle_jobs_test.cpp tests/wxl_particle_jobs_stubs.cpp; do
     g++ "${defs[@]}" "${flags[@]}" "${san[@]}" -c "$root/$source" -o "$work/$(basename "$source").o" &
     pids+=($!)
 done

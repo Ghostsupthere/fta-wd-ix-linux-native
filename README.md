@@ -51,6 +51,7 @@ environment variable of the same name, which wins. Missing keys use the built-in
 | `WXL_UNIT_OVERLAYS` | Target outline, facing chevrons, danger guides | off |
 | `WXL_TREE_WIND` | Not ported (stays off) | off |
 | `WXL_PARTICLE_THREADS` | Run particle emitter updates on the model worker threads (needs the `M2UseThreads` option); `0` updates them one by one on the main thread, as the original does | on |
+| `WXL_PARTICLE_BUILD_THREADS` | Build particle vertices ahead of drawing on the model worker threads; `0` builds them during each draw call, as the original does | on |
 
 ## What the client includes
 
