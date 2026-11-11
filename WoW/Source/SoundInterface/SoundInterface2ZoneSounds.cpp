@@ -467,7 +467,9 @@ int32_t SI2::PlaySoundFile(const char* filename, int32_t group) {
     SESound localSound;
     SESound* sound = group == 5 ? &s_scriptMusic.m_sound : &localSound;
 
-    sound->Create2D(filename, group != 4, nullptr, nullptr, false, false, 0, group != 5 ? 128 : 100, 0xFFFFFFFF);
+    // The last argument is the stream decode buffer size in samples; 0 is FMOD's default. 0xFFFFFFFF made FMOD decode the
+    // whole file at once, so a looping script music track (PlayMusic) ended after ~150 ms and the login music stayed silent.
+    sound->Create2D(filename, group != 4, nullptr, nullptr, false, false, 0, group != 5 ? 128 : 100, 0);
     sound->SetChannelGroup(SI2::s_channelGroupNames[group], true);
 
     SI2SoundUserData* userData = new (SMemAlloc(sizeof(SI2SoundUserData), __FILE__, __LINE__, 0)) SI2SoundUserData();
