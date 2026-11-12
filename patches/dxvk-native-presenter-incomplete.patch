@@ -1,0 +1,72 @@
+diff --git a/src/dxvk/dxvk_presenter.cpp b/src/dxvk/dxvk_presenter.cpp
+index f93ae8d..013120c 100644
+--- a/src/dxvk/dxvk_presenter.cpp
++++ b/src/dxvk/dxvk_presenter.cpp
+@@ -889,6 +889,20 @@ namespace dxvk {
+ 
+ 
+   VkResult Presenter::getSupportedFormats(std::vector<VkSurfaceFormatKHR>& formats) const {
++    // The surface can change between the count and data queries (for example
++    // while the window manager is still resizing the window), which makes the
++    // second call return VK_INCOMPLETE. Retry instead of failing swap chain
++    // creation; only give up if the surface keeps changing.
++    VkResult status = VK_INCOMPLETE;
++
++    for (uint32_t attempt = 0; attempt < 8u && status == VK_INCOMPLETE; attempt++)
++      status = getSupportedFormatsOnce(formats, attempt + 1u == 8u);
++
++    return status;
++  }
++
++
++  VkResult Presenter::getSupportedFormatsOnce(std::vector<VkSurfaceFormatKHR>& formats, bool logFailure) const {
+     uint32_t numFormats = 0;
+ 
+     VkSurfaceFullScreenExclusiveInfoEXT fullScreenInfo = { VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT };
+@@ -908,7 +922,8 @@ namespace dxvk {
+     }
+ 
+     if (status != VK_SUCCESS) {
+-      Logger::err(str::format("Presenter: Failed to query surface formats: ", status));
++      if (logFailure || status != VK_INCOMPLETE)
++        Logger::err(str::format("Presenter: Failed to query surface formats: ", status));
+       return status;
+     }
+     
+@@ -928,7 +943,7 @@ namespace dxvk {
+         m_device->adapter()->handle(), m_surface, &numFormats, formats.data());
+     }
+ 
+-    if (status != VK_SUCCESS)
++    if (status != VK_SUCCESS && (logFailure || status != VK_INCOMPLETE))
+       Logger::err(str::format("Presenter: Failed to query surface formats: ", status));
+ 
+     return status;
+@@ -1383,7 +1398,9 @@ namespace dxvk {
+     // chain and move on. An alternative would be to handle errors in a
+     // loop, however this may also not be desireable since it could stall
+     // the app indefinitely in case the surface is in a weird state.
+-    if (vr == VK_ERROR_SURFACE_LOST_KHR || vr == VK_ERROR_OUT_OF_DATE_KHR)
++    // VK_INCOMPLETE is a positive status, so callers that only test for
++    // negative results would otherwise treat it as an acquired image.
++    if (vr == VK_ERROR_SURFACE_LOST_KHR || vr == VK_ERROR_OUT_OF_DATE_KHR || vr == VK_INCOMPLETE)
+       return VK_NOT_READY;
+ 
+     return vr;
+diff --git a/src/dxvk/dxvk_presenter.h b/src/dxvk/dxvk_presenter.h
+index f4b8a0c..6bde51d 100644
+--- a/src/dxvk/dxvk_presenter.h
++++ b/src/dxvk/dxvk_presenter.h
+@@ -342,7 +342,11 @@ namespace dxvk {
+ 
+     VkResult getSupportedFormats(
+             std::vector<VkSurfaceFormatKHR>& formats) const;
+-    
++
++    VkResult getSupportedFormatsOnce(
++            std::vector<VkSurfaceFormatKHR>& formats,
++            bool                             logFailure) const;
++
+     VkResult getSupportedPresentModes(
+             std::vector<VkPresentModeKHR>& modes) const;
+     

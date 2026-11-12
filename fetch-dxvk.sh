@@ -37,6 +37,18 @@ else
     exit 1
 fi
 
+# Presenter robustness: retry a surface-format query that races with a window
+# resize (VK_INCOMPLETE) and never hand that status to D3D9 as an acquired image.
+PRESENTER_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/dxvk-native-presenter-incomplete.patch"
+if git -C "$DXVK_DIR" apply --reverse --check "$PRESENTER_PATCH" 2>/dev/null; then
+    : # Already applied.
+elif git -C "$DXVK_DIR" apply --check "$PRESENTER_PATCH"; then
+    git -C "$DXVK_DIR" apply "$PRESENTER_PATCH"
+else
+    echo "fetch-dxvk: presenter VK_INCOMPLETE patch does not match this DXVK checkout" >&2
+    exit 1
+fi
+
 # Build deps come from nix so the script is self-contained; if meson/ninja are
 # already on PATH this still works (nix-shell just re-provides them).
 run() {
