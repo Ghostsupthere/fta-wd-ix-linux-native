@@ -9,6 +9,7 @@
 #include "WoW/Source/DB/Rec/SpellVisualKitRec.h"
 #include "WoW/Source/Magic/MagicClient/SpellVisuals.h"
 #include "WoW/Source/Magic/MagicClient/Spell_C.h"
+#include "WoW/Source/Object/ObjectClient/UnitSound_C.h"
 #include "WoW/Source/Object/ObjectClient/Effect_C.h"
 #include "WoW/Source/Object/ObjectClient/Object_C.h"
 #include "WoW/Source/Object/ObjectClient/Player_C.h"
@@ -608,7 +609,9 @@ void CGUnit_C::HandleCombatAnimEvent(uint32_t eventId, uint32_t data, const C3Ve
                 } else {
                     CreatureSoundDataRec* soundData = this->GetSoundData();
 
-                    if (soundData) {
+                    // The Murloc model fires $CAH inside its Run animation, so this exertion kit (MurlocAttack) plays on every stride of a
+                    // Murloc that is not a player (alt bots); WXL_MUTE_MURLOC_VOICE silences it.
+                    if (soundData && !MurlocVoiceMuted(this)) {
                         SI2::PlaySoundKit(soundData->m_soundExertionID, position, nullptr, nullptr, 0, nullptr, 0, 0);
                     }
                 }

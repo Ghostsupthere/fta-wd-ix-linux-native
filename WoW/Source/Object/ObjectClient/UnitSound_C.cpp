@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "UnitSound_C.h"
 #include "Engine/Source/ConsoleBase/ConsoleVar.h"
 #include "Engine/Source/Model2/M2Model.h"
@@ -16,6 +17,9 @@
 #include "WoW/Source/Ui/GameUI.h"
 #include "WoW/Source/WorldClient/FrameTime.h"
 #include "WoW/Source/WorldClient/World.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
+#endif
 
 // STATIC: 0x00ADB5D8
 static const uint32_t s_unitSoundChance[NUM_UNITSOUNDTYPES] = { 70, 100, 60, 100, 100, 40, 100, 100, 100, 100, 100, 100, 100, 0 };
@@ -34,6 +38,31 @@ static const float s_attachmentHeights[50] = { 1.0f, 1.0f, 1.0f, 1.5f, 1.5f, 1.8
 
 // STATIC: 0x00ADB674
 static float s_emoteSoundHeight = 2.0f;
+
+// Custom Murloc race (id 31): every Murloc unit, players and alt bots alike, uses CreatureModelData 2000001. The model fires $CAH
+// inside its Run animation and the client answers that with the "MurlocAttack" exertion kit (see UnitCombat_C.cpp), so a Murloc alt
+// bot "mrgls" on every stride. Some players like that and some do not, so the Linux client can silence the Murloc voices
+// (WXL_MUTE_MURLOC_VOICE, launcher: Models and gameplay). Read once per run, like the other WXL_ switches.
+bool MurlocVoiceMuted(const CGUnit_C* unit) {
+#if defined(WOWDECOMP_LINUX)
+    static const bool s_muteVoice = WxlProfileEnabled("WXL_MUTE_MURLOC_VOICE", false);
+
+    if (!s_muteVoice || !unit || !unit->m_modelData || unit->m_modelData->m_id != 2000001) {
+        return false;
+    }
+
+    static bool s_logged = false;
+    if (!s_logged) {
+        s_logged = true;
+        std::fprintf(stderr, "WarcraftXL: Murloc voice muted\n");
+    }
+
+    return true;
+#else
+    (void)unit;
+    return false;
+#endif
+}
 
 // INLINED
 inline DEATTHUDSOUNDINFO::DEATTHUDSOUNDINFO() : m_soundEntryId(0), m_soundEntryIdWater(0) {
@@ -155,7 +184,7 @@ int32_t CheckUnitSoundTimer(UNITSOUNDTYPE soundType) {
 void CGUnit_C::PlayFidgetSound(uint32_t index) {
     CreatureSoundDataRec* soundData = this->GetSoundData();
 
-    if (!soundData || index >= 5) {
+    if (!soundData || index >= 5 || MurlocVoiceMuted(this)) {
         return;
     }
 
@@ -265,6 +294,10 @@ void CGUnit_C::HandleFootfallAnimEvent(const C3Vector& position) {
 // VERIFY: 63312a72 manual
 // OFFSET: 0x00747310
 void CGUnit_C::PlayUnitSound(UNITSOUNDTYPE soundType, int32_t force) {
+    if (MurlocVoiceMuted(this)) {
+        return;
+    }
+
     if (!force && static_cast<uint32_t>((static_cast<uint64_t>(CRandom::uint32_(g_rndSeed)) * 101) >> 32) > s_unitSoundChance[soundType]) {
         return;
     }

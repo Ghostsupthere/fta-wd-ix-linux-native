@@ -19,4 +19,9 @@ void UnitSoundShutdown();
 int32_t GetSoundID(const CreatureSoundDataRec* soundData, UNITSOUNDTYPE soundType);
 int32_t CheckUnitSoundTimer(UNITSOUNDTYPE soundType);
 
+class CGUnit_C;
+// Linux client switch WXL_MUTE_MURLOC_VOICE: true when this unit uses the Murloc race model (CreatureModelData 2000001, also every
+// NPCBots alt-bot display) and the switch is on. Always false elsewhere.
+bool MurlocVoiceMuted(const CGUnit_C* unit);
+
 #endif
