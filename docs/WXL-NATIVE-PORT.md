@@ -1355,3 +1355,56 @@ This is stock engine code, so the Windows client very likely has the same fault.
 
 **Also added.** `WXL_SHADOW_CASTERS=<hex mask>` limits what casts into the shadow map (1 units, 2 other entities, 4 building
 groups, 8 terrain doodads; default F) to find where a shadow comes from.
+
+## Quit-time crash and hung window (2026-11-14)
+
+**Symptom.** After a long session the client hung on quit and had to be killed, and `Errors/*Crash.txt` stayed empty.
+`coredumpctl` showed seven Wow64 cores (SIGABRT with `si_code SI_USER`, i.e. killed from outside), the first on 2026-11-12.
+
+**Two separate defects.**
+
+1. *The hang.* `ExceptionFilterLinux` wrote its report with stdio. The fault was raised inside `free()`, the handler's
+   `fputs` called `malloc` on the same thread, and glibc's arena lock is not recursive, so the handler waited for itself
+   forever. The handler now arms `alarm(6)` first, writes a short report with async-signal-safe calls only (`write`,
+   `backtrace_symbols_fd`, primed at startup) to stderr, which lands in `Logs/native-launch-*.log`, and then runs the old full
+   report; `SIGALRM` ends the process with `_exit(139)` if that stalls. Reproduced and verified in a stand-alone test.
+2. *The crash.* Heap corruption found while `BeginCloseGame` tore the graphics device down
+   (`ConsoleDeviceDestroy -> GxDevDestroy -> IDestroyD3d -> ITexForceRecreation`). The faulting callback was
+   `CCharacterComponent::UpdateBaseTexture`, the GX texture callback of a character skin, running on a component that was
+   already freed: its `GxTex_Recreate` branch writes component fields (`SetTexturesDirty`, `SetDirtySections`), which is where
+   the stale writes into freed chunks came from. `CCharacterComponent::Destroy()` releases the component heap, but components
+   that never went through `FreeComponent` (46 in one session) kept their texture callback.
+
+**Fix.** `CharacterComponent.cpp` keeps a list of live components (`s_liveComponents`, added in `AllocComponent`, removed in
+`FreeComponent`). `Destroy()` clears `m_userArg` on their skin textures and logs
+`WarcraftXL: N character component(s) still alive at shutdown; detaching their skin textures`. `UpdateBaseTexture` returns for
+a null component and `ITexForceRecreation` skips a texture without a callback. Confirmed in a play session: clean quit, no report.
+The stock engine has the same ordering, so the Windows client probably writes to freed memory here too.
+
+**Heap checker (off by default).** `WXL_HEAP_CHECK=1` (a launcher switch under Settings > Debugging, or a line in
+`FTA-Linux/debug.env`) makes every `SMemAlloc`, `operator new` and FMOD allocation carry a 48-byte header and a 16-byte
+redzone. A block whose redzone was written is reported when freed (`HEAP OVERFLOW`); freed blocks are filled with 0xDD and
+held in a 256 MB quarantine, and one whose fill changed is reported when it leaves it (`USE AFTER FREE`); double frees and
+pointers without a header (`DOUBLE FREE`, `BAD FREE`) are reported instead of corrupting the heap. Lines start with
+`WXL_HEAP_CHECK:` and name the allocating call site as module+offset (symbolize with `addr2line -f -C -e bin/Linux/Wow64`
+against the same build). It is slow and uses more memory; it is for tracking down corruption, not for play. One `BAD FREE`
+at shutdown is expected: `SErrDestroy` frees `TSListWinHeap<HANDLER>` nodes through `SMemFree`.
+
+**Reading a core.** `gdb` with `set sysroot <client>/FTA-Linux/lib` and the installed `Wow64` symbolizes the libc frames; the
+Wow64 frames need the unstripped build from the same compile (`addr2line` on `bin/Linux/Wow64`).
+
+## Windows 64-bit format specifiers on glibc (2026-11-14)
+
+**Symptom.** A guild achievement showed as
+`[Whitegill] has earned the achievement [Professional Journeyman]16I64X:1:11:14:26:4294967295:...`. The server was not at fault.
+
+**Cause.** The client formats 64-bit values with the Windows spelling `%016I64X` / `%I64d` (achievement links in
+`Tooltip.cpp`, trade-skill links, `AchievementInfo`). glibc does not know `I64`: `printf` prints the whole specifier literally
+(`%016I64X`) into the hyperlink, which breaks it, and Lua's `format` on that text raised ElvUI's "invalid option in `format'".
+The matching `sscanf("%I64X")` calls were wrong too, storing a width-64 hex number into 32 bits (guild bank money, auction and
+mail bodies, trade-skill and achievement link parsing).
+
+**Fix.** `soprintf.cpp` `FixUpLongLongFormatSpecifier` rewrites `I64` to `ll` on non-MSVC builds (the ordered path), `SStr.cpp`
+`ISStrVPrintf` does the same for the plain path (`NativeFormat`), and the eight `sscanf` formats use `%llX`. `DebugLog` and
+`SysMsgVPrintf` still use plain `vsnprintf` (logging only). Verified on the compiled `soprintf.cpp.o` in a stand-alone harness;
+the achievement message itself still needs a look in game.
