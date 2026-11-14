@@ -10,6 +10,10 @@
 #include <new>
 #include <typeinfo>
 #if defined(WOWDECOMP_LINUX)
+#include <mutex>
+#include <vector>
+#endif
+#if defined(WOWDECOMP_LINUX)
 #include <strings.h>
 #endif
 #if defined(_MSC_VER)
@@ -200,6 +204,16 @@ CCharacterComponent* CCharacterComponent::m_activePlayerComponent;
 
 // STATIC: 0x00B6B880
 static uint32_t* s_componentHeap;
+
+#if defined(WOWDECOMP_LINUX)
+// Every live CCharacterComponent. Each one is the user argument of a GX texture callback (UpdateBaseTexture), and
+// CCharacterComponent::Destroy() releases the component heap at shutdown. A component that is still alive then (it never
+// went through FreeComponent) leaves its skin texture pointing at freed memory, and the later device teardown
+// (ITexForceRecreation -> GxTex_Recreate) writes into that freed block: the heap corruption behind the quit-time crash
+// of 2026-11-13/14. Destroy() uses this list to detach those textures first.
+static std::mutex s_liveComponentsLock;
+static std::vector<CCharacterComponent*> s_liveComponents;
+#endif
 
 // STATIC: 0x00B6B884
 int32_t CCharacterComponent::s_bInRenderPrep;
@@ -4509,6 +4523,12 @@ CCharacterComponent::~CCharacterComponent() {
 void CCharacterComponent::UpdateBaseTexture(EGxTexCommand command, uint32_t width, uint32_t height, uint32_t face, uint32_t level, void* userArg, uint32_t& texelStrideInBytes, const void*& texels) {
     CCharacterComponent* component = static_cast<CCharacterComponent*>(userArg);
 
+#if defined(WOWDECOMP_LINUX)
+    if (!component) {
+        return;   // detached at shutdown (see s_liveComponents)
+    }
+#endif
+
     switch (command) {
         case GxTex_Lock:
             if (!CCharacterComponent::s_bInRenderPrep) {
@@ -5030,6 +5050,12 @@ CCharacterComponent* CCharacterComponent::AllocComponent() {
 
     CCharacterComponent* component = new (object) CCharacterComponent();
     component->m_heapIndex = memHandle;
+#if defined(WOWDECOMP_LINUX)
+    {
+        std::lock_guard<std::mutex> lock(s_liveComponentsLock);
+        s_liveComponents.push_back(component);
+    }
+#endif
 
     return component;
 }
@@ -5448,6 +5474,12 @@ void CCharacterComponent::FreeComponent(CCharacterComponent* component) {
 #if defined(WOWDECOMP_LINUX)
     WxlCreationSceneDestroy(component);
 #endif
+#if defined(WOWDECOMP_LINUX)
+    {
+        std::lock_guard<std::mutex> lock(s_liveComponentsLock);
+        s_liveComponents.erase(std::remove(s_liveComponents.begin(), s_liveComponents.end(), component), s_liveComponents.end());
+    }
+#endif
     uint32_t* heap = s_componentHeap;
     component->~CCharacterComponent();
     ObjectFree(*heap, component->m_heapIndex);
@@ -5794,6 +5826,28 @@ bool CCharacterComponent::Destroy() {
     if (CCharacterComponent::s_bComponentThread) {
         CCharacterComponent::ThreadDestroy();
     }
+
+#if defined(WOWDECOMP_LINUX)
+    {
+        std::lock_guard<std::mutex> lock(s_liveComponentsLock);
+
+        if (!s_liveComponents.empty()) {
+            fprintf(stderr, "WarcraftXL: %zu character component(s) still alive at shutdown; detaching their skin textures\n", s_liveComponents.size());
+
+            for (CCharacterComponent* component : s_liveComponents) {
+                if (component->m_baseSkinTexture) {
+                    CGxTex* gxTex = TextureGetGxTex(component->m_baseSkinTexture, 1, nullptr);
+
+                    if (gxTex) {
+                        gxTex->m_userArg = nullptr;
+                    }
+                }
+            }
+
+            s_liveComponents.clear();
+        }
+    }
+#endif
 
     if (CCharacterComponent::s_textureBuffer) {
         TextureFreeMippedImg(CCharacterComponent::s_textureBuffer, PIXEL_ARGB8888, s_textureSize, s_textureSize);
