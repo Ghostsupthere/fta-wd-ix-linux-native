@@ -571,15 +571,15 @@ static int32_t Script_GetInboxInvoiceInfo(lua_State* L) {
 
     switch (message->m_invoiceType) {
         case 2:
-            sscanf(message->m_body, "%16I64X:%d:%d:%d:%d", &player.m_guid, &bid, &buyout, &deposit, &consignment);
+            sscanf(message->m_body, "%16llX:%d:%d:%d:%d", &player.m_guid, &bid, &buyout, &deposit, &consignment);
             break;
 
         case 6:
-            sscanf(message->m_body, "%16I64X:%d:%d:%d:%d:%d:%d", &player.m_guid, &bid, &buyout, &deposit, &consignment, &moneyDelay, &etaTime);
+            sscanf(message->m_body, "%16llX:%d:%d:%d:%d:%d:%d", &player.m_guid, &bid, &buyout, &deposit, &consignment, &moneyDelay, &etaTime);
             break;
 
         case 1:
-            sscanf(message->m_body, "%16I64X:%d:%d", &player.m_guid, &bid, &buyout);
+            sscanf(message->m_body, "%16llX:%d:%d", &player.m_guid, &bid, &buyout);
             break;
     }
 

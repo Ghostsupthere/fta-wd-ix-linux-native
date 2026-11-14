@@ -656,7 +656,7 @@ static int32_t Script_SetHyperlink(lua_State* L) {
 
         if (field) {
             field++;
-            sscanf(field, "%I64X:", &guid.m_guid);
+            sscanf(field, "%llX:", &guid.m_guid);
         }
 
         if ((field = SStrChr(field, ':')) != nullptr) {

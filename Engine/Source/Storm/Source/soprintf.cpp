@@ -121,12 +121,23 @@ static int32_t ParseFormatSpecifier(const char** format, ArgumentSize* size, int
 // VERIFY: 7c8d9894 manual
 // OFFSET: 0x00773E10
 static void FixUpLongLongFormatSpecifier(char* specifier) {
+#if defined(_MSC_VER)
     char* ll = strstr(specifier, "ll");
 
     if (ll) {
         memmove(ll + 3, ll + 2, strlen(ll) - 1);
         memcpy(ll, "I64", 3);
     }
+#else
+    // The client's format strings use the Windows spelling (%016I64X). glibc does not know "I64" and prints the
+    // whole specifier literally (an achievement link came out as "...%016I64X..."), so spell it "ll" here.
+    char* i64 = strstr(specifier, "I64");
+
+    if (i64) {
+        memcpy(i64, "ll", 2);
+        memmove(i64 + 2, i64 + 3, strlen(i64 + 3) + 1);
+    }
+#endif
 }
 
 // VERIFY: 33f0aefe manual

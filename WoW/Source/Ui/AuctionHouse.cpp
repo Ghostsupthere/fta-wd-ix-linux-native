@@ -1459,7 +1459,7 @@ int32_t Packet_SMSG_AUCTION_LIST_PENDING_SALES(void* param, NETMESSAGE msgId, ui
         int32_t buyout = 0;
         int32_t deposit = 0;
         int32_t consignment = 0;
-        sscanf(body, "%16I64X:%d:%d:%d:%d", &buyer, &bid, &buyout, &deposit, &consignment);
+        sscanf(body, "%16llX:%d:%d:%d:%d", &buyer, &bid, &buyout, &deposit, &consignment);
 
         CGAuctionHouse::m_ownerList.SetCount(index + 1);
 

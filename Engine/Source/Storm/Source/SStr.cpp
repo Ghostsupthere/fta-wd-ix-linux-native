@@ -591,10 +591,40 @@ size_t STORMAPI SStrPack(char* dest, const char* source, size_t destsize) {
 
 // VERIFY: 98987d37 manual
 // OFFSET: 0x0076F010
+#if !defined(_MSC_VER)
+// Copies a printf format, spelling the Windows 64-bit length modifier "I64" as "ll" (see soprintf.cpp). The result is
+// never longer than the input. Returns the input itself when there is nothing to change.
+static const char* NativeFormat(const char* format, char* scratch, size_t scratchSize) {
+    if (!strstr(format, "I64") || strlen(format) >= scratchSize) {
+        return format;
+    }
+
+    char* out = scratch;
+
+    while (*format) {
+        if (format[0] == 'I' && format[1] == '6' && format[2] == '4') {
+            *out++ = 'l';
+            *out++ = 'l';
+            format += 3;
+        } else {
+            *out++ = *format++;
+        }
+    }
+
+    *out = 0;
+    return scratch;
+}
+#endif
+
 static size_t ISStrVPrintf(char* dest, size_t maxchars, const char* format, va_list arglist) {
     if (!maxchars) {
         return 0;
     }
+
+#if !defined(_MSC_VER)
+    char nativeFormat[4096];
+    format = NativeFormat(format, nativeFormat, sizeof(nativeFormat));
+#endif
 
     if (maxchars == STORM_MAX_STR) {
         if (g_opt.orderedprintfenabled) {

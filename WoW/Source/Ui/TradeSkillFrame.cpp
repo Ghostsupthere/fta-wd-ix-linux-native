@@ -1414,7 +1414,7 @@ void CGTradeSkillInfo::SetLink(const char* link) {
     int32_t skillRank = 0;
     int32_t skillMaxRank = 0;
     WOWGUID guid = WOWGUID();
-    sscanf(data, "%d:%d:%I64X:", &skillRank, &skillMaxRank, &guid.m_guid);
+    sscanf(data, "%d:%d:%llX:", &skillRank, &skillMaxRank, &guid.m_guid);
 
     if (!guid.m_guid) {
         return;

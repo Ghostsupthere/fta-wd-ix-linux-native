@@ -12016,7 +12016,7 @@ int32_t Packet_SMSG_GUILD_EVENT(void* param, NETMESSAGE msgId, uint32_t time, CD
 
         case GUILD_EVENT_BANK_MONEY_SET: {
             uint64_t money;
-            sscanf(strings[0], "%016I64X", &money);
+            sscanf(strings[0], "%016llX", &money);
             CGGuildBankInfo::m_money = money;
             CDataStore query;
             query.Put(static_cast<uint32_t>(MSG_GUILD_BANK_MONEY_WITHDRAWN));
