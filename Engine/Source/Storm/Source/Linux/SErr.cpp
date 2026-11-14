@@ -17,6 +17,9 @@
 #endif
 #include <pthread.h>
 #include <ucontext.h>
+#if defined(__linux__)
+#include <execinfo.h>
+#endif
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
@@ -615,7 +618,78 @@ void STORMAPI SErrReportNamedResourceLeak(const char* handlename, const char* re
     }
 }
 
+// ---------------------------------------------------------------------------
+// Crash-handler hang guard.
+//
+// A fatal signal often arrives from inside malloc/free (heap corruption is
+// detected there). The full report below -- SErrDisplayError -- formats text
+// with stdio and takes locks, i.e. it calls malloc again on the very thread
+// that is already inside it. glibc's arena lock is not recursive, so the
+// handler then waits for itself forever: the window never closes, the crash
+// log stays empty, and the process has to be killed from outside (every
+// Wow64 core dump from 2026-11-12/13 shows exactly this: __lll_lock_wait in
+// malloc called from WriteLine called from ExceptionFilterLinux).
+//
+// So the handler first writes a short report using only async-signal-safe
+// calls, then arms a watchdog: if the full report has not finished within a
+// few seconds, SIGALRM ends the process with _exit().
+// ---------------------------------------------------------------------------
+static void SafeWrite(const char* text) {
+    size_t length = strlen(text);
+
+    while (length) {
+        ssize_t n = write(STDERR_FILENO, text, length);
+
+        if (n <= 0) {
+            break;
+        }
+
+        text += n;
+        length -= static_cast<size_t>(n);
+    }
+}
+
+static void SafeWriteHex(unsigned long long value) {
+    char digits[2 + 16 + 1];
+    int pos = sizeof(digits) - 1;
+    digits[pos] = 0;
+
+    do {
+        digits[--pos] = "0123456789abcdef"[value & 0xF];
+        value >>= 4;
+    } while (value && pos > 2);
+
+    digits[--pos] = 'x';
+    digits[--pos] = '0';
+    SafeWrite(&digits[pos]);
+}
+
+static void CrashWatchdog(int) {
+    SafeWrite("\nCrash report did not finish (the process was stuck inside the heap); exiting.\n");
+    _exit(139);
+}
+
+static void SafeCrashNote(int signal, const siginfo_t* info, void* faultPc) {
+    SafeWrite("\n*** Wow64 fatal signal ");
+    SafeWriteHex(static_cast<unsigned long long>(signal));
+    SafeWrite(" at address ");
+    SafeWriteHex(reinterpret_cast<uintptr_t>(info ? info->si_addr : nullptr));
+    SafeWrite(", instruction ");
+    SafeWriteHex(reinterpret_cast<uintptr_t>(faultPc));
+    SafeWrite("\n");
+#if defined(__linux__)
+    // backtrace() is primed in SErrCatchUnhandledExceptions so it does not allocate here.
+    void* frames[48];
+    int count = backtrace(frames, 48);
+    SafeWrite("Backtrace (module+offset; symbolize with addr2line against the same build):\n");
+    backtrace_symbols_fd(frames, count, STDERR_FILENO);
+    SafeWrite("*** end of short crash report\n");
+#endif
+}
+
 static void ExceptionFilterLinux(int signal, siginfo_t* info, void* context) {
+    alarm(6);   // watchdog first: nothing below may be allowed to hang the process (see the guard comment above)
+
     EXCEPTION_POINTERS exceptionpointers;
     exceptionpointers.ExceptionRecord = info;
     exceptionpointers.ContextRecord = static_cast<CONTEXT*>(context);
@@ -669,6 +743,9 @@ static void ExceptionFilterLinux(int signal, siginfo_t* info, void* context) {
         SStrPrintf(message, sizeof(message), GetErrorString(SERR_STR_ACCESS_VIOLATION), faultPc, info->si_addr,
             GetErrorString(written ? SERR_STR_WRITTEN : SERR_STR_READ));
     }
+
+    // Short report first, then the watchdog, then the full report (see the guard comment above).
+    SafeCrashNote(signal, info, faultPc);
 
     SErrDisplayError(STORM_ERROR_FATAL, buffer, SLOG_EXCEPTION, message, 0, 1, 0x11111111);
     raise(signal);
@@ -730,6 +807,19 @@ void STORMAPI SErrCatchUnhandledExceptions() {
     for (int signal : { SIGSEGV, SIGBUS, SIGILL, SIGFPE }) {
         sigaction(signal, &action, nullptr);
     }
+
+    // The hang guard: SIGALRM only ever arrives from the alarm() armed inside the crash handler.
+    struct sigaction watchdog;
+    memset(&watchdog, 0, sizeof(watchdog));
+    watchdog.sa_handler = CrashWatchdog;
+    sigemptyset(&watchdog.sa_mask);
+    sigaction(SIGALRM, &watchdog, nullptr);
+
+#if defined(__linux__)
+    // The first backtrace() call loads libgcc's unwinder (and may allocate); do it now, not inside a crash.
+    void* primer[2];
+    backtrace(primer, 2);
+#endif
 }
 
 void SErrDisplayAppFatalMessage(const char* message, const char* filename, int32_t linenumber) {
