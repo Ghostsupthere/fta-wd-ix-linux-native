@@ -6,6 +6,7 @@
 # honoured.
 #
 #   nix-shell shell-native.nix --run ./build-native-cmake.sh
+#   PGO=1 nix-shell shell-native.nix --run ./build-native-cmake.sh    # profile-guided (release builds)
 #   nix-shell shell-native.nix --run './build-native-cmake.sh Gx'   # one library
 #
 # D3D11 comes from dxvk-native, built out of tree by meson. Point
@@ -26,10 +27,17 @@ if [ ! -f "$DXVK_NATIVE_DIR/src/d3d11/libdxvk_d3d11.so" ]; then
     exit 1
 fi
 
+# PGO=1 builds with the committed training profile (pgo/wow64-profile.tar.xz); see tools/pgo.sh.
+PGO_ARGS=""
+if [ "${PGO:-0}" = "1" ]; then
+    tools/pgo.sh unpack || exit 1
+    PGO_ARGS="-DWOWDECOMP_PGO=USE"
+fi
+
 cmake -S . -B "$BUILD" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DDXVK_NATIVE_DIR="$DXVK_NATIVE_DIR" \
     -DWOWDECOMP_DISABLE_SIGNATURE_CHECKS=ON \
-    ${CMAKE_EXTRA_ARGS:-} || exit 1
+    $PGO_ARGS ${CMAKE_EXTRA_ARGS:-} || exit 1
 
 cmake --build "$BUILD" --target "$TARGET" --parallel "$(nproc)"
