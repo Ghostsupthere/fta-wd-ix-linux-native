@@ -35,6 +35,22 @@ int main() {
     Require(!pack.FindPixel(ps2.data(), ps2.size(), 2, *a), "missing layer variant falls back");
     Require(!pack.FindPixel(ps.data(), ps.size(), 3, *a), "unsupported layer count falls back");
 
+    // The bytecode hash is memoised per code pointer. A shader freed and replaced at the same address must
+    // never see the old shader's answer, and a one-byte change in the middle of the code must be noticed.
+    {
+        std::vector<uint8_t> slot = vsA;                       // one address ...
+        Require(pack.FindVertex(slot.data(), slot.size()) == a, "memoised lookup finds A");
+        Require(pack.FindVertex(slot.data(), slot.size()) == a, "second (cached) lookup finds A");
+        slot = vsB;                                            // ... now holding B (same size, same address)
+        Require(pack.FindVertex(slot.data(), slot.size()) == b, "address reused for other code finds B");
+        slot[slot.size() / 2] ^= 0x55;                         // damaged in the middle
+        Require(!pack.FindVertex(slot.data(), slot.size()), "one changed byte is not served from the cache");
+        slot[slot.size() / 2] ^= 0x55;
+        Require(pack.FindVertex(slot.data(), slot.size()) == b, "restored code finds B again");
+        std::vector<uint8_t> big(100000, 9);                   // above the cache limit: hashed every time
+        Require(!pack.FindVertex(big.data(), big.size()), "oversize code is simply a miss");
+    }
+
     // Hostile or damaged files are rejected before anything is published.
     for (size_t cut : {size_t(0), size_t(3), size_t(11), size_t(30), bytes.size() - 1}) {
         ShaderPack damaged; std::string why;

@@ -1,6 +1,7 @@
 #include "WmoShaderPack.h"
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 
 namespace wxl::wmo {
 namespace {
@@ -11,6 +12,34 @@ template<class T> bool Take(const uint8_t*& p, const uint8_t* end, T& out) {
 template<class T> void Put(std::vector<uint8_t>& out, T value) {
     const auto* bytes = reinterpret_cast<const uint8_t*>(&value);
     out.insert(out.end(), bytes, bytes + sizeof(T));
+}
+
+// FindVertex/FindPixel run on every WMO, doodad and grass draw, and HashBytecode is a byte-at-a-time FNV loop
+// (a dependent multiply per byte, so a few cycles per byte): re-hashing a 2 KB shader on every draw was ~3% of
+// the render thread. The hash cannot change (the pack on disk stores it), so memoise it per code pointer. A hit
+// is only accepted after a memcmp against a private copy of the bytes the hash was computed from, so a freed
+// shader whose address is reused for different code can never return a stale hash.
+struct CachedCode {
+    uint64_t hash = 0;
+    std::vector<uint8_t> bytes;
+};
+constexpr size_t kMaxCachedCodes = 4096;
+constexpr size_t kMaxCachedBytes = 64 * 1024;  // a shader larger than this is simply hashed every time
+
+uint64_t CachedHashBytecode(const void* data, size_t size) {
+    if (!data || size == 0 || size > kMaxCachedBytes) return HashBytecode(data, size);
+    static std::mutex mutex;
+    static std::unordered_map<const void*, CachedCode> cache;
+    std::lock_guard<std::mutex> lock(mutex);
+    CachedCode& slot = cache[data];
+    if (slot.bytes.size() == size && std::memcmp(slot.bytes.data(), data, size) == 0) return slot.hash;
+    if (cache.size() > kMaxCachedCodes) {
+        cache.clear();
+        return HashBytecode(data, size);
+    }
+    slot.hash = HashBytecode(data, size);
+    slot.bytes.assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + size);
+    return slot.hash;
 }
 }
 
@@ -68,7 +97,7 @@ bool ShaderPack::Load(const std::string& path, std::string& error) {
 }
 
 const PackEntry* ShaderPack::FindVertex(const void* bytecode, size_t size) const {
-    const auto it = m_index.find({0, 0, 0, 0, HashBytecode(bytecode, size)});
+    const auto it = m_index.find({0, 0, 0, 0, CachedHashBytecode(bytecode, size)});
     if (it == m_index.end()) return nullptr;
     const PackEntry& e = m_entries[it->second];
     return e.originalSize == size ? &e : nullptr;
@@ -76,7 +105,7 @@ const PackEntry* ShaderPack::FindVertex(const void* bytecode, size_t size) const
 
 const PackEntry* ShaderPack::FindPixel(const void* bytecode, size_t size, uint32_t layers, const PackEntry& vertex) const {
     const uint8_t uv = layers == 4 ? vertex.uvUsage : 0, weights = layers == 4 ? vertex.weightUsage : 0;
-    const auto it = m_index.find({1, uint8_t(layers), uv, weights, HashBytecode(bytecode, size)});
+    const auto it = m_index.find({1, uint8_t(layers), uv, weights, CachedHashBytecode(bytecode, size)});
     if (it == m_index.end()) return nullptr;
     const PackEntry& e = m_entries[it->second];
     return e.originalSize == size ? &e : nullptr;
