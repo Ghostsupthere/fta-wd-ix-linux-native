@@ -30,6 +30,7 @@
 #include "Engine/Source/Storm/H/storm.h"
 #include "Engine/Source/Model2/M2ParticleBuild.h"
 #include "Engine/Source/Model2/M2ParticleJobs.h"
+#include "Engine/Source/Model2/M2OpaqueSort.h"
 #include "Engine/Source/Tempest/C33Matrix.h"
 #include "Engine/Source/Tempest/C3Ray.h"
 #include "Engine/Source/Tempest/NTempest.h"
@@ -2307,7 +2308,11 @@ int32_t CM2Scene::Animate(const C3Vector& cameraPos) {
 
     this->m_doodadElements.SetCount(out);
 
+#if defined(WOWDECOMP_LINUX)
+    M2SortOpaquePass(this);
+#else
     M2HeapSort(&CM2Scene::SortOpaque, this->m_passElements[0].m_data, this->m_passElements[0].m_count, this);
+#endif
     M2HeapSort(&CM2Scene::SortTransparent, this->m_passElements[1].m_data, this->m_passElements[1].m_count, this);
     M2HeapSort(&CM2Scene::SortTransparent, this->m_passElements[2].m_data, this->m_passElements[2].m_count, this);
 
