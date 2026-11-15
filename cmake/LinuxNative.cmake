@@ -83,6 +83,16 @@ endif ()
 add_compile_options(-fpermissive -Wno-template-body)
 add_compile_options(-fno-strict-aliasing)
 
+# Link-time optimisation. The engine is hundreds of small translation units (Tempest math, frustum culling,
+# texture lookups), so without LTO every one of those is a real call. Stranglethorn Vale, 3440x1440, settings at
+# max (2026-11-15): 101 fps without it, 131 fps with it (both with the sort and FindVertex fixes; the scenes
+# were not identical). LTO reports a few One Definition Rule warnings for the decompiled OsTypes and the freetype
+# module tables; none stopped the link. -DWOWDECOMP_LTO=OFF restores the plain build.
+option(WOWDECOMP_LTO "Link-time optimisation for the native Linux Release build" ON)
+if (WOWDECOMP_LTO AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+endif ()
+
 # --- include paths -----------------------------------------------------------
 # The tree root, so repository-relative includes ("Engine/Source/...") resolve.
 #
