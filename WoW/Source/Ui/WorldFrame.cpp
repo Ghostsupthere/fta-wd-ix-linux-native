@@ -5,6 +5,7 @@
 #include "WoW/Source/WorldClient/Linux/WxlWmoMaterials.h"
 #include "WoW/Source/WorldClient/Linux/WxlGrassMotion.h"
 #include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
+#include "WoW/Source/Ui/Linux/WxlClickThrough.h"
 #include "WorldFrame.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "Engine/Source/Base/ConvertUTF.h"
@@ -1025,6 +1026,14 @@ uint64_t CGWorldFrame::FindClosestModel(const C3Vector& start, const C3Vector& e
     for (CModelRecord* record = this->m_modelList.Head(); record;) {
         CModelRecord* next = this->m_modelList.Next(record);
         CGObject_C* object = ClntObjMgrObjectPtr(record->m_guid, TYPE_OBJECT, __FILE__, __LINE__);
+
+#if defined(WOWDECOMP_LINUX)
+        // NPCBotClickGuard: units on its list are skipped by the click hit test, so the click passes through.
+        if (object && WxlClickThroughSkips(record->m_guid)) {
+            record = next;
+            continue;
+        }
+#endif
 
         if (object && this->IsLegalSelection(object, flags) && (object->CanHighlight() || allowsTerrain)) {
             record->m_object = object;
@@ -2489,7 +2498,14 @@ int32_t CGWorldFrame::OnLayerMouseUp(const CMouseEvent& evt, const char* btn) {
 // OFFSET: 0x004FA570
 int32_t CGWorldFrame::SetupDefaultAction() {
     NDCToDDC(this->m_simpleTop->m_mousePosition.m_x, this->m_simpleTop->m_mousePosition.m_y, &this->m_defaultActionPointDDC.x, &this->m_defaultActionPointDDC.y);
+#if defined(WOWDECOMP_LINUX)
+    // The pending release action says which button this click is (1 select/left, 2 action/right).
+    WxlClickThroughBegin(CGInputControl::s_inputControl ? static_cast<int>(CGInputControl::s_inputControl->m_pendingDefaultAction) : 0);
+#endif
     this->m_defaultActionHitKind = this->HitTestPoint(this->m_defaultActionPointDDC.x, this->m_defaultActionPointDDC.y, 0, &this->m_defaultActionHit);
+#if defined(WOWDECOMP_LINUX)
+    WxlClickThroughEnd();
+#endif
     return this->m_defaultActionHitKind;
 }
 

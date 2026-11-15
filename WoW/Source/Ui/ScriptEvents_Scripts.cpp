@@ -51,6 +51,7 @@
 #include "WoW/Source/WorldClient/Linux/WxlQuestTracker.h"
 #include "WoW/Source/WorldClient/Linux/WxlUnitOutline.h"
 #include "WoW/Source/Ui/Linux/WxlNpcBotEnchant.h"
+#include "WoW/Source/Ui/Linux/WxlClickThrough.h"
 #include "WoW/Source/Magic/MagicClient/Linux/WxlLoneWolf.h"
 #include "WoW/Source/Object/Linux/WxlGoblinGlider.h"
 #include "WoW/Source/Ui/Linux/WxlWeatherOverride.h"
@@ -4680,6 +4681,7 @@ void ScriptEventsRegisterFunctions() {
     WxlRegisterQuestTrackerLua();
     WxlUnitOutlineInstall();
     WxlRegisterNpcBotEnchantLua();
+    WxlRegisterClickThroughLua();
     WxlRegisterLoneWolfLua();
     WxlRegisterGoblinGliderLua();
 #endif
