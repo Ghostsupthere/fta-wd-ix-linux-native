@@ -11,6 +11,10 @@
 #include "Engine/Source/BlizzardCore/SFile2-Core.h"
 #include "Engine/Source/Storm/H/storm.h"
 
+#ifdef WOWDECOMP_PGO_GENERATE
+extern "C" void __gcov_dump(void);
+#endif
+
 // STATIC: 0x00CAE948
 static int32_t s_exitcode;
 
@@ -21,6 +25,10 @@ static int32_t s_exitcount;
 // OFFSET: 0x007739B0
 static void StormAtExit() {
     if (s_exitcount++ == 0) {
+#ifdef WOWDECOMP_PGO_GENERATE
+        // _exit() below skips gcov's own exit hook; write the PGO profile first.
+        __gcov_dump();
+#endif
         _cexit();
         StormRtlDestroy();
         _exit(s_exitcode);

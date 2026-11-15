@@ -93,6 +93,29 @@ if (WOWDECOMP_LTO AND CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
 endif ()
 
+# Profile-guided optimisation (GCC). Two steps, both in a Release build with LTO:
+#   1. -DWOWDECOMP_PGO=GENERATE builds an instrumented Wow64 that writes .gcda files under WOWDECOMP_PGO_DIR on a
+#      clean exit (play for a while: world, cities, a dungeon, UI, then quit normally).
+#   2. -DWOWDECOMP_PGO=USE rebuilds with those profiles. Code the training run never reached is still optimised
+#      normally (-fprofile-partial-training) instead of being shrunk as "cold".
+# -fprofile-prefix-path makes the .gcda names relative to the build directory, so a build in another checkout
+# or directory (a release worktree) finds the same profile files as long as the build dir has the same layout.
+set(WOWDECOMP_PGO "OFF" CACHE STRING "Profile-guided optimisation: OFF, GENERATE or USE")
+set(WOWDECOMP_PGO_DIR "${CMAKE_SOURCE_DIR}/pgo-data" CACHE PATH "Where the PGO profile (.gcda) files live")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    if (WOWDECOMP_PGO STREQUAL "GENERATE")
+        set(_pgo_flags -fprofile-generate=${WOWDECOMP_PGO_DIR} -fprofile-update=prefer-atomic
+                       -fprofile-prefix-path=${CMAKE_BINARY_DIR})
+        add_compile_options(${_pgo_flags})
+        add_compile_definitions(WOWDECOMP_PGO_GENERATE=1)
+        add_link_options(${_pgo_flags})
+    elseif (WOWDECOMP_PGO STREQUAL "USE")
+        add_compile_options(-fprofile-use=${WOWDECOMP_PGO_DIR} -fprofile-partial-training -fprofile-correction
+                            -fprofile-prefix-path=${CMAKE_BINARY_DIR} -Wno-missing-profile -Wno-coverage-mismatch)
+        add_link_options(-fprofile-use=${WOWDECOMP_PGO_DIR} -fprofile-partial-training -fprofile-correction)
+    endif ()
+endif ()
+
 # --- include paths -----------------------------------------------------------
 # The tree root, so repository-relative includes ("Engine/Source/...") resolve.
 #
