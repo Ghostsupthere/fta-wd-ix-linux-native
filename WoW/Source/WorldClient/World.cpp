@@ -15,6 +15,7 @@
 #include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
 #include "WoW/Source/Magic/MagicClient/Linux/WxlLoneWolf.h"
 #include "WoW/Source/Object/Linux/WxlGoblinGlider.h"
+#include "WoW/Source/WorldClient/Linux/WxlPrefetch.h"
 #endif
 #include <cfloat>
 #include "WoW/Source/WorldClient/WorldConstants.h"
@@ -2616,6 +2617,11 @@ void CWorldScene::UpdateOcclusion(CSortEntry* entry) {
     while (chunk) {
         CMapChunk* next = entry->m_holedChunkList.Next(chunk);
 
+        if (next) {
+            WXL_PREFETCH_RANGE(next, 0x140);
+            WXL_PREFETCH(next->m_header);
+        }
+
         if (!chunk->m_header->m_holes) {
             chunk->m_sortListLink.Unlink();
 
@@ -2631,6 +2637,11 @@ void CWorldScene::UpdateOcclusion(CSortEntry* entry) {
 
     while (chunk) {
         CMapChunk* next = entry->m_holedChunkList.Next(chunk);
+
+        if (next && next->m_height) {
+            WXL_PREFETCH_RANGE(next->m_height, 145 * sizeof(float));
+        }
+
         chunk->m_sortListLink.Unlink();
         chunk->ClipBufferUpdate();
         chunk = next;
@@ -3973,7 +3984,40 @@ void CWorldScene::AddDoodadDefs(TSList<CMapBaseObjLink, TSGetExplicitLink<CMapBa
 void CWorldScene::CullDoodadsExterior(TSList<CMapBaseObjLink, TSGetExplicitLink<CMapBaseObjLink> >* linkList, uint8_t fadeLevel) {
     CMapBaseObjLink* link = linkList->Head();
 
-    while (!linkList->IsEnd(link)) {
+    // The list is walked a batch at a time: the batch's doodad definitions are requested from memory together
+    // before the first is tested, and each model a few definitions ahead of its test, so the cache misses overlap
+    // instead of following one another. The chunk's own link list is not changed by the tests (the doodad's link
+    // in the scene's list is), so reading ahead along it gives the same order as the original loop.
+    constexpr uint32_t kBatch = 16;
+    constexpr uint32_t kModelLead = 4;
+    CMapBaseObjLink* batch[kBatch];
+    uint32_t batchCount = 0;
+    uint32_t batchIndex = 0;
+
+    while (true) {
+        if (batchIndex == batchCount) {
+            batchCount = 0;
+            batchIndex = 0;
+
+            for (CMapBaseObjLink* ahead = link; batchCount < kBatch && !linkList->IsEnd(ahead); ahead = linkList->RawNext(ahead)) {
+                batch[batchCount++] = ahead;
+                WXL_PREFETCH(ahead->m_owner);
+            }
+
+            if (batchCount == 0) {
+                break;
+            }
+        }
+
+        if (batchIndex + kModelLead < batchCount) {
+            const CMapDoodadDef* later = static_cast<const CMapDoodadDef*>(batch[batchIndex + kModelLead]->m_owner);
+
+            if (later) {
+                WXL_PREFETCH(later->m_model);
+            }
+        }
+
+        link = batch[batchIndex++];
         CMapDoodadDef* doodadDef = static_cast<CMapDoodadDef*>(link->m_owner);
 
         if (doodadDef->m_fadeLevel < fadeLevel) {
@@ -4030,7 +4074,10 @@ void CWorldScene::CullDoodadsExterior(TSList<CMapBaseObjLink, TSGetExplicitLink<
             CWorldScene::s_barrier.AddBarrier(box, 10.0f);
         }
 
-        link = linkList->RawNext(link);
+        // The next batch starts where this one ended: the original loop's RawNext of the last link.
+        if (batchIndex == batchCount) {
+            link = linkList->RawNext(link);
+        }
     }
 }
 
@@ -4102,6 +4149,14 @@ void CWorldScene::CullChunks(CSortEntry* entry, uint32_t index) {
 
     while (chunk) {
         CMapChunk* next = entry->m_mapChunkList.Next(chunk);
+
+        // The next chunk's fields (bounds, links, header and height pointers span five cache lines) and this one's
+        // header, which is read after the doodad tests below, are requested now; the tests give them time to arrive.
+        if (next) {
+            WXL_PREFETCH_RANGE(next, 0x140);
+        }
+        WXL_PREFETCH(chunk->m_header);
+
         chunk->m_sortListLink.Unlink();
 
         if (CWorldScene::frustumStack[CWorldScene::frustumIndex].Cull(chunk->m_bbox) && !CWorldOcclusion::QueryVolumes(&chunk->m_sphere) && !CWorldOcclusion::QueryBuffer(&chunk->m_bbox, 0)) {
@@ -4111,6 +4166,11 @@ void CWorldScene::CullChunks(CSortEntry* entry, uint32_t index) {
                     chunk = next;
                     continue;
                 }
+            }
+
+            // The occlusion update later in this slice reads nine rows of the chunk's heights (the whole 145-float array).
+            if (occlude && chunk->m_height) {
+                WXL_PREFETCH_RANGE(chunk->m_height, 145 * sizeof(float));
             }
 
             CWorldScene::CullDoodadsExterior(&chunk->m_doodadDefLinkList, CWorldView::GetFadeLevelForDistance(chunk->m_distToCamera));
