@@ -172,9 +172,11 @@ static int32_t Script_SetSequence(lua_State* L) {
 
     uint32_t sequence = static_cast<uint32_t>(lua_tonumber(L, 2));
 
-    if (sequence >= 506) {
+    // NOT IN BINARY. The original capped this at the 506-row animation table. Sequence ids in an M2 are 16-bit, and
+    // appended emote animations (ids from 3000) and modern models use ids well above 506, so the cap is the id width.
+    if (sequence > 0xFFFF) {
         const char* name = model->GetName();
-        luaL_error(L, "Error: %s:SetSequence(sequence) exceeds valid range of 0 - %d", name ? name : "<unnamed>", 506);
+        luaL_error(L, "Error: %s:SetSequence(sequence) exceeds valid range of 0 - %d", name ? name : "<unnamed>", 0xFFFF);
         return 0;
     }
 

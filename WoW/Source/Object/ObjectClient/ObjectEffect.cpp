@@ -464,6 +464,12 @@ void CObjectEffectModifier::Apply(CObjectEffectManager* manager, CObjectEffect* 
 // VERIFY: 07e2b193 auto
 // OFFSET: 0x006F17F0
 int32_t FindObjectEffectStateFromAnimID(int32_t animId, int32_t alternate) {
+    // NOT IN BINARY. The table has one row per AnimationData id; extended animation ids (3000+ emotes) are not in it
+    // and must read as "no object-effect state" instead of indexing past the end.
+    if (animId < 0 || animId >= ANIM_COUNT) {
+        return 0;
+    }
+
     if (alternate == 1) {
         return s_objectEffectAnimStateMap[animId].m_altStateID;
     }

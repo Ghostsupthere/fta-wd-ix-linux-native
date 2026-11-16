@@ -1110,16 +1110,14 @@ int32_t CM2Model::HasSequence(uint32_t id) {
 // VERIFY: cf5b210a auto
 // OFFSET: 0x00825F40
 uint32_t CM2Model::ResolveSequenceFallback(uint32_t id) {
-    if (id >= ANIM_COUNT) {
-        return 0xFFFFFFFF;
-    }
-
+    // NOT IN BINARY. The original rejected every id >= ANIM_COUNT (506), the size of the client's own AnimationData
+    // table. A model's sequence ids come from the file: appended emote animations (ids from 3000) and modern content
+    // carry ids far above it, and HasSequence/FindSequenceIndex hash on the id, never indexing a client table. So an
+    // id the model itself carries is returned as is; only the fallback walk needs the table, and it is bounded by a
+    // step budget instead of an id-indexed visited[] array, so any id range is safe and a cyclic m_fallback cannot hang.
     if (!(this->m_fFlags & 1)) {
         this->WaitForLoad(nullptr);
     }
-
-    int32_t visited[ANIM_COUNT];
-    memset(visited, 0, sizeof(visited));
 
     M2Data* data = this->m_shared->m_data;
 
@@ -1127,20 +1125,23 @@ uint32_t CM2Model::ResolveSequenceFallback(uint32_t id) {
         return id;
     }
 
-    while (id < ANIM_COUNT) {
+    const uint32_t limit = g_animationDataDB.m_numRecords > 0
+                         ? static_cast<uint32_t>(g_animationDataDB.m_numRecords)
+                         : 1u;
+
+    for (uint32_t step = 0; step < limit; ++step) {
         AnimationDataRec* rec = g_animationDataDB.GetRecord(id);
 
-        if (visited[id] || !rec) {
+        if (!rec) {
             break;
         }
 
-        uint32_t fallback = rec->m_fallback;
+        const uint32_t fallback = static_cast<uint32_t>(rec->m_fallback);
 
         if (id == fallback) {
             break;
         }
 
-        visited[id] = 1;
         id = fallback;
 
         if (this->HasSequence(data, fallback)) {
@@ -1154,10 +1155,8 @@ uint32_t CM2Model::ResolveSequenceFallback(uint32_t id) {
 // VERIFY: af94bf41 manual
 // OFFSET: 0x00826050
 int32_t CM2Model::IsSequenceLoaded(uint32_t id) {
-    if (id >= 506) {
-        return 0;
-    }
-
+    // NOT IN BINARY. The original returned 0 for every id >= 506, the AnimationData table size, not a property of the
+    // model. Sequence lookup is id-agnostic (see ResolveSequenceFallback), so extended ids resolve like any other.
     if (!(this->m_fFlags & 1)) {
         this->WaitForLoad(nullptr);
     }
