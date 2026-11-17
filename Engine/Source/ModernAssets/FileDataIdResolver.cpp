@@ -19,6 +19,9 @@ struct Resolver {
     std::once_flag init;
     std::string source;
     std::vector<Entry> index;
+    // Optional small second list, Utils/WarcraftXL/FileDataID.extra.csv ("id;path" lines in any order): names for files newer
+    // than the main sidecar, such as housing decor textures. The main list wins when both name an ID.
+    std::unordered_map<uint32_t, std::string> extra;
     std::unordered_map<uint32_t, std::string> cache;
     std::mutex cacheLock;
 
@@ -44,7 +47,35 @@ struct Resolver {
         return id != 0 && separator + 1 < line.size();
     }
 
+    void LoadExtra(const std::filesystem::path& candidate) {
+        std::ifstream file(candidate, std::ios::binary);
+        std::string line;
+        while (file && std::getline(file, line)) {
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+            uint32_t id = 0;
+            if (!ParseId(line, id)) {
+                continue;
+            }
+            std::string path = line.substr(line.find(';') + 1);
+            std::replace(path.begin(), path.end(), '/', '\\');
+            if (path.empty() || path.front() == '\\' || path.find("..") != std::string::npos) {
+                continue;
+            }
+            extra.emplace(id, std::move(path));
+        }
+    }
+
     void Initialize() {
+        LoadExtra("Utils/WarcraftXL/FileDataID.extra.csv");
+        {
+            std::error_code ec;
+            const std::filesystem::path d = std::filesystem::canonical("Data", ec);
+            if (!ec && d.has_parent_path() && extra.empty()) {
+                LoadExtra(d.parent_path() / "Utils/WarcraftXL/FileDataID.extra.csv");
+            }
+        }
         std::vector<std::filesystem::path> candidates = {
             "Utils/WarcraftXL/FileDataID.csv",
             "Utils/WarcraftXL/listfile.txt",
@@ -95,7 +126,7 @@ struct Resolver {
     bool Resolve(uint32_t id, std::string& path) {
         path.clear();
         std::call_once(init, [this] { Initialize(); });
-        if (!id || source.empty()) {
+        if (!id) {
             return false;
         }
 
@@ -111,7 +142,14 @@ struct Resolver {
         const auto it = std::lower_bound(index.begin(), index.end(), id,
             [](const Entry& entry, uint32_t wanted) { return entry.id < wanted; });
         if (it == index.end() || it->id != id) {
-            return false;
+            const auto more = extra.find(id);
+            if (more == extra.end()) {
+                return false;
+            }
+            path = more->second;
+            std::lock_guard<std::mutex> lock(cacheLock);
+            cache.emplace(id, path);
+            return true;
         }
 
         std::ifstream file(source, std::ios::binary);
