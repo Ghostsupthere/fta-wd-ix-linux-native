@@ -231,6 +231,12 @@ class CM2Model {
     uint64_t m_wxlEquipmentPreviewGeneration = 0;
     void RefreshWxlCollectionPalette();
 #endif
+    // Not in the original: per-instance bind pose (6 floats per vertex: position, normal) used instead of the
+    // shared vertices when set. Owned by the model. Lets one model, the local player, reshape its mesh.
+    float* m_bodyShapeVertices = nullptr;
+    // GPU copy of the above for the shader renderer, which skins from a vertex buffer shared by every instance.
+    CGxBuf* m_bodyShapeBuf = nullptr;
+    CGxPool* m_bodyShapePool = nullptr;
 
     static void (*s_transformVertices[5])(CM2Model*, M2SkinSection*, uint8_t*, int32_t);
     static TSGrowableArray<M2ModelCallback> s_sequenceCallbacks;
@@ -265,6 +271,20 @@ class CM2Model {
     void PickRandomSequenceVariation(uint32_t* variation, uint16_t* sequenceIndex);
     M2SequenceFallback* SequenceFallbackById(M2SequenceFallback* result, uint32_t id);
     void SetBoneProceduralTransform(uint32_t boneId, const C44Matrix& matrix);
+    // Raw bone-index access for the body-shape sliders. Key-bone ids only reach about 70 of a Retail
+    // skeleton's ~200 bones; these skip the id table. All are no-ops until the model has loaded.
+    bool IsLoaded() const;
+    uint32_t GetBoneCount();
+    uint32_t FindBoneIndexByKey(uint32_t boneId);
+    bool GetBoneInfoByIndex(uint32_t index, int32_t& boneId, int32_t& parent, C3Vector& pivot);
+    uint32_t GetBoneNameCrcByIndex(uint32_t index); // same bone, same hash, on every Retail skeleton; 0 if none
+    uint32_t GetBindVertexCount();
+    bool GetBindVertex(uint32_t index, C3Vector& position, C3Vector& normal);
+    void SetBodyShapeVertices(float* vertices); // takes ownership (delete[]); nullptr restores the shared pose
+    int32_t BindBodyShapeVertices(); // binds this model's own vertex buffer; 0 if it has none
+    void ReleaseBodyShapeBuffer();
+    void SetBoneFlagsByIndex(uint32_t index, uint32_t flags, uint32_t mask);
+    void SetBoneProceduralTransformByIndex(uint32_t index, const C44Matrix& matrix);
     void SetBoneSequenceSpeed(uint32_t boneId, float speed);
     void SetBoneSequenceTime(uint32_t boneId, uint32_t time);
     void SetupBoneSequence(uint16_t sequenceIndex, M2SequenceFallback fallback, uint32_t time, float speed, M2ModelBoneSeq* boneSequence);

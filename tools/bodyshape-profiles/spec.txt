@@ -1,0 +1,16 @@
+m0001.bin character\bloodelf\female\bloodelffemale_hd Character\BloodElf\Female\bloodelffemale_hd
+m0003.bin character\darkirondwarf\female\darkirondwarffemale Character\DarkIronDwarfPlayer\Female\darkirondwarfFemale
+m0005.bin character\draenei\female\draeneifemale_hd Character\draenei\female\draeneifemale_hd
+m0007.bin character\dwarf\female\dwarffemale_hd Character\dwarf\female\dwarffemale_hd
+m0008.bin character\eredar\female\race_eredarfemale Character\EredarPlayer\Female\EredarFemale_hd
+m0011.bin character\gnome\female\gnomefemale_hd Character\gnome\female\gnomefemale_hd
+m0017.bin character\goblin\female\goblinfm Character\GoblinPlayer\Female\GoblinFM
+m0018.bin character\highelf\female\highelffemale Character\HighElfPlayer\Female\HighElfFemale_hd
+m0024.bin character\nightelf\female\nightelffemale_hd Character\nightelf\female\nightelffemale_hd
+m0026.bin character\orc\female\orcfemale_hd Character\orc\female\orcfemale_hd
+m0028.bin character\scourge\female\scourgefemale_hd Character\scourge\female\scourgefemale_hd
+m0031.bin character\tauren\female\taurenfemale_hd Character\tauren\female\taurenfemale_hd
+m0033.bin character\troll\female\trollfemale_hd Character\troll\female\trollfemale_hd
+m0034.bin character\voidelf\female\voidelffemale Character\VoidElfPlayer\Female\voidelffemale
+m0036.bin character\worgen\female\worgenfemale Character\WorgenPlayer\Female\WorgenFemale
+m0035.bin character\worgen\female\worgenfemale Character\WorgenPlayer\Female\Worgen_rw_Female

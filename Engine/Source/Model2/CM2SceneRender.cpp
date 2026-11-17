@@ -215,8 +215,14 @@ void CM2SceneRender::EndFixed() {
 // OFFSET: 0x0081F700
 void CM2SceneRender::SetBatchVertices(int32_t sharedVertices) {
     if (CShaderEffect::s_enableShaders) {
-        if (this->m_curType != this->m_prevType || this->m_curShared != this->m_prevShared) {
-            this->m_curShared->SetVertices(0);
+        // A model with a reshaped body (the local player) skins from its own buffer; rebind whenever one is involved.
+        bool shaped = this->m_curModel && this->m_curModel->m_bodyShapeVertices;
+        bool wasShaped = this->m_prevModel && this->m_prevModel->m_bodyShapeVertices;
+
+        if (this->m_curType != this->m_prevType || this->m_curShared != this->m_prevShared || shaped || wasShaped) {
+            if (!(shaped && this->m_curModel->BindBodyShapeVertices())) {
+                this->m_curShared->SetVertices(0);
+            }
         }
 
         return;

@@ -1,4 +1,5 @@
 #include "GameUI.h"
+#include "WoW/Source/Ui/BodyShapeScripts.h"
 #include <cmath>
 #include <cstdarg>
 #include <cstring>
@@ -6263,6 +6264,7 @@ static FrameScript_Method s_ScriptFunctions[] = {
     { "GetRestState", &Script_GetRestState },
     { "GetXPExhaustion", &Script_GetXPExhaustion },
     { "GetTimeToWellRested", &Script_GetTimeToWellRested },
+    BODY_SHAPE_SCRIPT_ENTRIES
     { "GMRequestPlayerInfo", &Script_GMRequestPlayerInfo },
     { "GetCoinIcon", &Script_GetCoinIcon },
     { "GetCoinText", &Script_GetCoinText },

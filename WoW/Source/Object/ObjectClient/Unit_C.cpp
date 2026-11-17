@@ -1,3 +1,5 @@
+#include "Engine/Source/Retail/BodyShape.h"
+#include "WoW/Source/Object/ObjectClient/BodyShapeNames.h"
 #include "WoW/Source/Magic/Types.h"
 #include "Unit_C.h"
 #include <cmath>
@@ -1547,6 +1549,8 @@ void CGUnit_C::PreAnimate(CGWorldFrame* frame) {
     float absDelta = fabsf(delta);
     float turn = 0.0f;
     bool clearTwist = absDelta < 0.001f;
+    bool twistSet[2] = { false, false }; // spine, head: written below, stacked on by the body sliders
+    C44Matrix twistBase[2];
 
     if (!clearTwist) {
         if (1.5707964f < absDelta) {
@@ -1580,7 +1584,9 @@ void CGUnit_C::PreAnimate(CGWorldFrame* frame) {
                 this->m_worldModel->SetBoneFlags(4, 0x80, 0x80);
                 CM2Model* model = this->m_worldModel;
                 C3Vector axis(0.0f, 0.0f, 1.0f);
-                model->SetBoneProceduralTransform(4, C44Matrix::Rotation(angle, axis, true));
+                twistBase[0] = C44Matrix::Rotation(angle, axis, true);
+                twistSet[0] = true;
+                model->SetBoneProceduralTransform(4, twistBase[0]);
                 remaining = remaining - twist;
             }
 
@@ -1590,7 +1596,9 @@ void CGUnit_C::PreAnimate(CGWorldFrame* frame) {
                 this->m_worldModel->SetBoneFlags(6, 0x80, 0x80);
                 CM2Model* model = this->m_worldModel;
                 C3Vector axis(0.0f, 0.0f, 1.0f);
-                model->SetBoneProceduralTransform(6, C44Matrix::Rotation(angle, axis, true));
+                twistBase[1] = C44Matrix::Rotation(angle, axis, true);
+                twistSet[1] = true;
+                model->SetBoneProceduralTransform(6, twistBase[1]);
             }
         }
     }
@@ -1604,7 +1612,30 @@ void CGUnit_C::PreAnimate(CGWorldFrame* frame) {
         this->m_worldModel->SetBoneFlags(4, 0x80, 0x80);
         C3Vector axis(0.0f, 1.0f, 0.0f);
         CM2Model* model = this->m_worldModel;
-        model->SetBoneProceduralTransform(4, C44Matrix::Rotation(-this->GetPitch(), axis, true));
+        twistBase[0] = C44Matrix::Rotation(-this->GetPitch(), axis, true);
+        twistSet[0] = true;
+        model->SetBoneProceduralTransform(4, twistBase[0]);
+    }
+
+    if (this->m_worldModel) {
+        if (this->m_obj->m_guid == ClntObjMgrGetActivePlayer()) {
+            BodyShape::ApplyEdited(this->m_worldModel, twistSet, twistBase);
+        } else if (this->m_obj->m_type & TYPE_PLAYER) {
+            // Other players: the sliders shared with us (SetUnitBodyShape). Past MeshRange yards only the bone sliders apply.
+            BodyShapeNames::Resolve();
+            const BodyShape::UnitShape* shape = BodyShape::UnitFor(this->m_obj->m_guid.m_guid);
+
+            if (shape || BodyShape::HasApplier(this->m_worldModel)) {
+                static const BodyShape::Values none;
+                constexpr float MeshRange = 40.0f;
+                CGObject_C* self = ClntObjMgrObjectPtr(ClntObjMgrGetActivePlayer(), TYPE_PLAYER, __FILE__, __LINE__);
+                C3Vector mine = self ? self->GetPosition() : C3Vector(0.0f, 0.0f, 0.0f);
+                C3Vector there = this->GetPosition();
+                float dx = mine.x - there.x, dy = mine.y - there.y, dz = mine.z - there.z;
+                bool isClose = self && dx * dx + dy * dy + dz * dz < MeshRange * MeshRange;
+                BodyShape::Apply(this->m_worldModel, shape ? (isClose ? shape->full : shape->distant) : none, twistSet, twistBase);
+            }
+        }
     }
 
     this->RotateWheels();

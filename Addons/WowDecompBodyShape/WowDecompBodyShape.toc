@@ -1,0 +1,6 @@
+## Interface: 30300
+## Title: Body Shape
+## Notes: Local body and bone sliders for Retail humanoid models. Type /bodyshape. Needs the FTA Linux client (v0.3.9 or later).
+## SavedVariables: WowDecompBodyShapeDB
+## Version: 0.1
+WowDecompBodyShape.lua
