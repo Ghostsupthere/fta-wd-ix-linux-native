@@ -1,5 +1,16 @@
 -- /bodyshape opens the panel. Presets move named bones; the probe moves one raw bone (and its mirror
 -- partner) so you can find out what the face and helper bones do. Values are local to this client.
+-- Without the engine's body shape functions (a game build older than FTA Linux v0.3.9, or any other client) the rest of this
+-- file would fail on its first call and /bs would silently do nothing. Say why instead.
+if not (ResetBodyShape and SetUnitBodyShape and GetBodyShapeNames and SetBodyShape) then
+    SLASH_WOWDECOMPBODYSHAPE1 = "/bodyshape"
+    SLASH_WOWDECOMPBODYSHAPE2 = "/bs"
+    SlashCmdList["WOWDECOMPBODYSHAPE"] = function()
+        print("Body Shape: this game build has no body shape support. It needs the FTA Linux client v0.3.9 or later (update with the launcher); other clients cannot use it.")
+    end
+    return
+end
+
 local frame = CreateFrame("Frame", "WowDecompBodyShapeFrame", UIParent)
 frame:SetSize(660, 600)
 frame:SetPoint("CENTER")
