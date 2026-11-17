@@ -23,6 +23,8 @@
 using namespace body_shape;
 
 static constexpr float MaxDistance = 0.015f;
+static constexpr float FallbackDistance = 0.05f; // second pass, see below
+static constexpr float MinFieldShift = 0.002f;   // metres moved per unit of slider for a fallback vertex to count
 static float F(uint32_t u) { float f; std::memcpy(&f, &u, 4); return f; }
 static uint32_t U(float f) { if (f == 0) f = 0; uint32_t u; std::memcpy(&u, &f, 4); return u; }
 static std::string Esc(const std::string& s) { std::string o; for (char c : s) { if (c == '\\') o += "\\\\"; else o += c; } return o; }
@@ -62,7 +64,7 @@ int main(int argc, char** argv) {
 
         float lo[3] = { 1e9f, 1e9f, 1e9f }, hi[3] = { -1e9f, -1e9f, -1e9f };
         std::map<std::array<uint32_t, 3>, uint32_t> weights; // unique FTA positions -> bits
-        size_t breast = 0, butt = 0;
+        size_t breast = 0, butt = 0, filled = 0;
         for (uint32_t i = 0; i < nv; ++i) {
             float x = v[i * 6], y = v[i * 6 + 1], z = v[i * 6 + 2];
             if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
@@ -81,7 +83,28 @@ int main(int argc, char** argv) {
                     if (d < best) { best = d; bestM = int(m); }
                 }
             }
-            if (bestM < 0) continue;
+            if (bestM < 0) {
+                // Second pass (2026-11-17, high elf butt "dent"): FTA's mesh is rounder or denser than the retail one in places, and
+                // a vertex 1.5-5 cm from every retail weight was left out even though the field would push it by several
+                // centimetres. Left unmoved while its neighbours move, it shows as a dent. Take the nearest weight within
+                // FallbackDistance, but only for a vertex the field really moves (so unrelated geometry is not swept in).
+                float bestFar = FallbackDistance * FallbackDistance;
+                for (size_t m = 0; m < P->maskSize; ++m) {
+                    if (!(P->mask[m].bits & 2)) continue; // butt only: the breast field also reaches the arms
+                    float ex = F(P->mask[m].x) - x, ey = F(P->mask[m].y) - y, ez = F(P->mask[m].z) - z;
+                    float d = ex * ex + ey * ey + ez * ez;
+                    if (d < bestFar) { bestFar = d; bestM = int(m); }
+                }
+                if (bestM < 0) continue;
+                Vec pos{ x, y, z };
+                Vec moved = Deform(pos, 0.0f, 1.0f, *P);
+                float shift = std::sqrt((moved.x - x) * (moved.x - x) + (moved.y - y) * (moved.y - y) + (moved.z - z) * (moved.z - z));
+                if (shift < MinFieldShift) continue;
+                ++filled;
+                weights[{ U(x), U(y), U(z) }] = (P->mask[bestM].bits & ~1u) | 2u; // strength from the nearest weight, butt only
+                ++butt;
+                continue;
+            }
             uint32_t bits = P->mask[bestM].bits;
             weights[{ U(x), U(y), U(z) }] = bits;
             breast += (bits & 1) != 0;
@@ -93,7 +116,7 @@ int main(int argc, char** argv) {
         out << "inline constexpr MaskEntry " << name << "[] = {\n";
         for (const auto& [k, bits] : weights) out << "    {" << k[0] << "u," << k[1] << "u," << k[2] << "u," << bits << "u},\n";
         out << "};\n\n";
-        std::fprintf(stderr, "%-34s %6u verts: %5zu weighted (%zu breast, %zu butt) of retail %zu\n", fta.c_str(), nv, weights.size(), breast, butt, P->maskSize);
+        std::fprintf(stderr, "%-34s %6u verts: %5zu weighted (%zu breast, %zu butt, %zu from the second pass) of retail %zu\n", fta.c_str(), nv, weights.size(), breast, butt, filled, P->maskSize);
 
         char row[2048];
         std::snprintf(row, sizeof(row),
