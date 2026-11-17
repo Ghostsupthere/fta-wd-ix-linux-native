@@ -287,7 +287,9 @@ local function Load()
         probe = { index = p.index, mirror = p.mirror ~= false, s = p.s or { 1, 1, 1 }, m = p.m or { 0, 0, 0 } }
     end
     loaded, loadTime = true, GetTime()
-    Refresh()
+    -- Put this character's saved shape back right away (a /reload would otherwise leave the default shape until the server
+    -- answers or the wait below runs out). The server's copy, when it comes at login, still replaces this one.
+    ApplyStore()
     Reconcile()
 end
 
@@ -316,7 +318,7 @@ frame:SetScript("OnUpdate", function()
     -- No server answered (not an FTA realm, AIO is off, or this is a /reload): use the saved variables.
     if loaded and not synced and serverCode == nil and GetTime() - loadTime > 5 then
         synced = true
-        ApplyStore()
+        Snapshot()   -- the engine already holds the saved shape (and anything changed since): keep that as the saved copy
     end
 end)
 frame:SetScript("OnShow", Refresh)
