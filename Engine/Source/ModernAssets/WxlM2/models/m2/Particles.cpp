@@ -17,6 +17,7 @@
 #include "Particles.hpp"
 
 #include "Contract.hpp"
+#include "../../common/Config.hpp"
 
 #include <array>
 #include <cmath>
@@ -163,6 +164,62 @@ namespace wxl::modern::assets::m2::particles
             return true;
         }
 
+        // Test switches for retail particle effects that look upside down in game (torch flames). Both are off by default.
+        // WXL_PARTICLE_GRAVITY_FLIP=1  reverses the sign of the converted retail gravity.
+        // WXL_PARTICLE_SPEED_FLIP=1    reverses the emission speed of retail-format emitters (flames go the other way).
+        bool GravityFlipSwitch()
+        {
+            static const bool on = wxl::config::Env("WXL_PARTICLE_GRAVITY_FLIP", false);
+            return on;
+        }
+
+        bool SpeedFlipSwitch()
+        {
+            static const bool on = wxl::config::Env("WXL_PARTICLE_SPEED_FLIP", false);
+            return on;
+        }
+
+        constexpr uint32_t kSpeedTrackOff = 0x34;
+
+        // Writes a private copy of the emission-speed values with the sign reversed and points the emitter at it.
+        bool FlipSpeed(fmt::M2Header const* md, uint32_t size, uint8_t const* source,
+                       uint8_t* destination, Plan& plan)
+        {
+            int16_t const globalSequence = int16_t(Rd16(source + kSpeedTrackOff + 2));
+            uint32_t const outerCount = Rd32(source + kSpeedTrackOff + 12);
+            uint32_t const outerOffset = Rd32(source + kSpeedTrackOff + 16);
+            if (!outerCount) return true;
+            if (outerCount > 0x1000 || !Readable(md, outerOffset, outerCount, 8, size)) return false;
+            uint32_t privateOuter = 0;
+            if (!Append(plan, md->base() + outerOffset, outerCount * 8, 4, privateOuter)) return false;
+            for (uint32_t animation = 0; animation < outerCount; ++animation)
+            {
+                uint8_t const* descriptor = md->base() + outerOffset + animation * 8;
+                uint32_t const count = Rd32(descriptor);
+                uint32_t const offset = Rd32(descriptor + 4);
+                if (!count) continue;
+                if (count > 0x1000 || !Readable(md, offset, count, 4, size)) return false;
+                if (globalSequence < 0 &&
+                    (animation >= md->sequences.count ||
+                     !(Rd32(md->base() + md->sequences.offset +
+                            animation * sizeof(fmt::M2Sequence) + 12) & 0x20)))
+                    return false;
+                std::vector<uint8_t> flipped(count * 4);
+                for (uint32_t index = 0; index < count; ++index)
+                {
+                    float value;
+                    std::memcpy(&value, md->base() + offset + index * 4, 4);
+                    value = -value;
+                    std::memcpy(flipped.data() + index * 4, &value, 4);
+                }
+                uint32_t privateKeys = 0;
+                if (!Append(plan, flipped.data(), uint32_t(flipped.size()), 4, privateKeys)) return false;
+                Wr32(plan.tail.data() + privateOuter - plan.appendOffset + animation * 8 + 4, privateKeys);
+            }
+            Wr32(destination + kSpeedTrackOff + 16, privateOuter);
+            return true;
+        }
+
         bool Gravity(fmt::M2Header const* md, uint32_t size, uint8_t const* source,
                      uint8_t* destination, Plan& plan)
         {
@@ -206,7 +263,8 @@ namespace wxl::modern::assets::m2::particles
                             magnitude = -magnitude;
                         }
                         // Retain current WXL's scalar compatibility result, including its horizontal approximation.
-                        float const scalar = -(zc * magnitude);
+                        float scalar = -(zc * magnitude);
+                        if (GravityFlipSwitch()) scalar = -scalar;
                         std::memcpy(converted.data() + index * 4, &scalar, 4);
                     }
                     uint32_t privateKeys = 0;
@@ -252,6 +310,8 @@ namespace wxl::modern::assets::m2::particles
                     !Atlas(md, size, source, destination, kTailCellOff, cells, plan) ||
                     !Gravity(md, size, source, destination, plan))
                     return false;
+                if (SpeedFlipSwitch())
+                    FlipSpeed(md, size, source, destination, plan); // test switch: a model it cannot flip keeps its speed
             }
             return true;
         }
