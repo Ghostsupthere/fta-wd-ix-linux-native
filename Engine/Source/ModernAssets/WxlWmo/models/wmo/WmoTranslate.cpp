@@ -21,6 +21,7 @@
 #include "core/Logger.hpp"
 
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <limits>
@@ -731,7 +732,28 @@ namespace wxl::modern::assets::wmo
         const bool emitBSP = hasMOBN && hasMOBR;
         if (emitBSP) iff::EmitRaw(subRegion, mobn);
         if (emitBSP) iff::EmitRaw(subRegion, mobr);
-        if (hasMOCV) iff::EmitRaw(subRegion, mocv);
+        // Test switch WXL_WMO_MOCV_SCALE=<0..1>: multiplies the RGB of the vertex colours of EXTERIOR groups (retail
+        // houses are white there and come out overexposed under the native exterior lighting). Off by default (1.0).
+        std::vector<uint8_t> scaledMocv;
+        if (hasMOCV)
+        {
+            static const float scale = []() {
+                const char* v = std::getenv("WXL_WMO_MOCV_SCALE");
+                if (!v || !*v) return 1.0f;
+                const float f = std::strtof(v, nullptr);
+                return (f > 0.0f && f < 1.0f) ? f : 1.0f;
+            }();
+            const uint32_t srcFlags = Rd32(buf + mogpData + kMogpFlagsOffset);
+            if (scale < 1.0f && (srcFlags & kGrpFlagExterior))
+            {
+                scaledMocv.assign(mocv.data, mocv.data + mocv.size);
+                for (size_t i = 0; i + 3 < scaledMocv.size(); i += 4)      // B, G, R scaled; A untouched
+                    for (int k = 0; k < 3; ++k)
+                        scaledMocv[i + k] = static_cast<uint8_t>(scaledMocv[i + k] * scale + 0.5f);
+                mocv.data = scaledMocv.data();
+            }
+            iff::EmitRaw(subRegion, mocv);
+        }
         if (hasMLIQ) iff::EmitRaw(subRegion, mliq);
 
         // Native two-layer (shader 6) needs a 2nd texcoord + 2nd color set: the 2nd MOCV's alpha blends the
