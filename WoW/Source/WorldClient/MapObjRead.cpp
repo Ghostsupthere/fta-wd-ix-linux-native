@@ -5,6 +5,7 @@
 #include "Engine/Source/Storm/H/storm.h"
 #include "Engine/Source/ShaderEffect/ShaderEffect.h"
 #include <cmath>
+#include <cstdio>
 #include "WoW/Source/WorldClient/Types.h"
 #include "WoW/Source/WorldClient/DayNight.h"
 #include "Engine/Source/Services/AsyncFile.h"
@@ -321,6 +322,24 @@ CMapObjGroup* CMapObj::AttenTransVerts(CMapObjGroup* group) {
     return group;
 }
 
+namespace {
+// Group data is walked positionally (flags decide which chunk comes next) with no magic or bounds check. A group whose
+// flags promise chunks the file does not have (a source layout the translator did not reshape) walks off the end of the
+// buffer and faults. These checks stop the walk instead and the missing data is treated as absent.
+bool GroupChunkOk(const CMapObjGroup* group, const void* chunk) {
+    const uint8_t* base = static_cast<const uint8_t*>(group->m_filePtr);
+    const uint8_t* end = base + static_cast<uint32_t>(group->m_fileSize);
+    const uint8_t* p = static_cast<const uint8_t*>(chunk);
+    if (p < base || p + 8 > end) return false;
+    const uint32_t size = *reinterpret_cast<const uint32_t*>(p + 4);
+    return size <= static_cast<uint32_t>(end - (p + 8));
+}
+void GroupWalkWarn(const CMapObjGroup* group, const char* where) {
+    std::fprintf(stderr, "WarcraftXL: wmo group data walk stopped (%s): %s flags %08x file size %d\n",
+                 where, group->m_parent->m_wmoName, group->m_flags, group->m_fileSize);
+}
+}
+
 // VERIFY: 5789fe57 manual
 // OFFSET: 0x007D7C30
 void CMapObjGroup::CreateOptionalDataPointers(SIffChunk* dataChunk) {
@@ -328,21 +347,41 @@ void CMapObjGroup::CreateOptionalDataPointers(SIffChunk* dataChunk) {
     uint32_t flags = this->m_flags;
 
     if (flags & 0x200) {
+    if (!GroupChunkOk(this, chunk)) {
+        GroupWalkWarn(this, "optional");
+        this->m_flags &= ~(0x200 | 0x800 | 0x1 | 0x400 | 0x4 | 0x1000 | 0x20000 | 0x2000000 | 0x1000000);
+        return;
+    }
         this->m_lightRefList = reinterpret_cast<uint16_t*>(&chunk->m_data);
         this->m_lightRefListCount = chunk->m_size >> 1;
         chunk = reinterpret_cast<SIffChunk*>(reinterpret_cast<uint8_t*>(&chunk->m_data) + chunk->m_size);
     }
 
     if (flags & 0x800) {
+    if (!GroupChunkOk(this, chunk)) {
+        GroupWalkWarn(this, "optional");
+        this->m_flags &= ~(0x800 | 0x1 | 0x400 | 0x4 | 0x1000 | 0x20000 | 0x2000000 | 0x1000000);
+        return;
+    }
         this->m_doodadRefList = reinterpret_cast<uint16_t*>(&chunk->m_data);
         this->m_doodadRefListCount = chunk->m_size >> 1;
         chunk = reinterpret_cast<SIffChunk*>(reinterpret_cast<uint8_t*>(&chunk->m_data) + chunk->m_size);
     }
 
     if (flags & 0x1) {
+    if (!GroupChunkOk(this, chunk)) {
+        GroupWalkWarn(this, "optional");
+        this->m_flags &= ~(0x1 | 0x400 | 0x4 | 0x1000 | 0x20000 | 0x2000000 | 0x1000000);
+        return;
+    }
         uint32_t nodeSize = chunk->m_size;
         CAaBspNode* nodes = reinterpret_cast<CAaBspNode*>(&chunk->m_data);
         chunk = reinterpret_cast<SIffChunk*>(reinterpret_cast<uint8_t*>(&chunk->m_data) + nodeSize);
+        if (!GroupChunkOk(this, chunk)) {
+            GroupWalkWarn(this, "optional");
+            this->m_flags &= ~(0x1 | 0x400 | 0x4 | 0x1000 | 0x20000 | 0x2000000 | 0x1000000);
+            return;
+        }
         uint32_t faceSize = chunk->m_size;
         uint16_t* faces = reinterpret_cast<uint16_t*>(&chunk->m_data);
         chunk = reinterpret_cast<SIffChunk*>(reinterpret_cast<uint8_t*>(&chunk->m_data) + faceSize);
@@ -356,6 +395,11 @@ void CMapObjGroup::CreateOptionalDataPointers(SIffChunk* dataChunk) {
     }
 
     if (this->m_flags & 0x4) {
+    if (!GroupChunkOk(this, chunk)) {
+        GroupWalkWarn(this, "optional");
+        this->m_flags &= ~(0x4 | 0x1000 | 0x20000 | 0x2000000 | 0x1000000);
+        return;
+    }
         CMapObj* parent = this->m_parent;
         this->m_colorVertexList = reinterpret_cast<CImVector*>(&chunk->m_data);
         this->m_colorVertexListSize = chunk->m_size >> 2;
@@ -367,6 +411,11 @@ void CMapObjGroup::CreateOptionalDataPointers(SIffChunk* dataChunk) {
     }
 
     if (this->m_flags & 0x1000) {
+    if (!GroupChunkOk(this, chunk)) {
+        GroupWalkWarn(this, "optional");
+        this->m_flags &= ~(0x1000 | 0x20000 | 0x2000000 | 0x1000000);
+        return;
+    }
         uint32_t* header = reinterpret_cast<uint32_t*>(&chunk->m_data);
         this->m_liquidVerts.x = header[0];
         this->m_liquidVerts.y = header[1];
@@ -392,6 +441,11 @@ void CMapObjGroup::CreateOptionalDataPointers(SIffChunk* dataChunk) {
     }
 
     if (this->m_flags & 0x20000) {
+    if (!GroupChunkOk(this, chunk)) {
+        GroupWalkWarn(this, "optional");
+        this->m_flags &= ~(0x20000 | 0x2000000 | 0x1000000);
+        return;
+    }
         this->m_stripIndices = reinterpret_cast<uint16_t*>(&chunk->m_data);
         this->m_stripIndexCount = chunk->m_size >> 1;
         chunk = reinterpret_cast<SIffChunk*>(reinterpret_cast<uint8_t*>(&chunk->m_data) + chunk->m_size + 8);
@@ -408,12 +462,22 @@ void CMapObjGroup::CreateOptionalDataPointers(SIffChunk* dataChunk) {
     flags = this->m_flags;
 
     if (flags & 0x2000000) {
+    if (!GroupChunkOk(this, chunk)) {
+        GroupWalkWarn(this, "optional");
+        this->m_flags &= ~(0x2000000 | 0x1000000);
+        return;
+    }
         this->m_textureVertexList2 = reinterpret_cast<C2Vector*>(&chunk->m_data);
         this->m_textureVertexList2Count = chunk->m_size >> 3;
         chunk = reinterpret_cast<SIffChunk*>(reinterpret_cast<uint8_t*>(&chunk->m_data) + chunk->m_size);
     }
 
     if (flags & 0x1000000) {
+    if (!GroupChunkOk(this, chunk)) {
+        GroupWalkWarn(this, "optional");
+        this->m_flags &= ~(0x1000000);
+        return;
+    }
         this->m_colorVertexListExtra = reinterpret_cast<CImVector*>(&chunk->m_data);
         this->m_colorVertexListExtraSize = chunk->m_size >> 2;
     }
@@ -423,6 +487,23 @@ void CMapObjGroup::CreateOptionalDataPointers(SIffChunk* dataChunk) {
 // OFFSET: 0x007D7F50
 void CMapObjGroup::CreateDataPointers(SIffChunk* dataChunk) {
     SIffChunk* chunk = dataChunk;
+    // Mandatory chunks, six in a row; a short or reshaped file ends the walk and the group is left empty.
+    SIffChunk* walk = chunk;
+    for (int i = 0; i < 6; i++) {
+        if (!GroupChunkOk(this, walk)) {
+            GroupWalkWarn(this, "mandatory");
+            this->m_batchListCount = 0;
+            this->m_transparencyBatchesCount = 0;
+            this->m_intBatchCount = 0;
+            this->m_extBatchCount = 0;
+            this->m_vertexListCount = 0;
+            this->m_indicesCount = 0;
+            this->m_polyListSize = 0;
+            this->m_flags &= ~(0x1 | 0x4 | 0x200 | 0x400 | 0x800 | 0x1000 | 0x20000 | 0x2000000 | 0x1000000);
+            return;
+        }
+        walk = reinterpret_cast<SIffChunk*>(reinterpret_cast<uint8_t*>(&walk->m_data) + walk->m_size);
+    }
     this->m_polyList = reinterpret_cast<SMOPoly*>(&chunk->m_data);
     this->m_polyListSize = chunk->m_size >> 1;
 
