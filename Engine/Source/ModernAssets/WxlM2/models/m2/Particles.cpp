@@ -164,18 +164,12 @@ namespace wxl::modern::assets::m2::particles
             return true;
         }
 
-        // Test switches for retail particle effects that look upside down in game (torch flames). Both are off by default.
-        // WXL_PARTICLE_GRAVITY_FLIP=1  reverses the sign of the converted retail gravity.
-        // WXL_PARTICLE_SPEED_FLIP=1    reverses the emission speed of retail-format emitters (flames go the other way).
-        bool GravityFlipSwitch()
-        {
-            static const bool on = wxl::config::Env("WXL_PARTICLE_GRAVITY_FLIP", false);
-            return on;
-        }
-
+        // Retail-format emitters emit along the opposite direction from the native ones (torch flames pointed at the
+        // ground on the neighborhood map), so their emission speed is reversed in the converted copy.
+        // WXL_PARTICLE_SPEED_FLIP=0 turns this off (for comparison).
         bool SpeedFlipSwitch()
         {
-            static const bool on = wxl::config::Env("WXL_PARTICLE_SPEED_FLIP", false);
+            static const bool on = wxl::config::Env("WXL_PARTICLE_SPEED_FLIP", true);
             return on;
         }
 
@@ -263,8 +257,7 @@ namespace wxl::modern::assets::m2::particles
                             magnitude = -magnitude;
                         }
                         // Retain current WXL's scalar compatibility result, including its horizontal approximation.
-                        float scalar = -(zc * magnitude);
-                        if (GravityFlipSwitch()) scalar = -scalar;
+                        float const scalar = -(zc * magnitude);
                         std::memcpy(converted.data() + index * 4, &scalar, 4);
                     }
                     uint32_t privateKeys = 0;
@@ -311,7 +304,7 @@ namespace wxl::modern::assets::m2::particles
                     !Gravity(md, size, source, destination, plan))
                     return false;
                 if (SpeedFlipSwitch())
-                    FlipSpeed(md, size, source, destination, plan); // test switch: a model it cannot flip keeps its speed
+                    FlipSpeed(md, size, source, destination, plan); // a model it cannot flip keeps its speed
             }
             return true;
         }
