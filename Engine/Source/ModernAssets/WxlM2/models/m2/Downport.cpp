@@ -131,7 +131,7 @@ namespace wxl::modern::assets::m2::downport
             // pre-parse rewrite scoped to that asset family: rewriting character or creature clocks
             // can change animation semantics that are unrelated to equipment texture transforms.
             static const bool enabled = wxl::config::Env("WXL_COLLECTION_TEXTURE_ANIMATION_LOOPS", true);
-            return enabled && text::StartsWithCI(name, "item\\objectcomponents\\");
+            return enabled && (text::StartsWithCI(name, "item\\objectcomponents\\") || textures::IsolatesEarlyLoops(name));
         }
     }
 

@@ -18,6 +18,7 @@
 
 #include "Contract.hpp"
 
+#include "../../common/Config.hpp"
 #include "../../common/Text.hpp"
 
 #include <algorithm>
@@ -200,13 +201,19 @@ namespace wxl::modern::assets::m2::textures
         md->textureUnitLookup.offset = appendOffset; // header+0x8C -> the appended entry
     }
 
+    bool IsolatesEarlyLoops(std::string_view name)
+    {
+        static const bool world = wxl::config::Env("WXL_WORLD_TEXTURE_LOOPS", false);
+        return text::ContainsCI(name, "item\\objectcomponents\\") || (world && text::StartsWithCI(name, "world\\"));
+    }
+
     uint32_t TextureTransformLoopRepairExtraBytes(const fmt::M2Header* md, uint32_t fileSize,
                                                   uint32_t appendOffset, std::string_view name)
     {
         if (!md || md->magic != fmt::kMagicMD20) return 0;
 
         std::vector<uint32_t> loops;
-        const bool isolateEquipmentLoop = text::ContainsCI(name, "item\\objectcomponents\\");
+        const bool isolateEquipmentLoop = IsolatesEarlyLoops(name);
         const uint32_t repaired = BuildRepairedLoops(md, fileSize, loops, isolateEquipmentLoop);
         if (!repaired || loops.size() == md->globalLoops.count) return 0;
 
@@ -222,7 +229,7 @@ namespace wxl::modern::assets::m2::textures
         if (!md || md->magic != fmt::kMagicMD20) return 0;
 
         std::vector<uint32_t> loops;
-        const bool isolateEquipmentLoop = text::ContainsCI(name, "item\\objectcomponents\\");
+        const bool isolateEquipmentLoop = IsolatesEarlyLoops(name);
         const uint32_t repaired = BuildRepairedLoops(md, fileSize, loops, isolateEquipmentLoop);
         if (!repaired) return 0;
 

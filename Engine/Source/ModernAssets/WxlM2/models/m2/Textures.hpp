@@ -51,6 +51,12 @@ namespace wxl::modern::assets::m2::textures
      * @param appendOffset  Offset where prior grow steps would leave the cursor.
      * @return Extra bytes including alignment, or 0 when no loop repair is needed.
      */
+    /**
+     * @brief Whether texture-transform tracks on global slots 0/1 get a private clock for this model: attached equipment
+     *        effects always; retail world doodads (waterfalls) when WXL_WORLD_TEXTURE_LOOPS is on.
+     */
+    bool IsolatesEarlyLoops(std::string_view name);
+
     uint32_t TextureTransformLoopRepairExtraBytes(const wxl::structure::m2::M2Header* md,
                                                   uint32_t fileSize, uint32_t appendOffset,
                                                   std::string_view name = {});
