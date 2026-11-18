@@ -763,9 +763,10 @@ namespace wxl::modern::assets::wmo
                 for (size_t i = 0; i + 3 < scaledMocv.size(); i += 4)      // B, G, R scaled; A untouched
                     for (int k = 0; k < 3; ++k)
                         scaledMocv[i + k] = static_cast<uint8_t>(scaledMocv[i + k] * scale + 0.5f);
-                mocv.data = scaledMocv.data();
+                iff::Emit(subRegion, kMOCV, scaledMocv.data(), static_cast<uint32_t>(scaledMocv.size()));   // not EmitRaw: it copies the header from 8 bytes before the payload
             }
-            iff::EmitRaw(subRegion, mocv);
+            else
+                iff::EmitRaw(subRegion, mocv);
         }
         if (hasMLIQ) iff::EmitRaw(subRegion, mliq);
 
