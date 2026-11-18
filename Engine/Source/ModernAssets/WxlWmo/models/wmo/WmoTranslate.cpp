@@ -732,19 +732,32 @@ namespace wxl::modern::assets::wmo
         const bool emitBSP = hasMOBN && hasMOBR;
         if (emitBSP) iff::EmitRaw(subRegion, mobn);
         if (emitBSP) iff::EmitRaw(subRegion, mobr);
-        // Test switch WXL_WMO_MOCV_SCALE=<0..1>: multiplies the RGB of the vertex colours of EXTERIOR groups (retail
-        // houses are white there and come out overexposed under the native exterior lighting). Off by default (1.0).
+        // Retail exterior groups carry pure white vertex colours (they are lit dynamically there), but the client adds the
+        // vertex colour as baked light, so such buildings come out self-lit and shadowless day and night. Scale the RGB of
+        // translated EXTERIOR groups down (default 0.05, WXL_WMO_MOCV_SCALE=<0..1>, 1 = off). Interior groups keep their
+        // baked colours.
         std::vector<uint8_t> scaledMocv;
         if (hasMOCV)
         {
             static const float scale = []() {
                 const char* v = std::getenv("WXL_WMO_MOCV_SCALE");
-                if (!v || !*v) return 1.0f;
+                if (!v || !*v) return 0.05f;
                 const float f = std::strtof(v, nullptr);
                 return (f > 0.0f && f < 1.0f) ? f : 1.0f;
             }();
             const uint32_t srcFlags = Rd32(buf + mogpData + kMogpFlagsOffset);
-            if (scale < 1.0f && (srcFlags & kGrpFlagExterior))
+            // Only groups whose colours are (nearly) all white: the "no baked light" encoding. Groups with genuinely baked,
+            // darker colours keep them.
+            bool whiteSet = false;
+            if (scale < 1.0f && (srcFlags & kGrpFlagExterior) && mocv.size >= 4)
+            {
+                uint64_t sum = 0, cnt = 0;
+                const size_t step = (mocv.size / 4 > 512) ? (mocv.size / 4 / 512) : 1;
+                for (size_t v = 0; v < mocv.size / 4; v += step)
+                    for (int k = 0; k < 3; ++k) { sum += mocv.data[v * 4 + k]; ++cnt; }
+                whiteSet = cnt && (sum / cnt) >= 0xC0;
+            }
+            if (whiteSet)
             {
                 scaledMocv.assign(mocv.data, mocv.data + mocv.size);
                 for (size_t i = 0; i + 3 < scaledMocv.size(); i += 4)      // B, G, R scaled; A untouched
