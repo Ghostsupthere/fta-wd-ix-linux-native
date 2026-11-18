@@ -63,6 +63,9 @@ namespace wxl::modern::assets::wmo
     // needed.
     constexpr bool IsGroupModernMarker(uint32_t magic)
     {
-        return magic == kMOGX || magic == kMPY2 || magic == FourCC('M', 'O', 'C', '2');
+        // MOBS (after MOBA) is a source-only chunk too: 3.3.5 groups never carry it, and an untranslated group that has it
+        // desyncs the native positional chunk walk (the BSP/colour pointers land on the wrong chunk and the walk can run
+        // past the end of the group buffer: access violation in CMapObjGroup::AsyncPostloadCallback).
+        return magic == kMOGX || magic == kMPY2 || magic == FourCC('M', 'O', 'C', '2') || magic == FourCC('M', 'O', 'B', 'S');
     }
 }
