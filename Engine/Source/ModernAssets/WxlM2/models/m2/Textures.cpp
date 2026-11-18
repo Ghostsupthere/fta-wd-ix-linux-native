@@ -203,7 +203,7 @@ namespace wxl::modern::assets::m2::textures
 
     bool IsolatesEarlyLoops(std::string_view name)
     {
-        static const bool world = wxl::config::Env("WXL_WORLD_TEXTURE_LOOPS", false);
+        static const bool world = wxl::config::Env("WXL_WORLD_TEXTURE_LOOPS", true);
         return text::ContainsCI(name, "item\\objectcomponents\\") || (world && text::StartsWithCI(name, "world\\"));
     }
 
