@@ -1,5 +1,6 @@
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Source/Object/Linux/WxlGoblinGlider.h"
+#include "WoW/Source/Object/Linux/WxlJumpTrace.h"
 #endif
 #include "Movement.h"
 #if defined(WOWDECOMP_LINUX)
@@ -4768,7 +4769,13 @@ int32_t CMovement_C::UpdatePlayerMovement(uint32_t time) {
 
         if ((flags & MOVEMENTFLAG_ONTRANSPORT) && (movement || swim || eventId == MOVEEVENT_KNOCK_BACK)) {
         } else if ((flags & MOVEMENTFLAG_ROOT) && (movement || swim)) {
+#if defined(WOWDECOMP_LINUX)
+            FtaJumpTrace("queued movement event %d dropped, unit is rooted: flags %08x", int(eventId), flags);
+#endif
         } else if ((flags & MOVEMENTFLAG_PENDING_ROOT) && movement) {
+#if defined(WOWDECOMP_LINUX)
+            FtaJumpTrace("queued movement event %d dropped, root pending: flags %08x", int(eventId), flags);
+#endif
         } else {
             uint32_t oldFlags = flags;
             int32_t jumping = this->IsJumping();
@@ -5046,6 +5053,9 @@ int32_t CMovement_C::UpdatePlayerMovement(uint32_t time) {
                     uint32_t rootFlags = this->m_flags;
                     uint32_t rootFlags2 = this->m_flags2;
                     this->TryRoot();
+#if defined(WOWDECOMP_LINUX)
+                    FtaJumpTrace("ROOT event (ack %d, spline %d): flags %08x -> %08x", int(event->m_needAck), int(this->IsOnSpline()), rootFlags, this->m_flags);
+#endif
                     sent = this->m_unit->ProcessLocalMoveEvent(time, CMSG_FORCE_MOVE_ROOT_ACK, event->m_needAck, 0.0f, event->m_ackCounter, 0, 255);
                     this->CallMoveEventHandlers(time, 0, rootFlags, rootFlags2, wasJumping, 0);
                     break;
@@ -5057,6 +5067,9 @@ int32_t CMovement_C::UpdatePlayerMovement(uint32_t time) {
                     uint32_t rootFlags2 = this->m_flags2;
                     this->UnRoot(!event->m_needAck || this->m_unit->IsActiveMover());
                     this->m_unit->UnRootEffects();
+#if defined(WOWDECOMP_LINUX)
+                    FtaJumpTrace("UNROOT event (ack %d, active mover %d): flags %08x -> %08x", int(event->m_needAck), int(this->m_unit->IsActiveMover()), rootFlags, this->m_flags);
+#endif
                     sent = this->m_unit->ProcessLocalMoveEvent(time, CMSG_FORCE_MOVE_UNROOT_ACK, event->m_needAck, 0.0f, event->m_ackCounter, 0, 255);
                     this->CallMoveEventHandlers(time, 0, rootFlags, rootFlags2, wasJumping, 0);
                     break;

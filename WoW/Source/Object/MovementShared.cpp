@@ -1,6 +1,7 @@
 #if defined(WOWDECOMP_LINUX)
 #include "Engine/Source/ModernAssets/WxlGoblinGlider/GlidePolicy.hpp"
 #include "WoW/Source/Object/Linux/WxlGoblinGlider.h"
+#include "WoW/Source/Object/Linux/WxlJumpTrace.h"
 #endif
 #include "MovementShared.h"
 #include <cmath>
@@ -1754,29 +1755,42 @@ void CMovementShared::ForceStopMove(int32_t tryFall) {
 // VERIFY: a09b3274 manual
 // OFFSET: 0x009883F0
 int32_t CMovementShared::Jump(int32_t checkHover) {
+#if defined(WOWDECOMP_LINUX)
+#define FTA_JUMP_REFUSED(why) do { if (FtaJumpTraceEnabled() && FtaJumpTraceRefusalDue()) \
+    FtaJumpTrace("jump refused (%s): flags %08x flags2 %04x spline %s splineflags %08x", why, this->m_flags, \
+                 static_cast<unsigned>(this->m_flags2), this->m_spline ? "yes" : "no", this->m_spline ? this->m_spline->m_flags : 0u); } while (0)
+#else
+#define FTA_JUMP_REFUSED(why) do {} while (0)
+#endif
     if (checkHover && (this->m_flags & MOVEMENTFLAG_HOVER) && !(this->m_flags & MOVEMENTFLAG_SWIMMING)) {
+        FTA_JUMP_REFUSED("hover");
         return 0;
     }
 
     if (this->m_spline && !(this->m_spline->m_flags & SPLINEFLAG_NO_SPLINE) && (this->m_spline->m_flags & SPLINEFLAG_FLYING)) {
+        FTA_JUMP_REFUSED("flying spline");
         return 0;
     }
 
     uint32_t flags = this->m_flags;
 
     if (flags & (MOVEMENTFLAG_ROOT | MOVEMENTFLAG_FALLING | MOVEMENTFLAG_FLYING)) {
+        FTA_JUMP_REFUSED((flags & MOVEMENTFLAG_ROOT) ? "rooted" : (flags & MOVEMENTFLAG_FALLING) ? "falling" : "flying");
         return 0;
     }
 
     uint16_t flags2 = this->m_flags2;
 
     if (!(flags2 & MOVEMENTFLAG2_DISABLE_GRAVITY) && this->IsGravityDisabled()) {
+        FTA_JUMP_REFUSED("gravity disabled");
         return 0;
     }
 
     if (flags2 & MOVEMENTFLAG2_NO_JUMPING) {
+        FTA_JUMP_REFUSED("no-jumping flag");
         return 0;
     }
+#undef FTA_JUMP_REFUSED
 
     this->StartFalling((flags & MOVEMENTFLAG_SWIMMING) ? -9.0967484f : -7.9555473f);
     return 1;
