@@ -1365,7 +1365,14 @@ static void OpenArchives() {
 
     int32_t priority = 64;
     uint32_t slot = 0;
+#if defined(WOWDECOMP_LINUX)
+    // The stock table holds 64 archives: the patch archives plus the 28 base slots, so 36 patch-*.mpq files was the limit and the 37th wrote
+    // past the array (heap corruption at the first free, "double free or corruption" during the graphics start). The housing and
+    // neighborhood packs alone are 21 files; leave room for many more.
+    s_archiveHandles.SetCount(256);
+#else
     s_archiveHandles.SetCount(64);
+#endif
 
     for (uint32_t i = patches.m_files.Count(); i; i--) {
         if (SFile::OpenArchive(patches.m_files[i - 1], priority, 0xC00, &s_archiveHandles[slot])) {

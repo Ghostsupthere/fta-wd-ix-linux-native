@@ -578,10 +578,28 @@ VALIDATE_NAME_RESULT ValidateName(uint32_t language, const uint16_t* allowed, co
 VALIDATE_NAME_RESULT ValidateCharacterNameConst(uint32_t language, const char* name, bool profanity, bool chatProfanity, bool reserved, bool english, int32_t extraLength) {
     uint32_t length;
     CHARSET charset;
-    VALIDATE_NAME_RESULT result = ValidateName(language, nullptr, name, &length, &charset, profanity, chatProfanity, reserved, false, english, -1);
+    // FTA: a character name may be several words separated by single spaces
+    static const uint16_t allowed[2] = { ' ', 0 };
+    // FTA: no profanity, chat-profanity or reserved-name lists and no "three identical letters" rule (relaxed also drops ValidateName's
+    // space rules, which are checked right below). Only the alphabet, the length and the spacing are checked; a taken name is the server's call.
+    VALIDATE_NAME_RESULT result = ValidateName(language, allowed, name, &length, &charset, false, false, false, true, english, -1);
 
     if (!result) {
-        int32_t maxLength = 12;
+        if (length < 2) {
+            return length ? NAME_TOO_SHORT : NAME_NO_NAME;
+        }
+
+        size_t const bytes = strlen(name);
+
+        if (name[0] == ' ' || name[bytes - 1] == ' ') {
+            return NAME_INVALID_SPACE;
+        }
+
+        if (strstr(name, "  ")) {
+            return NAME_CONSECUTIVE_SPACES;
+        }
+
+        int32_t maxLength = 32;
 
         if (charset == CHARSET_KOREAN || charset == CHARSET_CHINESE) {
             maxLength = 8;

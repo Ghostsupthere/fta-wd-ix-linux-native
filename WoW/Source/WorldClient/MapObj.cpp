@@ -173,6 +173,32 @@ static uint32_t s_smolVertCacheSize;
 // STATIC: 0x00D1BF00
 static SMOLiquidVert s_smolVertCache[64];
 
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/ModernAssets/NativeDiagnostic.h"
+#include <cstdint>
+// A batch whose material cannot be a real one (index past the list, the group of another map object, or a texture slot that holds
+// bytes that are no pointer) is skipped and logged instead of dereferenced: this showed up as a crash walking into a placed house
+// (Town House D, 2026-11-18) whose cause was not pinned down. The log line names the building so the cause can be found.
+static bool WxlWmoBatchSane(CMapObj* mapObj, CMapObjGroup* group, const SMOBatch& batch) {
+    bool ok = batch.m_texture < static_cast<uint32_t>(mapObj->m_materialsCount) && group->m_parent == mapObj;
+    if (ok) {
+        const SMOMaterial& material = mapObj->m_materialList[batch.m_texture];
+        const uintptr_t t0 = reinterpret_cast<uintptr_t>(const_cast<SMOMaterial&>(material).Textures()[0]);
+        const uintptr_t t1 = reinterpret_cast<uintptr_t>(const_cast<SMOMaterial&>(material).Textures()[1]);
+        ok = (t0 >> 47) == 0 && (t1 >> 47) == 0;
+    }
+    if (!ok) {
+        static int reported = 0;
+        if (reported < 20) {
+            ++reported;
+            WxlNativeDiagnostic("wmo: skipped a batch with an invalid material in %s (material %u of %d, group of this object: %d)",
+                mapObj->m_wmoName, static_cast<unsigned>(batch.m_texture), mapObj->m_materialsCount, group->m_parent == mapObj ? 1 : 0);
+        }
+    }
+    return ok;
+}
+#endif
+
 // VERIFY: 7a37847b auto
 // OFFSET: 0x007A6140
 World::TriData::Batch* World::TriData::AllocBatch() {
@@ -955,6 +981,11 @@ void CMapObj::UnifiedRender(CMapObjGroup* group, uint32_t index) {
         }
 
         batch.m_flags |= 0xF0;
+#if defined(WOWDECOMP_LINUX)
+        if (!WxlWmoBatchSane(this, group, batch)) {
+            continue;
+        }
+#endif
         SMOMaterial& material = this->m_materialList[batch.m_texture];
         CTexture* texture = material.Textures()[0];
         CGxTex* gxTex0 = TextureGetGxTex(texture, 0, nullptr);
@@ -1382,6 +1413,11 @@ void CMapObj::ExteriorRender(CMapObjGroup* group, uint32_t index) {
         }
 
         batch.m_flags |= 0xF0;
+#if defined(WOWDECOMP_LINUX)
+        if (!WxlWmoBatchSane(this, group, batch)) {
+            continue;
+        }
+#endif
         SMOMaterial& material = this->m_materialList[batch.m_texture];
         CTexture* texture = material.Textures()[0];
         CGxTex* gxTex0 = TextureGetGxTex(texture, 0, nullptr);
@@ -1504,6 +1540,11 @@ void CMapObj::InteriorRender(CMapObjGroup* group, uint32_t index) {
         }
 
         batch.m_flags |= 0xF0;
+#if defined(WOWDECOMP_LINUX)
+        if (!WxlWmoBatchSane(this, group, batch)) {
+            continue;
+        }
+#endif
         SMOMaterial& material = this->m_materialList[batch.m_texture];
         CTexture* texture = material.Textures()[0];
         CGxTex* gxTex0 = TextureGetGxTex(texture, 0, nullptr);

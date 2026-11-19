@@ -2739,6 +2739,22 @@ void CSimpleEditBox::LoadXML(XMLNode* node, CStatus* status) {
         this->m_textMaxLetters = SStrToInt(letters);
     }
 
+#if defined(WOWDECOMP_LINUX)
+    // FTA: character names may be up to 32 characters, in several words. The two name boxes of the base interface say letters="12"; raised here
+    // (rather than by replacing the interface files, which other patches also carry) so it works with whatever the client's interface holds.
+    if (this->m_textMaxLetters == 12) {
+        const char* boxName = node->GetAttributeByName("name");
+
+        if (boxName && (!SStrCmp(boxName, "CharacterCreateNameEdit", STORM_MAX_STR) || !SStrCmp(boxName, "SendMailNameEditBox", STORM_MAX_STR))) {
+            this->m_textMaxLetters = 32;
+
+            if (!SStrCmp(boxName, "CharacterCreateNameEdit", STORM_MAX_STR)) {
+                this->SetWidth(290.0f);
+            }
+        }
+    }
+#endif
+
     const char* countInvisibleLetters = node->GetAttributeByName("countInvisibleLetters");
 
     if (countInvisibleLetters && *countInvisibleLetters) {
