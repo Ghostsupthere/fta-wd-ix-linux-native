@@ -5,6 +5,7 @@
 #include "WoW/Source/WorldClient/Linux/WxlWmoMaterials.h"
 #include "WoW/Source/WorldClient/Linux/WxlGrassMotion.h"
 #include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
+#include "WoW/Source/Ui/Linux/WxlHousing.h"
 #include "WoW/Source/Ui/Linux/WxlClickThrough.h"
 #include "WorldFrame.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
@@ -1834,6 +1835,9 @@ void CGWorldFrame::OnWorldRender() {
         GxMasterEnableSet(GxMasterEnable_PolygonFill, 1);
     }
 
+#if defined(WOWDECOMP_LINUX)
+    WxlHousingDrawGizmo();
+#endif
     g_theGxDevicePtr->RsPop();
     SmartScreenRectClearGrid(SRECTGRID_WORLDTEXT);
     CGChatBubbleFrame::OnWorldRender(this);
@@ -2052,6 +2056,9 @@ void CGWorldFrame::OnWorldUpdate() {
     C3Vector camTarget = C3Vector(camera->m_position.x + forward.x, camera->m_position.y + forward.y, camera->m_position.z + forward.z);
     this->m_camera->SetupWorldProjection(this->m_viewportDDC);
     this->UpdateDayNight(elapsedSec);
+#if defined(WOWDECOMP_LINUX)
+    WxlHousingUpdate();
+#endif
 
     if (!this->m_camera->HasModelCamera() && s_listenerAtCharacterVar && s_listenerAtCharacterVar->m_intValue) {
         CGObject_C* focus = CGObject_C::GetFocusObject();

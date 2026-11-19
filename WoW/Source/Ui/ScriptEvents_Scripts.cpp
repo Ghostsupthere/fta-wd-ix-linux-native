@@ -42,6 +42,7 @@
 #include "WoW/Source/Ui/Linux/WxlControlBridge.h"
 #include "WoW/Source/Ui/Linux/LuaStringCompatibility.h"
 #include "WoW/Source/Ui/Linux/WxlModelPresentation.h"
+#include "WoW/Source/Ui/Linux/WxlHousing.h"
 #include "WoW/Source/Ui/Linux/WxlGameObjectEditor.h"
 #include "WoW/Source/Ui/Linux/WxlUnderwear.h"
 #include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
@@ -4673,6 +4674,7 @@ void ScriptEventsRegisterFunctions() {
     WxlRegisterWeatherLua();
     WxlRegisterVisualTimeLua();
     WxlRegisterGameObjectEditorLua();
+    WxlRegisterHousingLua();
     WxlRegisterUnderwearLua();
     WxlRegisterAnimationLabLua();
     WxlRegisterCombatReadabilityLua();

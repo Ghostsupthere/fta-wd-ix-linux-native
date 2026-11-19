@@ -10,6 +10,7 @@
 #include "WoW/Source/Ui/Linux/WxlNamePlates.h"
 #include "WoW/Source/WorldClient/Linux/WxlUnitOutline.h"
 #include "WoW/Source/WorldClient/Linux/WxlSurfaceLights.h"
+#include "WoW/Source/Ui/Linux/WxlHousing.h"
 #include "WoW/Source/Ui/Linux/WxlGameObjectEditor.h"
 #include "WoW/Source/Ui/Linux/WxlUnderwear.h"
 #include "WoW/Source/Ui/Linux/WxlAnimationLab.h"
@@ -1513,6 +1514,7 @@ void World::UnloadMap() {
     WxlNamePlatesReset();
     WxlUnitOutlineWorldLeave();
     WxlGameObjectEditorWorldLeave();
+    WxlHousingWorldLeave();
     WxlUnderwearWorldLeave();
     WxlAnimationLabWorldLeave();
     WxlLoneWolfWorldLeave();
