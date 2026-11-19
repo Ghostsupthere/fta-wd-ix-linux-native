@@ -2740,13 +2740,14 @@ void CSimpleEditBox::LoadXML(XMLNode* node, CStatus* status) {
     }
 
 #if defined(WOWDECOMP_LINUX)
-    // FTA: character names may be up to 32 characters, in several words. The two name boxes of the base interface say letters="12"; raised here
+    // FTA: character names may be up to 32 characters, in several words. The name boxes of the base interface (create, forced rename, mail recipient) say letters="12"; raised here
     // rather than by replacing the interface files, which other patches also carry. The box keeps its width: SetWidth takes normalised units, not
     // the XML's, and a raw 290 stretched the create box over the whole screen.
     if (this->m_textMaxLetters == 12) {
         const char* boxName = node->GetAttributeByName("name");
 
-        if (boxName && (!SStrCmp(boxName, "CharacterCreateNameEdit", STORM_MAX_STR) || !SStrCmp(boxName, "SendMailNameEditBox", STORM_MAX_STR))) {
+        if (boxName && (!SStrCmp(boxName, "CharacterCreateNameEdit", STORM_MAX_STR) || !SStrCmp(boxName, "CharacterRenameEditBox", STORM_MAX_STR) ||
+                        !SStrCmp(boxName, "SendMailNameEditBox", STORM_MAX_STR))) {
             this->m_textMaxLetters = 32;
         }
     }
