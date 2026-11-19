@@ -4155,8 +4155,13 @@ void CCharacterComponent::ApplyHelmetGeosetVisibility(const ItemDisplayInfoRec* 
         return;
     }
 
-    if (this->m_data.m_preferences.m_raceID >= 32) return;
-    uint32_t raceMask = 1u << this->m_data.m_preferences.m_raceID;
+    // The masks hold one bit per race id, so only ids below 32 fit. The NPC display races of this client's ChrRaces (33 Human, 34 Orc ... 40 Troll,
+    // 41 Blood Elf ... 44 Naga, 46 Skeleton ... 52 Ice Troll) stand for the base race of the same name: use that race's bit (a helmeted guard of
+    // display race 33 kept its hair showing through the helmet because the ids above 31 were skipped).
+    uint32_t race = this->m_data.m_preferences.m_raceID;
+    if (race >= 33 && race <= 52) race -= (race <= 40) ? 32 : 31;
+    if (race >= 32) return;
+    uint32_t raceMask = 1u << race;
 
     if (raceMask & visRec->m_hideGeoset[0]) {
         this->m_data.m_geosets[CHARGEOSET_HAIR] = 1;
