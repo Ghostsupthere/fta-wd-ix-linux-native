@@ -37,6 +37,8 @@ uint8_t CGGuildBankInfo::m_currentTab;
 // STATIC: 0x00C1DC28
 static uint32_t s_pendingItemQueries;
 
+static void CancelPendingItemQueries();
+
 // STATIC: 0x00C1DC2C
 static uint32_t s_pendingLogQueries;
 
@@ -318,6 +320,8 @@ void CGGuildBankInfo::AutoStoreItem(WOWGUID item, WOWGUID container, uint32_t sl
 // VERIFY: 640c8ae9 manual
 // OFFSET: 0x005A56F0
 void CGGuildBankInfo::EnterWorld() {
+    CancelPendingItemQueries();
+
     for (int32_t i = 0; i < 6; i++) {
         CGGuildBankInfo::m_numLogEntries[i] = 0;
     }
@@ -413,6 +417,8 @@ void CGGuildBankInfo::Unlock(int32_t itemId, uint32_t virtualSlot) {
 // VERIFY: 23aee2aa auto
 // OFFSET: 0x005A7760
 void CGGuildBankInfo::ClearAllTabs() {
+    CancelPendingItemQueries();
+
     for (uint32_t i = 0; i < 6; i++) {
         CGGuildBankInfo::m_tabSlots[i].Clear();
         CGGuildBankInfo::m_guildBankTabInfo[i].m_needsFullUpdate = 1;
@@ -523,6 +529,22 @@ static void Signal_EVENT_GUILDBANKBAGSLOTS_CHANGED(int32_t id, const WOWGUID& gu
     if (!s_pendingItemQueries || !--s_pendingItemQueries) {
         FrameScript_SignalEvent(SCRIPT_EVENT_GUILDBANKBAGSLOTS_CHANGED, nullptr);
     }
+}
+
+static void CancelPendingItemQueries() {
+    if (!s_pendingItemQueries) {
+        return;
+    }
+
+    for (const auto& slots : CGGuildBankInfo::m_tabSlots) {
+        for (uint32_t i = 0; i < slots.m_count; ++i) {
+            if (const int32_t itemId = slots.m_data[i].m_itemID) {
+                g_itemDBCache.CancelCallback(itemId, Signal_EVENT_GUILDBANKBAGSLOTS_CHANGED, nullptr);
+            }
+        }
+    }
+
+    s_pendingItemQueries = 0;
 }
 
 // VERIFY: 259ab13d auto
@@ -688,13 +710,7 @@ int32_t Packet_SMSG_GUILD_BANK_LIST(void* param, NETMESSAGE msgId, uint32_t time
     msg->Get(CGGuildBankInfo::m_withdrawMoneyRemaining);
     msg->Get(hasTabInfo);
 
-    if (s_pendingItemQueries) {
-        s_pendingItemQueries = 0;
-
-        for (uint32_t i = 0; i < CGGuildBankInfo::m_tabSlots[tab].m_count; i++) {
-            g_nameDBCache.CancelCallback(*reinterpret_cast<uint64_t*>(&CGGuildBankInfo::m_tabSlots[tab].m_data[i]), Signal_EVENT_GUILDBANKBAGSLOTS_CHANGED, nullptr);
-        }
-    }
+    CancelPendingItemQueries();
 
     if (money >= 0x7FFFFFFFFFFFFull) {
         money = 0x7FFFFFFFFFFFFull;
