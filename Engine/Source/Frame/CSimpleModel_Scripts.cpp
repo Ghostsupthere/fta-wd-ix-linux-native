@@ -231,6 +231,14 @@ static int32_t Script_SetCamera(lua_State* L) {
     return 0;
 }
 
+// The original numeric flags use signed 32-bit CVTTSD2SI, then test nonzero.
+// Its result is zero exactly inside (-1, 1). NaN and overflow return INT_MIN,
+// which is nonzero. Testing the double directly made an omni value of 0.9 a
+// point light (dark foliage and model frames) where the original is directional.
+static bool ModelLightNumericFlag(double value) {
+    return !(value > -1.0 && value < 1.0);
+}
+
 // VERIFY: 3a823233 manual
 // OFFSET: 0x00960A10
 int32_t CSimpleModel::SetLightHelper(lua_State* L, int32_t index, CM2Light* light) {
@@ -238,7 +246,7 @@ int32_t CSimpleModel::SetLightHelper(lua_State* L, int32_t index, CM2Light* ligh
         return 0;
     }
 
-    light->SetVisible(lua_tonumber(L, index) != 0.0);
+    light->SetVisible(ModelLightNumericFlag(lua_tonumber(L, index)));
 
     if (!light->m_visible) {
         return 1;
@@ -248,7 +256,7 @@ int32_t CSimpleModel::SetLightHelper(lua_State* L, int32_t index, CM2Light* ligh
         return 0;
     }
 
-    light->SetLightType(static_cast<M2LIGHTTYPE>(lua_tonumber(L, index + 1) != 0.0));
+    light->SetLightType(static_cast<M2LIGHTTYPE>(ModelLightNumericFlag(lua_tonumber(L, index + 1))));
 
     if (light->m_type == M2LIGHT_POINT) {
         float x = lua_tonumber(L, index + 2);

@@ -5,34 +5,42 @@
 
 #include "lauxlib.h"
 #include "lualib.h"
-#include <math.h>
+
 #include <stdint.h>
 
 
 typedef int32_t Integer;
 typedef uint32_t UInteger;
 
-/* Win32 integer instructions wrapped these operands. A direct double -> int32
- * cast is undefined for unsigned colours such as 0xFFFFFFFF on native Linux. */
-static UInteger bit_word(lua_State *L, int index) {
+
+/* The original Win32 routines consume the low word of __ftol2's signed 64-bit
+** truncation, including packed unsigned colors. A direct x64 double-to-int cast
+** instead returns INT_MIN above INT_MAX. Preserve the original conversion
+** without an out-of-range cast; x87's indefinite result has a zero low word.
+*/
+static UInteger bit_checkword (lua_State *L, int index) {
   lua_Number value = luaL_checknumber(L, index);
-  if (!isfinite(value)) {
-    luaL_error(L, "bit operand must be finite");
+  if (!(value >= -9223372036854775808.0 && value < 9223372036854775808.0))
     return 0;
-  }
-  value = fmod(trunc(value), 4294967296.0);
-  if (value < 0) value += 4294967296.0;
-  return (UInteger)value;
+  return (UInteger)(int64_t)value;
 }
-static Integer bit_signed(UInteger value) {
-  return value <= INT32_MAX ? (Integer)value : -1 - (Integer)(UINT32_MAX - value);
+
+
+static Integer bit_signed (UInteger word) {
+  return (Integer)(word < 0x80000000u ? (int64_t)word : (int64_t)word - 4294967296LL);
+}
+
+
+static UInteger bit_shift (lua_State *L) {
+  /* Native SHL/SHR/SAR mask CL to five bits, also for negative/wide counts. */
+  return bit_checkword(L, 2) & 31u;
 }
 
 
 // VERIFY: d6a77d71 manual
 // OFFSET: 0x00850CC0
 static int bit_bnot (lua_State *L) {
-  lua_pushnumber(L, (UInteger)~bit_word(L, 1));
+  lua_pushnumber(L, (UInteger)~bit_checkword(L, 1));
   return 1;
 }
 
@@ -41,9 +49,9 @@ static int bit_bnot (lua_State *L) {
 // OFFSET: 0x00850D00
 static int bit_band (lua_State *L) {
   int n = lua_gettop(L), i;
-  UInteger w = bit_word(L, 1);
+  UInteger w = bit_checkword(L, 1);
   for (i = 2; i <= n; i++)
-    w &= bit_word(L, i);
+    w &= bit_checkword(L, i);
   lua_pushnumber(L, w);
   return 1;
 }
@@ -53,9 +61,9 @@ static int bit_band (lua_State *L) {
 // OFFSET: 0x00850D80
 static int bit_bor (lua_State *L) {
   int n = lua_gettop(L), i;
-  UInteger w = bit_word(L, 1);
+  UInteger w = bit_checkword(L, 1);
   for (i = 2; i <= n; i++)
-    w |= bit_word(L, i);
+    w |= bit_checkword(L, i);
   lua_pushnumber(L, w);
   return 1;
 }
@@ -65,9 +73,9 @@ static int bit_bor (lua_State *L) {
 // OFFSET: 0x00850E00
 static int bit_bxor (lua_State *L) {
   int n = lua_gettop(L), i;
-  UInteger w = bit_word(L, 1);
+  UInteger w = bit_checkword(L, 1);
   for (i = 2; i <= n; i++)
-    w ^= bit_word(L, i);
+    w ^= bit_checkword(L, i);
   lua_pushnumber(L, w);
   return 1;
 }
@@ -76,40 +84,49 @@ static int bit_bxor (lua_State *L) {
 // VERIFY: 5453693c auto
 // OFFSET: 0x00850E80
 static int bit_lshift (lua_State *L) {
-  UInteger value = bit_word(L, 1), count = bit_word(L, 2) & 31u;
-  lua_pushnumber(L, (UInteger)(value << count));
+  UInteger shift = bit_shift(L);
+  lua_pushnumber(L, (UInteger)(bit_checkword(L, 1) << shift));
   return 1;
 }
+
 
 // VERIFY: 99a627b4 auto
 // OFFSET: 0x00850EE0
 static int bit_rshift (lua_State *L) {
-  UInteger value = bit_word(L, 1), count = bit_word(L, 2) & 31u;
-  lua_pushnumber(L, bit_signed(value >> count));
+  UInteger shift = bit_shift(L);
+  lua_pushnumber(L, bit_checkword(L, 1) >> shift);
   return 1;
 }
+
 
 // VERIFY: b56ebf4a auto
 // OFFSET: 0x00850F40
 static int bit_arshift (lua_State *L) {
-  UInteger value = bit_word(L, 1), count = bit_word(L, 2) & 31u;
-  UInteger result = value >> count;
-  if (count && (value & UINT32_C(0x80000000))) result |= UINT32_MAX << (32u-count);
-  lua_pushnumber(L, bit_signed(result));
+  UInteger shift = bit_shift(L);
+  UInteger word = bit_checkword(L, 1);
+  UInteger shifted = word >> shift;
+  if (shift && (word & 0x80000000u))
+    shifted |= 0xffffffffu << (32u - shift);
+  lua_pushnumber(L, bit_signed(shifted));
   return 1;
 }
+
 
 // VERIFY: 8e98a529 auto
 // OFFSET: 0x00850F90
 static int bit_mod (lua_State *L) {
-  Integer value = bit_signed(bit_word(L, 1)), divisor = bit_signed(bit_word(L, 2));
+  Integer divisor = bit_signed(bit_checkword(L, 2));
+  Integer dividend;
   if (divisor == 0) {
     lua_pushnumber(L, 1 / lua_tonumber(L, 2));
     return 1;
   }
-  lua_pushnumber(L, value == INT32_MIN && divisor == -1 ? 0 : value % divisor);
+  dividend = bit_signed(bit_checkword(L, 1));
+  /* Native IDIV overflows on INT_MIN/-1. Its mathematical remainder is zero. */
+  lua_pushnumber(L, divisor == -1 ? 0 : dividend % divisor);
   return 1;
 }
+
 
 static const struct luaL_Reg bitlib[] = {
   {"bnot", bit_bnot},
