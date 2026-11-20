@@ -9,6 +9,11 @@ add_library(Ui STATIC
     ${PRIVATE_SOURCES}
 )
 
+# Native bonus loot roll UI (Windows client): the Lua file is embedded as a string constant
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/BonusLootUI.lua")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/BonusLootUI.lua" BONUS_LOOT_UI_SOURCE)
+configure_file(BonusLootUIEmbedded.h.in BonusLootUIEmbedded.h @ONLY)
+
 target_include_directories(Ui
     PUBLIC
         ${CMAKE_SOURCE_DIR}

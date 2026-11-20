@@ -1,0 +1,4 @@
+#pragma once
+static constexpr const char* kBonusLootUI = R"FTA_BONUS_LUA(
+@BONUS_LOOT_UI_SOURCE@
+)FTA_BONUS_LUA";

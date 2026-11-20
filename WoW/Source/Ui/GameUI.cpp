@@ -7,6 +7,7 @@
 #include "WoW/Source/Magic/MagicClient/Linux/WxlLoneWolf.h"
 #endif
 #include "GameUI.h"
+#include "BonusLootClient.h"
 #include "WoW/Source/DB/Rec/FileDataRec.h"
 #include "WoW/Source/DB/Rec/MovieFileDataRec.h"
 #include "WoW/Source/DB/Rec/MovieRec.h"
@@ -1735,6 +1736,7 @@ void CGGameUI::InitializeFrameXML() {
     FrameScript_Destroy();
     FrameScript_Initialize(g_scriptProfileCVar->m_intValue);
     LoadScriptFunctions();
+    BonusLootClient::Register(FrameScript_GetContext());
 #if defined(WOWDECOMP_LINUX)
     WxlCreateScriptEvents();  // the stock events plus the nameplate API's
 #else
@@ -1823,6 +1825,7 @@ void CGGameUI::InitializeFrameXML() {
     BugReportRegister();
     // The modern Lua surface (C_FTA, C_Timer, C_AddOns...) must exist before any add-on loads: they probe it during ADDON_LOADED.
     ModernLuaApi::Install(FrameScript_GetContext(), ModernLuaApi::ReadEnabledGroups(), &status);
+    BonusLootClient::InstallUI();
     LoadAddOns(&status);
     FrameXML_RegisterLoadProgressCallback(nullptr, nullptr, 0);
     CGGameUI::Initialize();
@@ -3771,6 +3774,7 @@ void CGGameUI::EnterWorld() {
     }
 
     FrameScript_SignalEvent(SCRIPT_EVENT_PLAYER_ENTERING_WORLD, nullptr);
+    BonusLootClient::EnterWorld();
     CGMinimapFrame::EnterWorld();
     CGChat::EnterWorld();
     CGActionBar::EnterWorld();
@@ -8167,6 +8171,7 @@ void CCapturePointUIManager::DeleteNode(CapturePointUIManagerNode* node) {
 // VERIFY: 1c2e47fb auto
 // OFFSET: 0x00528C30
 void CGGameUI::LeaveWorld() {
+    BonusLootClient::Reset();
     if (!CGGameUI::s_inWorld) {
         return;
     }

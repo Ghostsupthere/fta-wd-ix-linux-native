@@ -1,4 +1,5 @@
 #include "ChatFrame.h"
+#include "BonusLootClient.h"
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -1647,6 +1648,10 @@ int32_t CGChat::ChatMessageReceived(CDataStore* msg, bool isGM) {
         msg->Reset();
         return 1;
     }
+
+    // Native bonus loot rolls: realm messages sent as an addon whisper (FTABONUS1 prefix) are consumed here
+    if (language == 0xFFFFFFFF && BonusLootClient::HandleMessage(text, length, type, isGM, senderGuid, targetGuid))
+        return 1;
 
     CGChat::AddChatMessage(text, type, senderName, language, channelName, targetName, flags, senderGuid, senderUnk, targetGuid, achievementID, isGM, nullptr);
     return 1;
