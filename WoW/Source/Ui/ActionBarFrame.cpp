@@ -60,6 +60,9 @@ void CGActionBar::HideGrid() {
 // VERIFY: a8f31305 auto
 // OFFSET: 0x005648A0
 int32_t CGActionBar::IsMacro(uint32_t slot) {
+    if (slot >= sizeof(CGActionBar::m_slotActions) / sizeof(CGActionBar::m_slotActions[0]))
+        return 0;
+
     uint32_t action = CGActionBar::m_slotActions[slot];
     return action && (action & 0xF0000000) == 0x40000000;
 }
@@ -67,6 +70,9 @@ int32_t CGActionBar::IsMacro(uint32_t slot) {
 // VERIFY: 4dbd4b01 manual
 // OFFSET: 0x005648D0
 uint32_t CGActionBar::GetMacroID(uint32_t slot) {
+    if (slot >= sizeof(CGActionBar::m_slotActions) / sizeof(CGActionBar::m_slotActions[0]))
+        return 0;
+
     uint32_t action = CGActionBar::m_slotActions[slot];
 
     if (action && (action & 0xF0000000) == 0x40000000) {
@@ -79,6 +85,9 @@ uint32_t CGActionBar::GetMacroID(uint32_t slot) {
 // VERIFY: 0d7360f9 auto
 // OFFSET: 0x005A7890
 int32_t CGActionBar::IsItem(uint32_t slot) {
+    if (slot >= sizeof(CGActionBar::m_slotActions) / sizeof(CGActionBar::m_slotActions[0]))
+        return 0;
+
     uint32_t action = CGActionBar::m_slotActions[slot];
     return action && (action & 0xF0000000) == 0x80000000;
 }
@@ -86,6 +95,9 @@ int32_t CGActionBar::IsItem(uint32_t slot) {
 // VERIFY: 2927bc93 auto
 // OFFSET: 0x005A78C0
 int32_t CGActionBar::IsPetAction(uint32_t slot) {
+    if (slot >= sizeof(CGActionBar::m_slotActions) / sizeof(CGActionBar::m_slotActions[0]))
+        return 0;
+
     uint32_t action = CGActionBar::m_slotActions[slot];
     return action && (action & 0xF0000000) == 0x10000000;
 }
@@ -93,6 +105,9 @@ int32_t CGActionBar::IsPetAction(uint32_t slot) {
 // VERIFY: ac5a6409 auto
 // OFFSET: 0x005A78F0
 int32_t CGActionBar::IsEquipmentSet(uint32_t slot) {
+    if (slot >= sizeof(CGActionBar::m_slotActions) / sizeof(CGActionBar::m_slotActions[0]))
+        return 0;
+
     uint32_t action = CGActionBar::m_slotActions[slot];
     return action && (action & 0xF0000000) == 0x20000000;
 }
@@ -100,6 +115,9 @@ int32_t CGActionBar::IsEquipmentSet(uint32_t slot) {
 // VERIFY: b18cab5c auto
 // OFFSET: 0x005A7950
 int32_t CGActionBar::GetEquipmentSetID(uint32_t slot) {
+    if (slot >= sizeof(CGActionBar::m_slotActions) / sizeof(CGActionBar::m_slotActions[0]))
+        return -1;
+
     uint32_t action = CGActionBar::m_slotActions[slot];
 
     if (action && (action & 0xF0000000) == 0x20000000) {
@@ -112,6 +130,9 @@ int32_t CGActionBar::GetEquipmentSetID(uint32_t slot) {
 // VERIFY: e56c7d55 auto
 // OFFSET: 0x005A7A40
 int32_t CGActionBar::HasMacro(uint32_t slot) {
+    if (slot >= sizeof(CGActionBar::m_slotActions) / sizeof(CGActionBar::m_slotActions[0]))
+        return 0;
+
     return CGUIMacros::GetMacroIndexByID(CGActionBar::m_slotActions[slot] & 0xBFFFFFFF) != -1;
 }
 
@@ -444,6 +465,9 @@ void CGActionBar::UpdateUsable() {
 // VERIFY: 321887df auto
 // OFFSET: 0x005A80E0
 int32_t CGActionBar::GetPetActionSpell(uint32_t slot) {
+    if (slot >= sizeof(CGActionBar::m_slotActions) / sizeof(CGActionBar::m_slotActions[0]))
+        return 0;
+
     uint32_t action = CGActionBar::m_slotActions[slot];
     uint32_t index = action && (action & 0xF0000000) == 0x10000000 ? action & 0xEFFFFFFF : 0;
 
@@ -488,6 +512,9 @@ int32_t CGActionBar::GetItemSpell(uint32_t slot) {
 // VERIFY: f09a82bf auto
 // OFFSET: 0x005A89F0
 int32_t CGActionBar::GetMacroSpell(uint32_t slot, int32_t& petSpell) {
+    if (slot >= sizeof(CGActionBar::m_slotActions) / sizeof(CGActionBar::m_slotActions[0]))
+        return 0;
+
     uint32_t action = CGActionBar::m_slotActions[slot];
     uint32_t id = action && (action & 0xF0000000) == 0x40000000 ? action & 0xBFFFFFFF : 0;
     MACRONODE* macro = CGUIMacros::GetMacroByID(id);
@@ -507,6 +534,9 @@ int32_t CGActionBar::GetMacroSpell(uint32_t slot, int32_t& petSpell) {
 // VERIFY: 3cf4ef31 auto
 // OFFSET: 0x005A7860
 int32_t CGActionBar::IsSpell(uint32_t slot) {
+    if (slot >= sizeof(CGActionBar::m_slotActions) / sizeof(CGActionBar::m_slotActions[0]))
+        return 0;
+
     uint32_t action = CGActionBar::m_slotActions[slot];
     return action && !(action & 0xF0000000);
 }
@@ -605,6 +635,9 @@ void CGActionBar::UpdateSelection() {
 // VERIFY: 437cce19 auto
 // OFFSET: 0x005A8160
 int32_t CGActionBar::HasAction(uint32_t slot) {
+    if (slot >= sizeof(CGActionBar::m_slotActions) / sizeof(CGActionBar::m_slotActions[0]))
+        return 0;
+
     uint32_t action = CGActionBar::m_slotActions[slot];
 
     if (action && (action & 0xF0000000) == 0x40000000 && CGUIMacros::GetMacroIndexByID(action & 0xBFFFFFFF) == -1) {

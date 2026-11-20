@@ -21,6 +21,18 @@
 #include "WoW/Source/Ui/PetInfo.h"
 #include "WoW/Source/DB/Rec/TotemCategoryRec.h"
 
+static int32_t GetScriptActionSlot(lua_State* L)
+{
+    double slotNumber = lua_tonumber(L, 1);
+    double slotLimit = sizeof(CGActionBar::m_slotActions) / sizeof(CGActionBar::m_slotActions[0]) + 1.0;
+
+    // Reject invalid slots before conversion: slot zero is also an action-bar event sentinel.
+    if (!(slotNumber >= 1.0 && slotNumber < slotLimit))
+        return 0;
+
+    return static_cast<int32_t>(slotNumber);
+}
+
 // VERIFY: 67a7662a manual
 // OFFSET: 0x005A7E60
 static int32_t Script_IsUsableAction(lua_State* L) {
@@ -75,32 +87,19 @@ static int32_t Script_GetActionInfo(lua_State* L) {
         return 0;
     }
 
-    int32_t slot = static_cast<int32_t>(lua_tonumber(L, 1)) - 1;
+    int32_t slot = GetScriptActionSlot(L);
 
-    // FIX (2026-10-26): unlike Script_IsUsableAction just above, this never
-    // validated `slot` against CGActionBar::m_slotActions' real bounds
-    // before indexing it. An addon calling GetActionInfo(0) (or any
-    // out-of-range value) sends slot=-1 here, which as the uint32_t index
-    // m_slotActions[] actually takes becomes 0xFFFFFFFF -- a wild
-    // out-of-bounds read, confirmed as the exact cause of a real crash
-    // (RDI/R12 = 0xFFFFFFFF in the fault registers) triggered by a
-    // third-party addon's GetActionInfo call. `return 0` (no results) is
-    // this function's own existing convention for "nothing in this slot" a
-    // few lines down (see the IsEquipmentSet/GetSetByID checks below) --
-    // same answer here for a slot that cannot even exist.
-    if (slot < 0 || slot >= static_cast<int32_t>(sizeof(CGActionBar::m_slotActions) / sizeof(CGActionBar::m_slotActions[0]))) {
+    if (!slot)
         return 0;
-    }
 
-    uint32_t action = CGActionBar::m_slotActions[slot];
+    uint32_t action = CGActionBar::m_slotActions[slot - 1];
 
     if (action && !(action & 0xF0000000)) {
         int32_t petSpell = 0;
-        int32_t spellId = CGActionBar::GetSpell(slot, petSpell);
+        int32_t spellId = CGActionBar::GetSpell(slot - 1, petSpell);
         SpellRec spell;
-        g_spellDB.GetRecord(spellId, &spell);
 
-        if (SpellIsCallCompanion(&spell)) {
+        if (g_spellDB.GetRecord(spellId, &spell) && SpellIsCallCompanion(&spell)) {
             int32_t type = CGSpellBook::GetCompanionType(&spell);
             lua_pushstring(L, "companion");
             lua_pushnumber(L, CGSpellBook::FindCompanionSlotByID(spellId, type) + 1);
@@ -123,7 +122,7 @@ static int32_t Script_GetActionInfo(lua_State* L) {
     }
 
     if (action && (action & 0xF0000000) == 0x10000000) {
-        int32_t spellId = CGActionBar::GetPetActionSpell(slot);
+        int32_t spellId = CGActionBar::GetPetActionSpell(slot - 1);
         lua_pushstring(L, "spell");
         lua_pushnumber(L, GetSpellSlot(spellId, 1) + 1);
         lua_pushstring(L, "pet");
@@ -131,23 +130,23 @@ static int32_t Script_GetActionInfo(lua_State* L) {
         return 4;
     }
 
-    if (CGActionBar::IsItem(slot)) {
+    if (CGActionBar::IsItem(slot - 1)) {
         lua_pushstring(L, "item");
-        lua_pushnumber(L, CGActionBar::GetItem(slot));
+        lua_pushnumber(L, CGActionBar::GetItem(slot - 1));
         return 2;
     }
 
-    if (CGActionBar::IsMacro(slot)) {
+    if (CGActionBar::IsMacro(slot - 1)) {
         lua_pushstring(L, "macro");
-        lua_pushnumber(L, CGUIMacros::GetMacroIndexByID(CGActionBar::GetMacroID(slot)) + 1);
+        lua_pushnumber(L, CGUIMacros::GetMacroIndexByID(CGActionBar::GetMacroID(slot - 1)) + 1);
         return 2;
     }
 
-    if (!CGActionBar::IsEquipmentSet(slot)) {
+    if (!CGActionBar::IsEquipmentSet(slot - 1)) {
         return 0;
     }
 
-    const EQUIPMENT_SET* set = CGEquipmentManager::GetSetByID(CGActionBar::GetEquipmentSetID(slot));
+    const EQUIPMENT_SET* set = CGEquipmentManager::GetSetByID(CGActionBar::GetEquipmentSetID(slot - 1));
 
     if (!set) {
         return 0;
@@ -254,7 +253,14 @@ static int32_t Script_GetActionText(lua_State* L) {
         return 0;
     }
 
-    int32_t slot = static_cast<int32_t>(lua_tonumber(L, 1));
+    int32_t slot = GetScriptActionSlot(L);
+
+    if (!slot)
+    {
+        lua_pushnil(L);
+        return 1;
+    }
+
     uint32_t action = CGActionBar::m_slotActions[slot - 1];
 
     if (action) {
