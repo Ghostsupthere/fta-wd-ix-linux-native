@@ -12,6 +12,7 @@
 #include "WoW/Source/WowSvcs/WowSvcsClient/ClientServices.h"
 #include <array>
 #include <charconv>
+#include <cstdio>
 #include <string>
 #include <string_view>
 
@@ -56,6 +57,10 @@ bool Send(std::string_view command) {
     const auto* character = ClientServices::GetCharacterInfo();
     if (!player || !character || character->m_guid != player || !character->m_name[0] ||
         !ClientServices::s_currentConnection) {
+        std::fprintf(stderr, "[BonusLoot] not sending %.1s: player=%d character=%d sameGuid=%d name=%d connection=%d\n",
+            std::string(command).c_str(), player ? 1 : 0, character ? 1 : 0,
+            character && character->m_guid == player ? 1 : 0, character && character->m_name[0] ? 1 : 0,
+            ClientServices::s_currentConnection ? 1 : 0);
         return false;
     }
     std::string payload(Prefix);
@@ -68,6 +73,7 @@ bool Send(std::string_view command) {
     packet.PutString(payload.c_str());
     packet.Finalize();
     ClientServices::Send2(&packet);
+    std::fprintf(stderr, "[BonusLoot] sent %.1s\n", std::string(command).c_str());
     return true;
 }
 
@@ -197,8 +203,13 @@ bool HandleMessage(const char* text, uint32_t length, uint8_t type, bool gm, WOW
         return false;
     }
     const auto self = ClntObjMgrGetActivePlayer();
-    if (!self || sender != self || receiver != self || gm || type != CHAT_MSG_WHISPER ||
+    // A character with GM chat switched on receives its own whispers in the GM message form (gm is true), so the flag is not
+    // a reason to refuse: the message still has to be from this player to this player, and the realm validates every request.
+    if (!self || sender != self || receiver != self || type != CHAT_MSG_WHISPER ||
         length > 192 || text[length - 1] != '\0') {
+        std::fprintf(stderr, "[BonusLoot] dropped reply: self=%d sender=%d receiver=%d gm=%d type=%d length=%u nul=%d\n",
+            self ? 1 : 0, sender == self ? 1 : 0, receiver == self ? 1 : 0, gm ? 1 : 0, int(type), length,
+            length && text[length - 1] == '\0' ? 1 : 0);
         return true;
     }
     const std::string_view message(text, length - 1);
@@ -207,6 +218,7 @@ bool HandleMessage(const char* text, uint32_t length, uint8_t type, bool gm, WOW
     }
     auto rest = message.substr(Prefix.size());
     if (rest == "A" || rest == "D") {
+        std::fprintf(stderr, "[BonusLoot] realm answered %s\n", std::string(rest).c_str());
         supported = rest == "A";
         if (!supported) {
             Reset();
