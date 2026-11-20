@@ -63,6 +63,10 @@ def main():
             "WoW/Source/Object/ObjectClient/UnitMissileTrajectory_C.cpp",
             "    CM2Model* rootModel = root->GetObjectModel();", "    C3Vector normal = root->",
         ),
+        "camera_target": extract(
+            "WoW/Source/UIUtil/Camera.cpp", "static bool CameraModelHasSettled(",
+            "\nfloat CGCamera::GetChaseFacing(",
+        ),
         "model_allocations": extract(
             model,
             "    uint8_t* memory = static_cast<uint8_t*>(SMemAlloc(emitterBytes + emitterOffset,",
@@ -77,7 +81,7 @@ def main():
             (build / (name + ".inc")).write_text(text)
 
         for test in ("deferred_effect_test", "model_readiness_test", "model_allocation_test",
-                     "model_consumer_test"):
+                     "model_consumer_test", "camera_target_test"):
             executable = build / test
             subprocess.run(
                 [*compiler, "-std=c++20", "-UNDEBUG", "-Wall", "-Wextra", "-Werror",

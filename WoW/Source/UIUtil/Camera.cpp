@@ -530,13 +530,38 @@ void CGCamera::DecIgnoreFacing() {
     this->UpdateYaw(-facing);
 }
 
+static bool CameraModelHasSettled(CM2Model* model) {
+    if (!model || model->HasLoadFailed() || model->IsLoaded()) {
+        return true;
+    }
+
+    return model->IsLoaded(0, 0) && model->WaitForLoad(nullptr);
+}
+
 // VERIFY: 7782f635 manual
 // OFFSET: 0x00604E00
 int32_t CGCamera::FinishLoadingTarget(CGObject_C* target) {
     CM2Model* model = target->GetObjectModel();
 
-    if (model && !model->IsLoaded(0, 0)) {
+    if (!CameraModelHasSettled(model) || target->GetObjectModel() != model) {
         return 0;
+    }
+
+    auto* unit = (target->m_obj->m_type & TYPE_UNIT) ? static_cast<CGUnit_C*>(target) : nullptr;
+    CM2Model* worldModel = unit ? unit->m_worldModel : nullptr;
+
+    // A mounted unit exposes the mount as its object model, but height also uses the rider.
+    if (unit && worldModel != model &&
+        (!CameraModelHasSettled(worldModel) || target->GetObjectModel() != model ||
+         unit->m_worldModel != worldModel)) {
+        return 0;
+    }
+
+    if (model && model->HasLoadFailed()) {
+        model = nullptr;
+    }
+    if (worldModel && worldModel->HasLoadFailed()) {
+        worldModel = nullptr;
     }
 
     this->m_state |= 0x4;
@@ -547,17 +572,14 @@ int32_t CGCamera::FinishLoadingTarget(CGObject_C* target) {
     float scale = target->GetScale() * target->m_scaleModifier;
     float maxHeight;
 
-    if ((target->m_obj->m_type & TYPE_UNIT) && model) {
-        CGUnit_C* unit = static_cast<CGUnit_C*>(target);
-
+    if (worldModel) {
+        const bool mounted = model && unit->m_mountModel;
         float mountScale = scale;
 
-        if (unit->m_mountModel) {
+        if (mounted) {
             mountScale = scale * unit->m_mountScale;
         }
 
-        CM2Model* worldModel = unit->m_worldModel;
-        uint32_t attachment = 0xFFFFFFFF;
         uint32_t sequence;
 
         switch (unit->GetClientStandState()) {
@@ -598,9 +620,8 @@ int32_t CGCamera::FinishLoadingTarget(CGObject_C* target) {
             sequence = 0;
         }
 
-        if (unit->m_mountModel) {
+        if (mounted) {
             sequence = 91;
-            attachment = 0;
         }
 
         M2SequenceInfo standInfo;
@@ -624,10 +645,6 @@ int32_t CGCamera::FinishLoadingTarget(CGObject_C* target) {
                 height = (pivot.z + 0.097222224f) * scale;
             }
         } else {
-            if (!(worldModel->m_shared->m_flags & 0x1)) {
-                worldModel->WaitForLoad(nullptr);
-            }
-
             CAaBox bounds = worldModel->m_shared->m_data->m_collisionBounds.m_extent;
             height = (bounds.t.z - bounds.b.z) * scale * 0.9f;
         }
@@ -658,8 +675,8 @@ int32_t CGCamera::FinishLoadingTarget(CGObject_C* target) {
             this->m_targetHeightFar -= standOffset;
         }
 
-        if (attachment != 0xFFFFFFFF && model->HasAttachment(attachment)) {
-            C3Vector pivot = model->GetAttachmentPivot(attachment);
+        if (mounted && model->HasAttachment(0)) {
+            C3Vector pivot = model->GetAttachmentPivot(0);
             float mountHeight = pivot.z * mountScale;
 
             if ((unit->m_unit->m_unitFieldFlags & 0x100000) && model->HasSequence(135)) {
