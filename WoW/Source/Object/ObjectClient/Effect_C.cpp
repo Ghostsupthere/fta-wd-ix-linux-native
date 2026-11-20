@@ -1592,6 +1592,10 @@ int32_t CEffect::LoadMountTransitionModel() {
     }
 
     this->m_model = World::s_m2Scene->CreateModel(modelData->m_modelName, 0);
+    if (!this->m_model) {
+        return 0;
+    }
+
     this->m_model->SetSequenceCallback(reinterpret_cast<void*>(&MountTransitionSequenceCB), reinterpret_cast<uintptr_t>(this));
     this->m_model->SetEventCallback(reinterpret_cast<void*>(&CEffect::EffectEvent), reinterpret_cast<uintptr_t>(this));
     CCharacterComponent::ReplaceMonsterSkin(this->m_model, display, modelData);

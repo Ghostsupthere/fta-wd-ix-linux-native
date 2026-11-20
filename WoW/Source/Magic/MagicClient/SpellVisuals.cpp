@@ -934,7 +934,10 @@ bool BlizzardObject::Update() {
 
     for (; this->m_shardAccum >= 1.0f; this->m_shardAccum = this->m_shardAccum - 1.0f) {
         Shard* shard = s_shardHeap.New<Shard>(0);
-        this->m_shards.LinkToTail(shard);
+        if (!shard) {
+            continue;
+        }
+
         float scale = CRandom::ufloat_(g_rndSeed);
         C2Vector direction = CRandom::C2Vector_(g_rndSeed);
         C3Vector start(center.x, center.y, center.z + 0.16666667f);
@@ -963,6 +966,12 @@ bool BlizzardObject::Update() {
         }
 
         shard->m_model = World::s_m2Scene->CreateModel(this->m_modelName, 0);
+        if (!shard->m_model) {
+            s_shardHeap.Delete(shard);
+            continue;
+        }
+
+        this->m_shards.LinkToTail(shard);
         shard->m_model->SetEventCallback(reinterpret_cast<void*>(&ShardAnimEventCallback), 0);
         shard->m_model->SetSequenceCallback(reinterpret_cast<void*>(&ShardSequenceCallback), reinterpret_cast<uintptr_t>(shard));
         uint32_t now = FrameTime::s_curTimeMs;
