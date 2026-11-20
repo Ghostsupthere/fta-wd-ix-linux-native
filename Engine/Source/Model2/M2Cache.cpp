@@ -1,3 +1,4 @@
+#include "Engine/Source/Storm/Source/Linux/CrashBreadcrumbs.h"
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
@@ -381,6 +382,9 @@ CM2Shared* CM2Cache::CreateShared(const char* name, uint32_t flags) {
         shared->m_flags |= WxlModelMirror::kSharedFlag;
     }
 #endif
+
+    // m_fileName is only filled in after Load, so the breadcrumb takes the requested path.
+    native_crash::Record(native_crash::Event::ModelLoad, path);
 
     if (!shared->Load(file, flags & 4, &boundingBox)) {
         SFileCloseFile(file);
