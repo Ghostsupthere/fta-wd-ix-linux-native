@@ -659,8 +659,8 @@ bool RebuildModernM2Skin(M2Data* data, M2SkinProfile* skin, const char* name) {
     }
     for (uint32_t i = 0; i < data->m_materials.m_count; ++i) {
         M2Material& material = data->m_materials[i];
-        if (material.m_blendMode > 6) {
-            material.m_blendMode = static_cast<M2BLEND>(4);
+        if (material.m_blendMode >= M2BLEND_COUNT) {
+            material.m_blendMode = M2BLEND_ADD;
             material.m_flags |= 0x5;
         }
         material.m_flags &= 0x1F;

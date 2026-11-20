@@ -27,7 +27,7 @@
 #include "Engine/Source/Tempest/CImVector.h"
 
 // STATIC: 0x00A45390
-const uint32_t s_fogModes[M2BLEND_COUNT] = { 1, 1, 1, 2, 2, 3, 4 };
+const uint32_t s_fogModes[M2BLEND_COUNT] = { 1, 1, 1, 2, 2, 3, 4, 2 };
 
 // STATIC: 0x00AF58A8
 static C44Matrix s_identity;
@@ -254,7 +254,7 @@ int32_t CM2SceneRender::LightingColorsMatch(const CM2Lighting* a, const CM2Light
 // OFFSET: 0x0081FB10
 void CM2SceneRender::SetupLighting() {
     M2Material* material = this->m_curMaterial;
-    int32_t localLighting = !(material->m_flags & 1) && s_localLighting[material->m_blendMode];
+    int32_t localLighting = !(material->m_flags & 1) && s_localLighting[M2BlendModeIndex(material->m_blendMode)];
     uint32_t shadow = this->m_curElement->m_shadowValue;
 
     this->m_curLocalLighting = localLighting;
@@ -266,7 +266,7 @@ void CM2SceneRender::SetupLighting() {
     if ((this->m_curMaterial->m_flags & 2) || this->m_curLighting->m_fogScale <= 0.0f) {
         fogMode = 0;
     } else {
-        fogMode = s_fogModes[this->m_curMaterial->m_blendMode];
+        fogMode = s_fogModes[M2BlendModeIndex(this->m_curMaterial->m_blendMode)];
     }
 
     this->m_curFogMode = fogMode;
@@ -345,12 +345,12 @@ void CM2SceneRender::SetupLighting() {
 // OFFSET: 0x0081FE90
 void CM2SceneRender::SetupMaterial() {
     if (this->m_curType != this->m_prevType || this->m_curMaterial != this->m_prevMaterial || ((this->m_prevElement->m_flags ^ this->m_curElement->m_flags) & 1) || this->m_prevElement->m_alpha != this->m_curElement->m_alpha) {
+        const M2BLEND mode = M2BlendModeIndex(this->m_curMaterial->m_blendMode);
         int32_t blend;
-
         if (this->m_curElement->m_flags & 1) {
-            blend = this->m_curMaterial->m_blendMode == M2BLEND_ALPHA_KEY;
+            blend = mode == M2BLEND_ALPHA_KEY ? GxBlend_AlphaKey : GxBlend_Opaque;
         } else {
-            blend = s_blendModes[this->m_pass][this->m_curMaterial->m_blendMode];
+            blend = s_blendModes[this->m_pass][mode];
         }
 
         GxRsSet(GxRs_ColorWrite, (this->m_curElement->m_flags & 1) ? 0 : 15);
@@ -358,9 +358,9 @@ void CM2SceneRender::SetupMaterial() {
 
         float alphaRef;
 
-        if (this->m_curMaterial->m_blendMode == M2BLEND_OPAQUE) {
+        if (mode == M2BLEND_OPAQUE || mode == M2BLEND_BLEND_ADD) {
             alphaRef = 0.0f;
-        } else if (this->m_curMaterial->m_blendMode == M2BLEND_ALPHA_KEY) {
+        } else if (mode == M2BLEND_ALPHA_KEY) {
             alphaRef = this->m_curElement->m_alpha * 0.87843138f;
         } else {
             alphaRef = 0.0039215689f;

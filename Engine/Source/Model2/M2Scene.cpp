@@ -37,10 +37,14 @@
 #include "Engine/Source/Tempest/NTempest.h"
 
 // STATIC: 0x00A45374
-const uint32_t s_localLighting[M2BLEND_COUNT] = { 1, 1, 1, 1, 1, 0, 0 };
+const uint32_t s_localLighting[M2BLEND_COUNT] = { 1, 1, 1, 1, 1, 0, 0, 1 };
 
 // STATIC: 0x00A453B0
-const uint32_t s_blendModes[3][M2BLEND_COUNT] = { { 0, 1, 2, 10, 3, 4, 5 }, { 2, 2, 2, 10, 3, 4, 5 }, { 2, 2, 2, 10, 3, 4, 5 } };
+const uint32_t s_blendModes[3][M2BLEND_COUNT] = {
+    { GxBlend_Opaque, GxBlend_AlphaKey, GxBlend_Alpha, GxBlend_NoAlphaAdd, GxBlend_Add, GxBlend_Mod, GxBlend_Mod2x, GxBlend_BlendAdd },
+    { GxBlend_Alpha, GxBlend_Alpha, GxBlend_Alpha, GxBlend_NoAlphaAdd, GxBlend_Add, GxBlend_Mod, GxBlend_Mod2x, GxBlend_BlendAdd },
+    { GxBlend_Alpha, GxBlend_Alpha, GxBlend_Alpha, GxBlend_NoAlphaAdd, GxBlend_Add, GxBlend_Mod, GxBlend_Mod2x, GxBlend_BlendAdd },
+};
 
 // STATIC: 0x00AF5898
 uint32_t CM2Scene::s_optFlags = 0xFFFFFFFF;
@@ -1539,7 +1543,7 @@ void __stdcall CM2Scene::ComputeElementShaders(M2Element* element) {
     uint32_t lightCount;
     uint32_t shadow;
 
-    if ((material->m_flags & 1) || s_localLighting[material->m_blendMode] == (material->m_flags & 1u)) {
+    if ((material->m_flags & 1) || s_localLighting[M2BlendModeIndex(material->m_blendMode)] == (material->m_flags & 1u)) {
         shadow = 0;
         specular = 0;
 
@@ -1679,8 +1683,8 @@ void CM2Scene::SortAdditiveParticleElements(uint32_t pass) {
                 break;
         }
 
-        uint32_t gxBlend = s_blendModes[1][blend];
-        int32_t additive = gxBlend == 3 || gxBlend == 10;
+        uint32_t gxBlend = s_blendModes[1][M2BlendModeIndex(blend)];
+        int32_t additive = gxBlend == GxBlend_Add || gxBlend == GxBlend_NoAlphaAdd;
 
         if (!additive || !prevAdditive) {
             group++;

@@ -36,8 +36,13 @@ enum M2BLEND : uint16_t {
     M2BLEND_ADD = 4,
     M2BLEND_MOD = 5,
     M2BLEND_MOD2X = 6,
-    M2BLEND_COUNT = 7,
+    M2BLEND_BLEND_ADD = 7,
+    M2BLEND_COUNT = 8,
 };
+
+constexpr M2BLEND M2BlendModeIndex(uint32_t mode) {
+    return mode < M2BLEND_COUNT ? static_cast<M2BLEND>(mode) : M2BLEND_ALPHA;
+}
 
 enum M2PARTICLEBLENDMODE : uint8_t {
     M2PARTICLEBLEND_OPAQUE = 0,

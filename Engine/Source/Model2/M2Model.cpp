@@ -53,9 +53,6 @@
 #include "Engine/Source/Model2/WxlCollectionPalette.inl"
 #endif
 
-// STATIC: 0x00A45570
-static const uint32_t s_ribbonBlendModes[] = { 0, 1, 2, 10, 3, 4, 5 };
-
 // STATIC: 0x00D4118C
 void (*CM2Model::s_transformVertices[5])(CM2Model*, M2SkinSection*, uint8_t*, int32_t);
 
@@ -7603,7 +7600,7 @@ int32_t CM2Model::InitializeLoaded() {
                 ribbonMaterial->m_depthTest = !(material->m_flags & 8);
                 ribbonMaterial->m_depthWrite = !(material->m_flags & 0x10);
                 ribbonMaterial->m_cull = !(material->m_flags & 4);
-                ribbonMaterial->m_blendMode = s_ribbonBlendModes[material->m_blendMode];
+                ribbonMaterial->m_blendMode = s_blendModes[0][M2BlendModeIndex(material->m_blendMode)];
             }
 
             CAaRect texCoords;

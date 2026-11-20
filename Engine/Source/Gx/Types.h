@@ -33,7 +33,8 @@ enum EGxBlend {
     GxBlend_SrcAlphaOpaque = 9,
     GxBlend_NoAlphaAdd = 10,
     GxBlend_ConstantAlpha = 11,
-    GxBlends_Last = 12,
+    GxBlend_BlendAdd = 12, // Source + destination * (1 - source alpha).
+    GxBlends_Last = 13,
 };
 
 enum EGxCmp : int32_t {
