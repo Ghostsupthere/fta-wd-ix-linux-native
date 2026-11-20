@@ -1,4 +1,5 @@
 #include "ObjectEffect.h"
+#include "MountObjectEffectStates.h"
 #include <new>
 #include <typeinfo>
 #include "Engine/Source/Model2/M2Model.h"
@@ -464,8 +465,11 @@ void CObjectEffectModifier::Apply(CObjectEffectManager* manager, CObjectEffect* 
 // VERIFY: 07e2b193 auto
 // OFFSET: 0x006F17F0
 int32_t FindObjectEffectStateFromAnimID(int32_t animId, int32_t alternate) {
-    // NOT IN BINARY. The table has one row per AnimationData id; extended animation ids (3000+ emotes) are not in it
-    // and must read as "no object-effect state" instead of indexing past the end.
+    if (const int32_t state = MountObjectEffectStates::FromAnimation(animId)) {
+        return alternate == 1 ? 0 : state;
+    }
+
+    // Extended sequences outside the known mappings have no object-effect state.
     if (animId < 0 || animId >= ANIM_COUNT) {
         return 0;
     }
@@ -628,7 +632,9 @@ void CObjectEffectManager::UpdateAllPlayingEffects() {
 // VERIFY: f71878a1 manual
 // OFFSET: 0x006F5900
 CObjectEffectManager::CObjectEffectManager() {
-    this->m_states.SetRawData(static_cast<char*>(SMemAlloc((NUM_OBJECT_EFFECT_STATES + 7) / 8, __FILE__, __LINE__, SMEM_FLAG_ZEROMEMORY)), NUM_OBJECT_EFFECT_STATES, true);
+    constexpr uint32_t stateCount = MountObjectEffectStates::StateCount;
+    auto* states = static_cast<char*>(SMemAlloc((stateCount + 7) / 8, __FILE__, __LINE__, SMEM_FLAG_ZEROMEMORY));
+    this->m_states.SetRawData(states, states ? stateCount : 0, true);
 }
 
 // VERIFY: 79aebd0f manual
@@ -660,7 +666,7 @@ void CObjectEffectManager::PlayOneShotEffect(CObjectEffectDef* def) {
 // VERIFY: 4b360386 manual
 // OFFSET: 0x006F61D0
 void CObjectEffectManager::ExitState(uint32_t state, int32_t playExitEffects) {
-    if (!this->m_states.Get(state)) {
+    if (state >= this->m_states.m_size || !this->m_states.Get(state)) {
         return;
     }
 
@@ -775,7 +781,7 @@ void CObjectEffectManager::PlayLoopingEffect(CObjectEffectDef* def, int32_t grou
 // VERIFY: 7ce181a0 manual
 // OFFSET: 0x006F70B0
 void CObjectEffectManager::ShutDown() {
-    for (int32_t state = 0; state < NUM_OBJECT_EFFECT_STATES; state++) {
+    for (uint32_t state = 0; state < this->m_states.m_size; ++state) {
         this->ExitState(state, 0);
     }
 
@@ -807,6 +813,10 @@ void CObjectEffectManager::ShutDown() {
 // VERIFY: 6bb11b7f manual
 // OFFSET: 0x006F7270
 void CObjectEffectManager::EnterState(uint32_t state, int32_t playEnterEffects, int32_t refresh) {
+    if (state >= this->m_states.m_size) {
+        return;
+    }
+
     if (refresh) {
         if (!this->m_states.Get(state)) {
             return;
