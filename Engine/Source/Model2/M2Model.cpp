@@ -135,20 +135,57 @@ int32_t CM2Model::CanUpdateNonReadyTextures() {
     return 1;
 }
 
+namespace {
+class ModelLoadReference {
+public:
+    explicit ModelLoadReference(CM2Model& model) : m_model(model) { ++m_model.m_refCount; }
+    ~ModelLoadReference() { m_model.Release(); }
+    ModelLoadReference(const ModelLoadReference&) = delete;
+    ModelLoadReference& operator=(const ModelLoadReference&) = delete;
+
+private:
+    CM2Model& m_model;
+};
+}
+
+bool CM2Model::HasLoadFailed() const {
+    return this->m_instanceLoadFailed || !this->m_shared || this->m_shared->m_loadFailed;
+}
+
 // VERIFY: b2c20bd9 auto
 // OFFSET: 0x00823ED0
-void CM2Model::WaitForLoad(const char* reason) {
-    if (this->m_shared->m_asyncObject) {
-        AsyncFileReadWait(this->m_shared->m_asyncObject);
+bool CM2Model::WaitForLoad(const char* reason) {
+    if (this->HasLoadFailed()) {
+        return false;
+    }
+    if (this->IsLoaded()) {
+        return this->m_shared->m_data && this->m_shared->m_skinData;
     }
 
-    if (this->m_shared->m_asyncObject) {
-        AsyncFileReadWait(this->m_shared->m_asyncObject);
+    // Completion callbacks can release the caller's model reference.
+    const ModelLoadReference holdModel(*this);
+    // A skin completion callback can leave its read handle set while the data is ready.
+    // Only the model and skin stages need an async wait.
+    for (int stage = 0; stage < 2 && !this->HasLoadFailed(); ++stage) {
+        const auto* shared = this->m_shared;
+        if ((shared->m_flags & 3) == 3 || !shared->m_asyncObject) {
+            break;
+        }
+        AsyncFileReadWait(shared->m_asyncObject);
     }
 
-    if (this->m_flags & 0x20) {
-        this->InitializeLoaded();
+    if (this->HasLoadFailed() || (this->m_shared->m_flags & 3) != 3) {
+        return false;
     }
+
+    if (!this->IsLoaded()) {
+        this->UnlinkFromCallbackList();
+        if (!this->InitializeLoaded()) {
+            return false;
+        }
+    }
+
+    return this->IsLoaded() && this->m_shared->m_data && this->m_shared->m_skinData;
 }
 
 // VERIFY: 240e75c9 auto
@@ -159,8 +196,8 @@ void CM2Model::SetAnimating(int32_t animating) {
             goto unlink;
         }
 
-        if (!(this->m_fFlags & 1)) {
-            this->WaitForLoad(nullptr);
+        if (!this->IsLoaded() && !this->WaitForLoad(nullptr)) {
+            return;
         }
     }
 
@@ -605,22 +642,22 @@ int32_t CM2Model::Release() {
 // VERIFY: f4fc2dd4 manual
 // OFFSET: 0x00824F00
 uint32_t CM2Model::IsLoaded(int32_t wait, int32_t recursive) {
-    if (this->m_flags & 0x20) {
-        if (this->m_fFlags & 1) {
-            return 1;
-        }
-
-        if (wait) {
-            this->WaitForLoad(nullptr);
-        }
-
-        uint32_t sharedFlags = this->m_shared->m_flags;
-
-        return (this->m_fFlags & 1) | (((sharedFlags & (2 * sharedFlags)) >> 1) & 1);
+    if (this->HasLoadFailed()) {
+        return 0;
     }
 
-    if (!(this->m_fFlags & 1) && wait) {
-        this->WaitForLoad(nullptr);
+    if (this->m_flags & 0x20) {
+        if (this->IsLoaded()) {
+            return 1;
+        }
+        if (wait) {
+            return this->WaitForLoad(nullptr);
+        }
+        return (this->m_shared->m_flags & 3) == 3;
+    }
+
+    if (!this->IsLoaded() && wait && !this->WaitForLoad(nullptr)) {
+        return 0;
     }
 
     if (!(this->m_fFlags & 1)) {
@@ -7365,10 +7402,31 @@ void CModelBatchList::Optimize() {
 // VERIFY: 0f5f3316 manual
 // OFFSET: 0x00832EA0
 int32_t CM2Model::InitializeLoaded() {
-    CM2Shared* shared = this->m_shared;
-
-    if (!(shared->m_flags & 1) || !(shared->m_flags & 2)) {
+    if (this->HasLoadFailed()) {
+        return 0;
+    }
+    if (this->IsLoaded()) {
         return 1;
+    }
+
+    CM2Shared* shared = this->m_shared;
+    if ((shared->m_flags & 3) != 3) {
+        return 1;
+    }
+
+    const ModelLoadReference holdModel(*this);
+    // A duplicate copies instance arrays from the retained source model.
+    if (this->m_model30 && !this->m_model30->WaitForLoad(nullptr)) {
+        this->m_instanceLoadFailed = true;
+        return 0;
+    }
+    // The source callback can initialize this duplicate before the call returns.
+    if (this->IsLoaded()) {
+        return 1;
+    }
+    if (this->HasLoadFailed() || !shared->m_data || !shared->m_skinData) {
+        this->m_instanceLoadFailed = true;
+        return 0;
     }
 
     M2Data* data = shared->m_data;
@@ -7409,9 +7467,31 @@ int32_t CM2Model::InitializeLoaded() {
     uint8_t* memory = static_cast<uint8_t*>(SMemAlloc(emitterBytes + emitterOffset, __FILE__, __LINE__, 0));
 
     if (!memory) {
+        this->m_instanceLoadFailed = true;
         return 0;
     }
 
+    // Finish fallible allocations before publishing pointers into the instance block.
+    auto* boneMatrices = data->m_bones.m_count
+        ? static_cast<C44Matrix*>(SIMD::AllocA16(data->m_bones.m_count * sizeof(C44Matrix), __FILE__, __LINE__))
+        : nullptr;
+    auto* textureMatrices = data->m_textureTransforms.m_count
+        ? static_cast<C44Matrix*>(SIMD::AllocA16(data->m_textureTransforms.m_count * sizeof(C44Matrix), __FILE__, __LINE__))
+        : nullptr;
+    if ((data->m_bones.m_count && !boneMatrices) || (data->m_textureTransforms.m_count && !textureMatrices)) {
+        if (boneMatrices) {
+            SIMD::FreeA16(boneMatrices);
+        }
+        if (textureMatrices) {
+            SIMD::FreeA16(textureMatrices);
+        }
+        SMemFree(memory, __FILE__, __LINE__, 0);
+        this->m_instanceLoadFailed = true;
+        return 0;
+    }
+
+    this->m_boneMatrices = boneMatrices;
+    this->m_textureMatrices = textureMatrices;
     uint8_t* cursor = memory;
 
     if (data->m_bones.m_count) {
@@ -7424,12 +7504,6 @@ int32_t CM2Model::InitializeLoaded() {
 
         for (uint32_t i = 0; i < data->m_bones.m_count; i++) {
             this->m_bones[i].m_flags = data->m_bones[i].m_flags;
-        }
-
-        this->m_boneMatrices = static_cast<C44Matrix*>(SIMD::AllocA16(data->m_bones.m_count * sizeof(C44Matrix), __FILE__, __LINE__));
-
-        if (!this->m_boneMatrices) {
-            return 0;
         }
 
         for (uint32_t i = 0; i < data->m_bones.m_count; i++) {
@@ -7494,12 +7568,6 @@ int32_t CM2Model::InitializeLoaded() {
 
         for (uint32_t i = 0; i < data->m_textureTransforms.m_count; i++) {
             new (&this->m_textureTransforms[i]) M2ModelTextureTransform();
-        }
-
-        this->m_textureMatrices = static_cast<C44Matrix*>(SIMD::AllocA16(data->m_textureTransforms.m_count * sizeof(C44Matrix), __FILE__, __LINE__));
-
-        if (!this->m_textureMatrices) {
-            return 0;
         }
     }
 

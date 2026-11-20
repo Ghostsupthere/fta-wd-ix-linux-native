@@ -275,18 +275,19 @@ void AsyncFileReadWait(CAsyncObject* object) {
     // STATIC: 0x00B4A26C
     static int32_t s_waiting;
 
-    if (s_waiting) {
-        SErrDisplayAppFatal("AsyncFileReadWait(): s_waiting != FALSE");
-    }
-
-    s_waiting++;
     g_queueLock.Enter();
-
     if (object->m_isProcessed) {
         g_queueLock.Leave();
         return;
     }
 
+    if (s_waiting) {
+        g_queueLock.Leave();
+        SErrDisplayAppFatal("AsyncFileReadWait(): s_waiting != FALSE");
+        return;
+    }
+
+    s_waiting++;
     s_asyncWaitObject = object;
 
     if (!object->m_isCurrent && !object->m_isRead) {
@@ -322,7 +323,9 @@ void AsyncFileReadWait(CAsyncObject* object) {
         OsSleep(1);
     } while (true);
 
+    g_queueLock.Enter();
     s_waiting--;
+    g_queueLock.Leave();
 }
 
 // VERIFY: 82068864 manual

@@ -345,8 +345,8 @@ void CSimpleModel::SetCameraByIndex(uint32_t index) {
 
     CM2Model* model = this->m_model;
 
-    if (!(model->m_fFlags & 0x1)) {
-        model->WaitForLoad(nullptr);
+    if (!model->WaitForLoad(nullptr) || this->m_model != model) {
+        return;
     }
 
     M2Data* data = model->m_shared->m_data;

@@ -133,27 +133,13 @@ const SpellVisualEffectNameRec* GetSpecialSpellVisualEffectNameRec(int32_t effec
 // VERIFY: 582bd84a auto
 // OFFSET: 0x006F75F0
 void CEffect::SetEmissionRateIgnoresDistance(int32_t ignore) {
-    if (!this->m_model || !this->m_model->IsLoaded(0, 0)) {
+    CM2Model* model = this->m_model;
+    if (!model || !model->IsLoaded(0, 0) || !model->WaitForLoad(nullptr) || this->m_model != model) {
         return;
     }
 
-    for (uint32_t i = 0; ; i++) {
-        CM2Model* model = this->m_model;
-
-        if (!(model->m_fFlags & 0x1)) {
-            model->WaitForLoad(nullptr);
-        }
-
-        if (i >= model->m_shared->m_data->m_particles.m_count) {
-            break;
-        }
-
-        model = this->m_model;
-
-        if (!(model->m_fFlags & 0x1)) {
-            model->WaitForLoad(nullptr);
-        }
-
+    const uint32_t count = model->m_shared->m_data->m_particles.m_count;
+    for (uint32_t i = 0; i < count; ++i) {
         CParticleEmitter2* emitter = model->m_particleEmitters[i];
 
         if (ignore) {
@@ -1074,14 +1060,13 @@ static EffectModelLoadState GetEffectModelLoadState(CM2Model* model) {
     if (!model) {
         return EffectModelLoadState::Ready;
     }
-    const auto* shared = model->m_shared;
-    if (!shared || shared->m_loadFailed) {
+    if (model->HasLoadFailed()) {
         return EffectModelLoadState::Failed;
     }
     if (model->IsLoaded(0, 0)) {
         return EffectModelLoadState::Ready;
     }
-    return shared->m_asyncObject || model->m_callbackPrev
+    return model->m_shared->m_asyncObject || model->m_callbackPrev
         ? EffectModelLoadState::Pending : EffectModelLoadState::Failed;
 }
 

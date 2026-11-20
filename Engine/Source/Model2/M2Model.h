@@ -237,6 +237,7 @@ class CM2Model {
     // GPU copy of the above for the shader renderer, which skins from a vertex buffer shared by every instance.
     CGxBuf* m_bodyShapeBuf = nullptr;
     CGxPool* m_bodyShapePool = nullptr;
+    bool m_instanceLoadFailed = false;
 
     static void (*s_transformVertices[5])(CM2Model*, M2SkinSection*, uint8_t*, int32_t);
     static TSGrowableArray<M2ModelCallback> s_sequenceCallbacks;
@@ -378,7 +379,8 @@ class CM2Model {
     void SetWorldTransform(const C3Vector& position, float rotation, float scale);
     void SetWorldTransform(const C3Vector& position, float rotation, float scale, const C3Vector& up, uint32_t flags);
     void UpdateLoaded();
-    void WaitForLoad(const char* reason);
+    bool HasLoadFailed() const;
+    bool WaitForLoad(const char* reason);
     void AnimateMT(const C44Matrix* view, const C3Vector& diffuse, const C3Vector& emissive, float alpha, float alpha2);
     void AnimateMTSimple(const C44Matrix* view, const C3Vector& diffuse, const C3Vector& emissive, float alpha, float alpha2);
     void AnimateParticleST(float deltaTime, uint32_t index);
