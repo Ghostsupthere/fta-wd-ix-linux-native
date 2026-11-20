@@ -358,11 +358,11 @@ class CGxDeviceD3d9Ex : public CGxDevice {
     LPDIRECT3DINDEXBUFFER9 ICreateD3dIB(EGxPoolUsage usage, uint32_t size);
     LPDIRECT3DVERTEXBUFFER9 ICreateD3dVB(EGxPoolUsage usage, uint32_t size);
     int32_t ICreateWindow(CGxFormat& format);
-    void IDestroyD3d();
+    void IDestroyD3d(bool terminalDestroy = false);
     void IReleaseD3dPool(CGxPool* pool);
     void IReleaseD3dPools(int32_t freePools);
     void IReleaseD3dQueries();
-    void IReleaseD3dResources(int32_t freeTextures);
+    void IReleaseD3dResources(int32_t freeTextures, bool terminalDestroy = false);
     void IReleaseD3dShaders(int32_t freeShaders);
     void IReleaseD3dVertexDecl();
     void ISceneBegin();
@@ -402,7 +402,7 @@ class CGxDeviceD3d9Ex : public CGxDevice {
     void ITexUnlinkBound();
     void ITexUploadAll(CGxTex* texId);
     void ITexUploadRect(CGxTex* texId, uint32_t face, uint32_t level, const RECT& rect, const void* bits, uint32_t pitch);
-    void ITexForceRecreation(int32_t all);
+    void ITexForceRecreation(int32_t all, bool terminalDestroy = false);
     void ITexUpload(CGxTex* texId);
     void IXformSetTex(uint32_t tmu);
     void IXformSetViewport();

@@ -2731,11 +2731,11 @@ int32_t CGxDeviceD3d9Ex::ICreateD3dDevice(const CGxFormat& format) {
 
 // VERIFY: 22679807 manual
 // OFFSET: 0x006A1CE0
-void CGxDeviceD3d9Ex::IReleaseD3dResources(int32_t freeTextures) {
+void CGxDeviceD3d9Ex::IReleaseD3dResources(int32_t freeTextures, bool terminalDestroy) {
     if (NativeVisualHooks::deviceLost) NativeVisualHooks::deviceLost();
     if (NativeVisualHooks::overlayDeviceLost) NativeVisualHooks::overlayDeviceLost();
     if (NativeVisualHooks::outlineDeviceLost) NativeVisualHooks::outlineDeviceLost();
-    this->ITexForceRecreation(freeTextures);
+    this->ITexForceRecreation(freeTextures, terminalDestroy);
     this->IReleaseD3dShaders(freeTextures);
     this->IReleaseD3dPools(freeTextures);
     memset(this->m_deviceStates, 0xFF, sizeof(this->m_deviceStates));
@@ -2833,7 +2833,7 @@ int32_t CGxDeviceD3d9Ex::DeviceWM(EGxWM wm, uintptr_t param1, uintptr_t param2) 
 
 // VERIFY: 0945f992 auto
 // OFFSET: 0x006A1F40
-void CGxDeviceD3d9Ex::IDestroyD3d() {
+void CGxDeviceD3d9Ex::IDestroyD3d(bool terminalDestroy) {
     for (uint32_t i = 0; i < 2; i++) {
         if (CGxDevice::s_uiVertexShader[i]) {
             g_theGxDevicePtr->ShaderDestroy(CGxDevice::s_uiVertexShader[i]);
@@ -2845,7 +2845,7 @@ void CGxDeviceD3d9Ex::IDestroyD3d() {
     }
 
     this->ICursorDestroy();
-    this->IReleaseD3dResources(1);
+    this->IReleaseD3dResources(1, terminalDestroy);
     this->IReleaseD3dVertexDecl();
 
     if (this->m_eventQuery) {
@@ -2971,7 +2971,8 @@ void CGxDeviceD3d9Ex::DeviceDestroy() {
     // Wayland that destroys the wl_surface while the device still owns the
     // VkSurfaceKHR dxvk created from it. VK_KHR_wayland_surface requires the
     // wl_surface to outlive the surface and its swapchains.
-    this->IDestroyD3d();
+    // Texture owners may already be gone when the client releases the device.
+    this->IDestroyD3d(true);
 
     if (this->m_hwnd && this->m_ownhwnd) {
         DestroyWindow(this->m_hwnd);
@@ -4486,7 +4487,7 @@ void CGxDeviceD3d9Ex::ITexReleaseD3dTexture(CGxTex* texId) {
 
 // VERIFY: b9a5e5a7 manual
 // OFFSET: 0x006A68F0
-void CGxDeviceD3d9Ex::ITexForceRecreation(int32_t all) {
+void CGxDeviceD3d9Ex::ITexForceRecreation(int32_t all, bool terminalDestroy) {
     for (uint32_t i = 0; i < GxTexFormats_Last; i++) {
         if (this->m_scratchTextures[i].m_textures[0]) {
             this->m_scratchTextures[i].m_textures[0]->Release();
@@ -4505,10 +4506,14 @@ void CGxDeviceD3d9Ex::ITexForceRecreation(int32_t all) {
     for (CGxTex* texId = this->m_textures.Head(); texId; texId = this->m_textures.Next(texId)) {
         this->ITexReleaseD3dTexture(texId);
 
-        if (all || texId->m_flags.m_renderTarget) {
+        if (terminalDestroy || all || texId->m_flags.m_renderTarget) {
             if (texId->m_apiSpecificData2) {
                 delete[] static_cast<uint8_t*>(texId->m_apiSpecificData2);
                 texId->m_apiSpecificData2 = nullptr;
+            }
+
+            if (terminalDestroy) {
+                continue;
             }
 
             // STATIC: 0x00C60764
@@ -4525,7 +4530,7 @@ void CGxDeviceD3d9Ex::ITexForceRecreation(int32_t all) {
         }
     }
 
-    if (this->m_hwnd && this->m_d3dDevice) {
+    if (!terminalDestroy && this->m_hwnd && this->m_d3dDevice) {
         this->NotifyOnTextureRecreation();
     }
 }

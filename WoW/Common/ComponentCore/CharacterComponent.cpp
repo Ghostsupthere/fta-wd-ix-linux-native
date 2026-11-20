@@ -5926,6 +5926,10 @@ bool CCharacterComponent::Init(ComponentData* data, const char* debug) {
     this->m_request = nullptr;
 
     if (!(this->m_data.m_flags & 0x1) && this->m_baseSkinTexture) {
+        // A model or clone can retain the previous texture after the component is reused.
+        if (CGxTex* texture = TextureGetGxTex(this->m_baseSkinTexture, 1, nullptr)) {
+            GxTexSetCannotUpdate(texture);
+        }
         HandleClose(reinterpret_cast<HOBJECT>(this->m_baseSkinTexture));
         this->m_baseSkinTexture = nullptr;
     }
