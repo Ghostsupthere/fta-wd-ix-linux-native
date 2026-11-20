@@ -214,7 +214,8 @@ namespace wxl::modern::assets::m2::downport
      * @param workSize  Total work-buffer length.
      * @return True on success; false for malformed/unsupported input or an undersized work buffer.
      */
-    bool ProcessInPlace(void* work, uint32_t origSize, uint32_t workSize, std::string_view name)
+    bool ProcessInPlace(void* work, uint32_t origSize, uint32_t workSize, std::string_view name,
+                        const particles::NativeMaterialOptions* nativeMaterials)
     {
         if (!work || workSize < origSize) return false;
 
@@ -249,7 +250,7 @@ namespace wxl::modern::assets::m2::downport
 
         // Each theme compacts within the original body size (the body keeps its byte positions).
         cameras::Compact(md);
-        if (!particles::Compact(md, origSize, workSize, particleOffset))
+        if (!particles::Compact(md, origSize, workSize, particleOffset, nativeMaterials))
             return false;
         ribbons::Compact(md, origSize);
         animations::Fix(md);

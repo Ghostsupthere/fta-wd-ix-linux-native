@@ -42,6 +42,10 @@ namespace wxl::modern::assets::m2::particles
         constexpr uint32_t kFlagMultiTexture = 0x10000000;
         constexpr uint16_t kPrimaryTextureMask = 0x1F;
         constexpr uint32_t kBlendOff = 0x28;
+        constexpr uint8_t kSourceBlendAdd = 7;
+        constexpr uint32_t kGeometryName = 0x18;
+        constexpr uint32_t kFlagUnlit = 0x1;
+        constexpr uint32_t kFlagRefraction = 0x100000;
         constexpr uint32_t kTexRowsOff = 0x30;
         constexpr uint32_t kTexColsOff = 0x32;
         constexpr uint32_t kHeadCellOff = 0x13C;
@@ -270,7 +274,31 @@ namespace wxl::modern::assets::m2::particles
             return true;
         }
 
-        bool Build(fmt::M2Header const* md, uint32_t size, uint32_t appendOffset, Plan& plan)
+        bool HasIdentityParticleExtras(const NativeMaterialOptions& options, uint32_t count, uint32_t index)
+        {
+            if (!options.exp2)
+                return true;
+
+            constexpr uint32_t headerSize = 16;
+            constexpr uint32_t recordSize = 28;
+            const auto bytes = *options.exp2;
+            if (bytes.size() < headerSize || Rd32(bytes.data()) != count)
+                return false;
+            const uint32_t offset = Rd32(bytes.data() + 4);
+            if (offset < headerSize || uint64_t(offset) + uint64_t(count) * recordSize > bytes.size())
+                return false;
+
+            const auto* record = bytes.data() + offset + size_t(index) * recordSize;
+            float depthOffset, colorGain, alphaGain;
+            std::memcpy(&depthOffset, record, sizeof(float));
+            std::memcpy(&colorGain, record + 4, sizeof(float));
+            std::memcpy(&alphaGain, record + 8, sizeof(float));
+            return depthOffset == 0.0f && colorGain == 1.0f && alphaGain == 1.0f &&
+                Rd32(record + 12) == 0 && Rd32(record + 20) == 0;
+        }
+
+        bool Build(fmt::M2Header const* md, uint32_t size, uint32_t appendOffset, Plan& plan,
+                   const NativeMaterialOptions* nativeMaterials = nullptr)
         {
             if (!md || size < offsetof(fmt::M2Header, textureCombinerCombos) || appendOffset < size) return false;
             if (size < HeaderBytes(md)) return false;
@@ -289,13 +317,22 @@ namespace wxl::modern::assets::m2::particles
                 // five-bit indices; retain their primary atlas rather than sampling the model's diffuse.
                 // Native random-atlas bit 0x10000 is independent and still uses the complete texture WORD.
                 uint16_t texture = Rd16(source + kTextureIdOff);
-                if (Rd32(source + 4) & kFlagMultiTexture) texture &= kPrimaryTextureMask;
-                if (md->textures.count && texture >= md->textures.count) texture = 0;
+                const uint32_t flags = Rd32(source + 4);
+                if (flags & kFlagMultiTexture) texture &= kPrimaryTextureMask;
+                const bool validTexture = texture < md->textures.count;
+                if (md->textures.count && !validTexture) texture = 0;
                 Wr16(destination + kTextureIdOff, texture);
 
                 uint8_t& blend = destination[kBlendOff];
-                if (blend == 7) blend = 3;
-                else if (blend > 7) blend = 4;
+                if (blend == kSourceBlendAdd)
+                {
+                    const bool primary = nativeMaterials && validTexture && (flags & kFlagUnlit) &&
+                        !(flags & (kFlagMultiTexture | kFlagRefraction)) &&
+                        !Rd32(source + kGeometryName) && !Rd32(source + kGeometryName + 4);
+                    if (!primary || !HasIdentityParticleExtras(*nativeMaterials, md->particleEmitters.count, index))
+                        blend = 3;
+                }
+                else if (blend > kSourceBlendAdd) blend = 4;
 
                 uint32_t const cells = uint32_t(Rd16(source + kTexRowsOff)) * Rd16(source + kTexColsOff);
                 if (cells > uint32_t(INT16_MAX) ||
@@ -318,10 +355,11 @@ namespace wxl::modern::assets::m2::particles
         return true;
     }
 
-    bool Compact(fmt::M2Header* md, uint32_t fileSize, uint32_t workSize, uint32_t appendOffset)
+    bool Compact(fmt::M2Header* md, uint32_t fileSize, uint32_t workSize, uint32_t appendOffset,
+                 const NativeMaterialOptions* nativeMaterials)
     {
         Plan plan;
-        if (!Build(md, fileSize, appendOffset, plan) ||
+        if (!Build(md, fileSize, appendOffset, plan, nativeMaterials) ||
             uint64_t(appendOffset) + plan.tail.size() > workSize)
             return false;
         // Validation and all original reads finish before any shared body byte is changed.

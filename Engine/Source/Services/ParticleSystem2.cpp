@@ -1585,6 +1585,13 @@ int32_t CParticleEmitter2::BuildVertex(const CParticle2& particle, ParticleVerte
         this->InterpolateAllTracks(particle, &color, &scale, &headCell, &tailCell);
     }
 
+    // The alpha track already scales attenuation; fade emission by the same model alpha.
+    if (this->m_params.m_materialBlend == GxBlend_BlendAdd && this->m_alphaScale != 1.0f) {
+        color.r = static_cast<uint8_t>(CMath::fint_(color.r * this->m_alphaScale));
+        color.g = static_cast<uint8_t>(CMath::fint_(color.g * this->m_alphaScale));
+        color.b = static_cast<uint8_t>(CMath::fint_(color.b * this->m_alphaScale));
+    }
+
     float spin;
     float spinRate;
     this->RandomizeSpin(particle, &spin, &spinRate);

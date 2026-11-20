@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <optional>
+#include <span>
 #include "structure/m2/M2Format.hpp"
 
 // The byte-transform half (Compact) compiles into both the DLL and the host; the draw half
@@ -39,6 +41,12 @@ namespace wxl::modern::assets::m2::particles
     /// draw-frequency callers can test it BEFORE paying any per-batch lookup.
     inline constexpr uint16_t kBlendAlphaKey = 1;
 
+    // Native runtime opt-in. A present EXP2 chunk must agree with primary-texture rendering.
+    struct NativeMaterialOptions
+    {
+        std::optional<std::span<const uint8_t>> exp2;
+    };
+
     /// Bounds private conversion storage independently of repeated/aliased source descriptors.
     inline constexpr uint32_t kMaximumConversionBytes = 64u * 1024u * 1024u;
 
@@ -61,7 +69,8 @@ namespace wxl::modern::assets::m2::particles
      * @param appendOffset  First available byte after other compatibility tails.
      */
     [[nodiscard]] bool Compact(wxl::structure::m2::M2Header* md, uint32_t fileSize,
-                              uint32_t workSize, uint32_t appendOffset);
+                              uint32_t workSize, uint32_t appendOffset,
+                               const NativeMaterialOptions* nativeMaterials = nullptr);
 
 #ifndef WXL_HOST
     /**

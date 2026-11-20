@@ -4,6 +4,7 @@
 #include "models/m2/Contract.hpp"
 #include "models/m2/Downport.hpp"
 #include "models/m2/Md21.hpp"
+#include "models/m2/Particles.hpp"
 #include "models/m2/Skel.hpp"
 #include "models/m2/Textures.hpp"
 #include "structure/m2/M2Format.hpp"
@@ -65,10 +66,11 @@ ModernM2TransformResult TransformModernM2(const char* name, const void* source, 
     const std::string_view modelName = name ? std::string_view(name) : std::string_view();
     const std::span<const uint8_t> raw(static_cast<const uint8_t*>(source), sourceSize);
     std::vector<uint8_t> md20;
+    wxl::modern::assets::m2::particles::NativeMaterialOptions particleMaterials;
 
     const bool sourceWasMd21 = wxl::modern::assets::m2::md21::IsMd21(raw);
     if (sourceWasMd21) {
-        if (!wxl::modern::assets::m2::md21::Dechunk(raw, &ResolveModernAssetFileDataId, md20)) {
+        if (!wxl::modern::assets::m2::md21::Dechunk(raw, &ResolveModernAssetFileDataId, md20, &particleMaterials.exp2)) {
             return ModernM2TransformResult::Rejected;
         }
     } else if (downport::IsConvertible(source, sourceSize) ||
@@ -122,7 +124,7 @@ ModernM2TransformResult TransformModernM2(const char* name, const void* source, 
 
     output.resize(workSize);
     std::memcpy(output.data(), md20.data(), modelSize);
-    if (!downport::ProcessInPlace(output.data(), modelSize, workSize, modelName)) {
+    if (!downport::ProcessInPlace(output.data(), modelSize, workSize, modelName, &particleMaterials)) {
         output.clear();
         return ModernM2TransformResult::Rejected;
     }

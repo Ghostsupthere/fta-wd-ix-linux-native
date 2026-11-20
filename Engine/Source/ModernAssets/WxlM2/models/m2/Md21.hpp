@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -36,7 +37,8 @@ namespace wxl::modern::assets::m2::md21
 
     // Extract the MD20 block from an MD21 container and inline the TXID-referenced texture names. `resolve`
     // maps a texture FileDataID to a path. Returns false when `in` is not an MD21 container or is malformed.
-    bool Dechunk(std::span<const uint8_t> in, TxidResolver resolve, std::vector<uint8_t>& out);
+    bool Dechunk(std::span<const uint8_t> in, TxidResolver resolve, std::vector<uint8_t>& out,
+                 std::optional<std::span<const uint8_t>>* particleExtras = nullptr);
 
     // Zero the bone lookup table (boneCombos) so a static prop's shadow stops swinging with the camera.
     // Scoped to models whose boneCombos looks like that case (few distinct bones, none billboard); a real

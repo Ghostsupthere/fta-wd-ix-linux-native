@@ -112,7 +112,8 @@ namespace wxl::modern::assets::m2::md21
         return in.size() >= 8 && Rd32(in.data()) == fmt::kMagicMD21;
     }
 
-    bool Dechunk(std::span<const uint8_t> in, TxidResolver resolve, std::vector<uint8_t>& out)
+    bool Dechunk(std::span<const uint8_t> in, TxidResolver resolve, std::vector<uint8_t>& out,
+                 std::optional<std::span<const uint8_t>>* particleExtras)
     {
         if (in.size() > (std::numeric_limits<uint32_t>::max)()) return false;
         const uint8_t* b = in.data();
@@ -133,6 +134,7 @@ namespace wxl::modern::assets::m2::md21
         // Collect the TXID texture FileDataIDs from the chunks trailing the MD20 block.
         std::vector<uint32_t> txid;
         txid.reserve(texCount);
+        std::optional<std::span<const uint8_t>> exp2;
         for (uint32_t o = 8 + md20Size; o < n; )
         {
             if (n - o < 8) return false;
@@ -142,6 +144,11 @@ namespace wxl::modern::assets::m2::md21
             {
                 for (uint32_t k = 0; k + 4 <= sz && txid.size() < texCount; k += 4)
                     txid.push_back(Rd32(b + o + 8 + k));
+            }
+            if (particleExtras && tag == Magic('E', 'X', 'P', '2'))
+            {
+                // An empty or duplicate chunk is present but unusable.
+                exp2 = exp2 ? std::span<const uint8_t>{} : in.subspan(o + 8, sz);
             }
             o += 8 + sz;
         }
@@ -177,6 +184,8 @@ namespace wxl::modern::assets::m2::md21
         if (env::VerboseAssetLogs())
             wxl::core::log::Printf("modern-m2 md21: md20=%u textures=%u hardcoded=%u inlined=%u txid=%zu",
                 md20Size, texCount, hardcoded, inlined, txid.size());
+        if (particleExtras)
+            *particleExtras = exp2;
         return true;
     }
 

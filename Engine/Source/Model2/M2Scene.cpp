@@ -105,8 +105,10 @@ uint32_t ParticleBlendToM2Blend(uint32_t blend) {
             return M2BLEND_MOD;
         case 5:
             return M2BLEND_MOD2X;
-        case 10:
+        case GxBlend_NoAlphaAdd:
             return M2BLEND_NO_ALPHA_ADD;
+        case GxBlend_BlendAdd:
+            return M2BLEND_BLEND_ADD;
         default:
             return M2BLEND_OPAQUE;
     }
@@ -1676,9 +1678,12 @@ void CM2Scene::SortAdditiveParticleElements(uint32_t pass) {
             case 3:
                 blend = data->m_materials[data->m_ribbons[element->m_index].m_materialIndices[0]].m_blendMode;
                 break;
-            case 4:
-                blend = (this->m_cache->m_flags & 0x100) ? M2BLEND_ADD : ParticleBlendToM2Blend(element->m_emitter->m_params.m_materialBlend);
+            case 4: {
+                const auto particleBlend = element->m_emitter->m_params.m_materialBlend;
+                const bool forceAdditive = (this->m_cache->m_flags & 0x100) && particleBlend != GxBlend_BlendAdd;
+                blend = forceAdditive ? static_cast<uint32_t>(M2BLEND_ADD) : ParticleBlendToM2Blend(particleBlend);
                 break;
+            }
             default:
                 break;
         }

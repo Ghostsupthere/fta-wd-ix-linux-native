@@ -7793,6 +7793,11 @@ int32_t CM2Model::InitializeLoaded() {
                     material.m_blendMode = GxBlend_Mod2x;
                     material.m_flags &= ~4u;
                     break;
+
+                case M2PARTICLEBLEND_BLEND_ADD:
+                    material.m_blendMode = GxBlend_BlendAdd;
+                    material.m_flags &= ~4u;
+                    break;
             }
 
             material.m_flags = (material.m_flags & ~1u) | ((flags & 1) ? 0 : 1);

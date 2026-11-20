@@ -32,6 +32,8 @@
  * while conversion planning uses temporary private staging. The same transform compiles into both. The caller sizes
  * with WorkSize, copies the source bytes into its own buffer, then calls ProcessInPlace.
  */
+namespace wxl::modern::assets::m2::particles { struct NativeMaterialOptions; }
+
 namespace wxl::modern::assets::m2::downport
 {
     /**
@@ -70,5 +72,6 @@ namespace wxl::modern::assets::m2::downport
      * @param workSize  Total work-buffer length.
      * @return True on success; false when the source is malformed, unsupported, or workSize is too small.
      */
-    bool ProcessInPlace(void* work, uint32_t origSize, uint32_t workSize, std::string_view name = {});
+    bool ProcessInPlace(void* work, uint32_t origSize, uint32_t workSize, std::string_view name = {},
+                        const particles::NativeMaterialOptions* nativeMaterials = nullptr);
 }
