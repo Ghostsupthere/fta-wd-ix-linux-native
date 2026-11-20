@@ -47,6 +47,8 @@ class SE2SoundKitProperties {
     /* 0064 */ char m_dspChainName[128];
     /* 00E4 */ int32_t m_forceLoop;
 
+    const void* m_mountSoundOwner = nullptr;
+
     void ResetToDefaults();
 };
 
@@ -89,7 +91,7 @@ class SI2 {
     static int32_t sm_bLuaMusicPlaying;
     static TSGrowableArray<uint32_t> sm_aIntroMusicNextValidPlayTime;
 
-    static int32_t AddAdvancedSound(SoundEntriesAdvancedRec* rec, int32_t soundKitId, const C3Vector* position, const C3Vector* orientation, SE2SoundKitObject* object, int32_t quickFade, int32_t a7, int32_t checkDistance, int32_t forceLoop);
+    static int32_t AddAdvancedSound(SoundEntriesAdvancedRec* rec, int32_t soundKitId, const C3Vector* position, const C3Vector* orientation, SE2SoundKitObject* object, int32_t quickFade, int32_t a7, int32_t checkDistance, int32_t loopMode, const void* mountSoundOwner);
     static void AIMusicFinished(SESound* sound, void* param);
     static void ApplyReverbSettings();
     static int32_t AttachToObject(SE2SoundKitObject* object, WOWGUID guid);
@@ -154,6 +156,7 @@ class SI2 {
     static int32_t IsAdvancedSoundNear(int32_t soundKitId, const C3Vector* position);
     static bool IsLooping(SE2SoundKitObject* object);
     static bool IsPlaying(SE2SoundKitObject* object);
+    static bool IsMountSoundPending(const SE2SoundKitObject& object);
     static uint32_t IsSoundKitLooping(int32_t soundKitId);
     static int32_t IsTooCloseToExistingSoundKit(int32_t soundKitId, const C3Vector* position);
     static int32_t IsUnderwater();

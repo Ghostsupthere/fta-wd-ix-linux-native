@@ -49,6 +49,10 @@ class SI2AdvancedSound {
     /* 00A4 */ int32_t m_quickFade;
     /* 00A8 */ uint32_t m_id;
 
+    const void* m_mountSoundOwner = nullptr;
+    uint32_t m_mountSoundDeadline = 0;
+    bool m_mountSoundPending = false;
+
     SI2AdvancedSound();
     ~SI2AdvancedSound();
     void AddSuppressor();

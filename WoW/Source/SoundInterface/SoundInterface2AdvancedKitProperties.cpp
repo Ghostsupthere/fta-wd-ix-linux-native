@@ -2,6 +2,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <new>
+#include <string>
+#include "Engine/Source/BlizzardCore/SFile2-Core.h"
+#include "Engine/Source/Os/TimeManager.h"
+#include "WoW/Source/SoundInterface/MountSoundTiming.h"
 #include "WoW/Source/SoundInterface/SoundInterface2AdvancedKitProperties.h"
 #include "Engine/Source/SoundEngine/SoundEngine.h"
 #include "Engine/Source/Storm/H/storm.h"
@@ -32,6 +36,7 @@ static int32_t s_lastDayTime;
 // VERIFY: 3271634f auto
 // OFFSET: 0x004C9CD0
 void SI2::DestroyVSoundLookup() {
+    MountSoundTiming::State().Reset();
     if (s_vsoundLookup) {
         delete s_vsoundLookup;
         s_vsoundLookup = nullptr;
@@ -85,6 +90,12 @@ int32_t SI2AdvancedSound::Play() {
             return 0;
         }
 
+        auto& timingPolicy = MountSoundTiming::State();
+        if (this->m_mountSoundOwner &&
+            timingPolicy.Remaining(this->m_mountSoundOwner, this->m_soundKitId, OsGetAsyncTimeMs())) {
+            return 16;
+        }
+
         properties.ResetToDefaults();
         properties.m_fadeInTime = 0.01f;
         properties.m_fadeOutTime = 0.01f;
@@ -100,7 +111,13 @@ int32_t SI2AdvancedSound::Play() {
 
         const C3Vector* position = (0.0f == this->m_position.x && 0.0f == this->m_position.y && 0.0f == this->m_position.z) ? nullptr : &this->m_position;
 
-        return SI2::PlaySoundKit(this->m_soundKitId, position, this->m_object, &properties, this->m_id, &this->m_soundId, 1, 1);
+        const int32_t result = SI2::PlaySoundKit(this->m_soundKitId, position, this->m_object, &properties, this->m_id, &this->m_soundId, 1, 1);
+        MountSoundTiming::Timing timing;
+        if (result == 0 && this->m_mountSoundOwner && timingPolicy.Find(this->m_soundKitId, timing)) {
+            timingPolicy.Played(this->m_mountSoundOwner, this->m_soundKitId, OsGetAsyncTimeMs(),
+                RandomBetween(timing.cooldownMin, timing.cooldownMax));
+        }
+        return result;
     }
 
     properties.ResetToDefaults();
@@ -328,11 +345,22 @@ int32_t SI2::UpdateAdvancedSounds(const void* data, void* param) {
     while (node) {
         SI2AdvancedSound* sound = node->m_sound;
 
-        if (sound->m_finished) {
+        if (sound->m_finished || (sound->m_mountSoundPending && sound->m_stopped)) {
             VSOUND_LOOKUP* next = s_vsoundLookup->m_fulllist.Next(node);
             s_vsoundLookup->DeleteNode(node);
             node = next;
             continue;
+        }
+
+        if (sound->m_mountSoundPending) {
+            if (!MountSoundTiming::DeadlineReached(OsGetAsyncTimeMs(), sound->m_mountSoundDeadline)) {
+                node = s_vsoundLookup->m_fulllist.Next(node);
+                continue;
+            }
+            sound->m_mountSoundPending = false;
+            if (sound->Play() == 0 && SI2::IsPlaying(sound->m_object)) {
+                sound->AddSuppressor();
+            }
         }
 
         SESound* object = sound->m_object ? &sound->m_object->m_sound : nullptr;
@@ -476,9 +504,46 @@ int32_t SI2::UpdateAdvancedSounds(const void* data, void* param) {
     return 1;
 }
 
+static void LoadMountSoundTiming() {
+    auto& policy = MountSoundTiming::State();
+    policy.Reset();
+
+    SFileImpl* file = nullptr;
+    if (!SFileOpenFile("DBFilesClient\\WXLMountSoundTiming.csv", &file)) {
+        return;
+    }
+    uint32_t high = 0;
+    const uint32_t size = SFileGetFileSize(file, &high);
+    if (high || !size || size > MountSoundTiming::MaxFileBytes) {
+        SFileCloseFile(file);
+        return;
+    }
+
+    std::string bytes(size, '\0');
+    uint32_t read = 0;
+    const bool complete = SFileReadFile(file, bytes.data(), size, &read, nullptr, 0) && read == size;
+    SFileCloseFile(file);
+    if (complete) {
+        policy.Parse(bytes);
+    }
+}
+
+bool SI2::IsMountSoundPending(const SE2SoundKitObject& object) {
+    if (!object.m_advancedId || !s_vsoundLookup) {
+        return false;
+    }
+
+    SE2::LockSoundList();
+    auto* node = s_vsoundLookup->Ptr(object.m_advancedId, s_vsoundKey);
+    const bool pending = node && node->m_sound->m_mountSoundPending && !node->m_sound->m_stopped;
+    SE2::UnlockSoundList();
+    return pending;
+}
+
 // VERIFY: 3a7d0c7f manual
 // OFFSET: 0x004CB160
 void SI2::CreateVSoundLookup() {
+    LoadMountSoundTiming();
     if (!s_vsoundLookup) {
         s_vsoundLookup = new (SMemAlloc(sizeof(TSHashTable<VSOUND_LOOKUP, HASHKEY_NONE>), __FILE__, __LINE__, 0)) TSHashTable<VSOUND_LOOKUP, HASHKEY_NONE>();
     }
@@ -637,7 +702,14 @@ void SI2::StopAdvancedSound(uint32_t id, int32_t remove, float fadeOutTime) {
 
 // VERIFY: 87c34bf4 manual
 // OFFSET: 0x004CB580
-int32_t SI2::AddAdvancedSound(SoundEntriesAdvancedRec* rec, int32_t soundKitId, const C3Vector* position, const C3Vector* orientation, SE2SoundKitObject* object, int32_t quickFade, int32_t a7, int32_t checkDistance, int32_t forceLoop) {
+int32_t SI2::AddAdvancedSound(SoundEntriesAdvancedRec* rec, int32_t soundKitId, const C3Vector* position, const C3Vector* orientation, SE2SoundKitObject* object, int32_t quickFade, int32_t a7, int32_t checkDistance, int32_t loopMode, const void* mountSoundOwner) {
+    MountSoundTiming::Timing timing;
+    auto& policy = MountSoundTiming::State();
+    const bool timed = mountSoundOwner && policy.Find(soundKitId, timing);
+    if (timed && loopMode == 2 && policy.Remaining(mountSoundOwner, soundKitId, OsGetAsyncTimeMs())) {
+        return 16;
+    }
+
     if (!rec) {
         return 24;
     }
@@ -704,10 +776,24 @@ int32_t SI2::AddAdvancedSound(SoundEntriesAdvancedRec* rec, int32_t soundKitId, 
     sound->m_randomOffsetRange = rec->m_randomOffsetRange;
     sound->m_volume = 1.0f;
     sound->m_randomOffset = RandomBetween(0, sound->m_randomOffsetRange);
-    sound->m_usage = forceLoop ? 0 : rec->m_usage;
+    sound->m_usage = loopMode == 1 ? 0 : rec->m_usage;
     sound->m_intervalMin = rec->m_timeIntervalMin;
     sound->m_intervalMax = rec->m_timeIntervalMax;
     sound->m_nextInterval = RandomBetween(sound->m_intervalMin, sound->m_intervalMax);
+    if (timed) {
+        sound->m_mountSoundOwner = mountSoundOwner;
+        if (loopMode == 2) {
+            sound->m_usage = 2;
+        }
+        if (sound->m_usage) {
+            const uint32_t now = OsGetAsyncTimeMs();
+            const auto delay = static_cast<uint32_t>(RandomBetween(timing.delayMin, timing.delayMax));
+            const uint32_t wait = std::max(delay, policy.Remaining(mountSoundOwner, soundKitId, now));
+            sound->m_nextInterval = static_cast<int32_t>(wait);
+            sound->m_mountSoundPending = sound->m_usage == 2 && wait > 0;
+            sound->m_mountSoundDeadline = now + wait;
+        }
+    }
     sound->m_volumeSliderCategory = rec->m_volumeSliderCategory;
     sound->m_duck[0] = (rec->m_duckToSfx < 0.0f || rec->m_duckToSfx > 1.0f) ? 1.0f : rec->m_duckToSfx;
     sound->m_duck[1] = (rec->m_duckToMusic < 0.0f || rec->m_duckToMusic > 1.0f) ? 1.0f : rec->m_duckToMusic;
@@ -751,7 +837,7 @@ int32_t SI2::AddAdvancedSound(SoundEntriesAdvancedRec* rec, int32_t soundKitId, 
     node->m_hashval = id;
     node->m_sound = sound;
 
-    if (sound->m_usage == 2) {
+    if (sound->m_usage == 2 && !sound->m_mountSoundPending) {
         sound->Play();
 
         if (SI2::IsPlaying(sound->m_object)) {

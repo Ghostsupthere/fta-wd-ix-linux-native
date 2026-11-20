@@ -160,6 +160,7 @@ void SE2SoundKitProperties::ResetToDefaults() {
     this->m_coneOrientation = nullptr;
     this->m_useDspChain = 0;
     this->m_forceLoop = 0;
+    this->m_mountSoundOwner = nullptr;
     this->m_checkStreaming = SFile::IsStreamingMode() != 0;
 }
 
@@ -834,8 +835,11 @@ int32_t SI2::PlaySoundKit(int32_t soundKitId, const C3Vector* position, SE2Sound
     SE2::SetSoundGroupMaxAudibleBehavior(def->m_soundGroup, properties->m_maxAudibleBehavior, properties->m_muteFadeSpeed);
 
     if (def->m_advanced && !advancedId) {
-        SI2::AddAdvancedSound(def->m_advanced, soundKitId, position, properties->m_coneOrientation, object, 0, 0, checkDistance, properties->m_loopMode == 1);
-        return 0;
+        const void* mountSoundOwner = properties->m_mountSoundOwner;
+        const int32_t loopMode = mountSoundOwner && object ? properties->m_loopMode : (properties->m_loopMode == 1);
+        const int32_t result = SI2::AddAdvancedSound(def->m_advanced, soundKitId, position, properties->m_coneOrientation,
+            object, 0, 0, checkDistance, loopMode, object ? mountSoundOwner : nullptr);
+        return mountSoundOwner ? result : 0;
     }
 
     bool randomStart = properties->m_group != 1 && properties->m_group != 5 && !properties->m_noRandomStart;

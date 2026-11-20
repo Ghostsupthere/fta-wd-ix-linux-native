@@ -1,5 +1,6 @@
 #include "ObjectEffect.h"
 #include "MountObjectEffectStates.h"
+#include "WoW/Source/SoundInterface/MountSoundTiming.h"
 #include <new>
 #include <typeinfo>
 #include "Engine/Source/Model2/M2Model.h"
@@ -504,7 +505,8 @@ void CObjectEffect::PlayOneShot() {
         properties.ResetToDefaults();
         properties.m_loopMode = 2;
 
-        if (!SI2::IsPlaying(&this->m_soundKitObject)) {
+        if (!SI2::IsPlaying(&this->m_soundKitObject) && !SI2::IsMountSoundPending(this->m_soundKitObject)) {
+            properties.m_mountSoundOwner = this->m_manager;
             SI2::PlaySoundKit(this->m_def->m_effectRecID, &position, &this->m_soundKitObject, &properties, 0, nullptr, 0, 0);
         }
     }
@@ -530,6 +532,7 @@ void CObjectEffect::TriggerLoopingEffect() {
             properties.m_fadeInTime = 0.7f;
             properties.m_fadeOutTime = 0.7f;
             properties.m_loopMode = usage != 1;
+            properties.m_mountSoundOwner = this->m_manager;
 
             SI2::PlaySoundKit(this->m_def->m_effectRecID, &position, &this->m_soundKitObject, &properties, 0, nullptr, 0, 0);
             this->m_playCount++;
@@ -595,7 +598,7 @@ void CObjectEffectManager::UpdateAllPlayingEffects() {
         if (effect->m_def->m_effectRecType == 1) {
             C3Vector position = effect->GetWorldPosition();
 
-            if (SI2::IsPlaying(&effect->m_soundKitObject)) {
+            if (SI2::IsPlaying(&effect->m_soundKitObject) || SI2::IsMountSoundPending(effect->m_soundKitObject)) {
                 SI2::Set3DPosition(&effect->m_soundKitObject, &position);
                 effect = this->m_oneShotEffects.Next(effect);
                 continue;
@@ -852,6 +855,7 @@ void CObjectEffectManager::EnterState(uint32_t state, int32_t playEnterEffects, 
 // OFFSET: 0x006F7370
 CObjectEffectManager::~CObjectEffectManager() {
     this->ShutDown();
+    MountSoundTiming::State().Forget(this);
 }
 
 // VERIFY: 403e887b auto

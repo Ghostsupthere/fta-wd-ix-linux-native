@@ -74,6 +74,7 @@
 #include "WoW/Source/Object/ObjectClient/VehiclePassenger_C.h"
 #include "WoW/Source/ObjectMgrClient/CClientObjCreate.h"
 #include "WoW/Source/ObjectMgrClient/ObjectMgrClient.h"
+#include "WoW/Source/SoundInterface/MountSoundTiming.h"
 #include "WoW/Source/SoundInterface/SoundInterface2.h"
 #include "WoW/Source/Ui/ActionBarFrame.h"
 #include "WoW/Source/Ui/BattlefieldInfo.h"
@@ -5919,6 +5920,7 @@ void CGUnit_C::RemoveMountModel() {
         this->m_mountModel->SetLoadedCallback(nullptr, nullptr);
         this->m_mountModel->SetSequenceCallback(nullptr, 0);
         this->m_mountModel->SetEventCallback(nullptr, 0);
+        MountSoundTiming::State().Forget(this->m_mountModel);
         this->m_mountModel->Release();
         this->m_mountModel = nullptr;
     }
@@ -5943,6 +5945,7 @@ void CGUnit_C::SetMountModel(CM2Model* model) {
         }
 
         this->m_mountModel->SetLoadedCallback(nullptr, nullptr);
+        MountSoundTiming::State().Forget(this->m_mountModel);
         this->m_mountModel->Release();
     }
 
@@ -18717,6 +18720,22 @@ void CGUnit_C::AnimEventCallback(CM2Model* model, uint32_t boneId, uint32_t even
 
     if (std::isnan(static_cast<double>(position->x)) || std::isnan(static_cast<double>(position->y)) || std::isnan(static_cast<double>(position->z))) {
         unit->GetUnitName(nullptr, 1);
+    }
+
+    constexpr uint32_t soundEvent = 0x44534324; // $CSD
+    if (model && model == unit->m_mountModel && eventId == soundEvent &&
+        MountSoundTiming::HandleModelEvent(MountSoundTiming::State(), model, data, model->m_scene->m_time,
+            [&] {
+                SE2SoundKitProperties properties;
+                properties.ResetToDefaults();
+                properties.m_mountSoundOwner = model;
+                return SI2::PlaySoundKit(data, position, nullptr, &properties, 0, nullptr, 1, 0);
+            },
+            [](uint32_t minimum, uint32_t maximum) {
+                return maximum > minimum ? minimum + static_cast<uint32_t>(
+                    (static_cast<uint64_t>(CRandom::uint32_(g_rndSeed)) * (maximum - minimum)) >> 32) : minimum;
+            })) {
+        return;
     }
 
     unit->HandleAnimEvent(boneId, eventId, data, position, time);
