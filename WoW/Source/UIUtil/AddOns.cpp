@@ -441,6 +441,11 @@ UIADDON::~UIADDON() {
     this->m_metadata.Clear();
 }
 
+const TSGrowableArray<char*>* GetAddonOptionalDeps(const char* name) {
+    const UIADDON* addon = s_addons.Ptr(name);
+    return addon ? &addon->m_optionalDeps : nullptr;
+}
+
 // VERIFY: c3d9c443 auto
 // OFFSET: 0x005F7410
 const char* GetAddOnName(const char* name) {

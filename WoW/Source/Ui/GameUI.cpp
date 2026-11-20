@@ -1,6 +1,7 @@
 #include "Engine/Source/Base/Profiler.h"
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Source/Ui/Linux/WxlRequiredAddons.h"
+#include "WoW/Source/Ui/ModernLuaApi.h"
 #include "WoW/Source/Ui/Linux/WxlNamePlates.h"
 #include "WoW/Source/Ui/Linux/WxlGameScripts.h"
 #include "WoW/Source/Magic/MagicClient/Linux/WxlLoneWolf.h"
@@ -1820,6 +1821,8 @@ void CGGameUI::InitializeFrameXML() {
     }
 
     BugReportRegister();
+    // The modern Lua surface (C_FTA, C_Timer, C_AddOns...) must exist before any add-on loads: they probe it during ADDON_LOADED.
+    ModernLuaApi::Install(FrameScript_GetContext(), ModernLuaApi::ReadEnabledGroups(), &status);
     LoadAddOns(&status);
     FrameXML_RegisterLoadProgressCallback(nullptr, nullptr, 0);
     CGGameUI::Initialize();

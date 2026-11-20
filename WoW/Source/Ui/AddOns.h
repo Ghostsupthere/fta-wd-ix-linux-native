@@ -21,6 +21,7 @@ bool IsAddOnLoadable(const char* name, bool demandLoad, UIADDON_LOADABLE_REASON&
 bool IsAddOnLoaded(const char* name);
 bool IsAddOnLoadOnDemand(const char* name);
 TSGrowableArray<char*>* GetAddonDeps(const char* name);
+const TSGrowableArray<char*>* GetAddonOptionalDeps(const char* name);
 const char* AddOnSecurityToken(int32_t security);
 const char* GetAddOnName(const char* name);
 const char* GetAddOnTitle(const char* name);

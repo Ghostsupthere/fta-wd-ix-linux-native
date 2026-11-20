@@ -1,0 +1,5 @@
+#pragma once
+
+inline constexpr char ModernLuaApiScript[] = R"FTA_ModernLua(
+@MODERN_LUA_SOURCE@
+)FTA_ModernLua";
