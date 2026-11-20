@@ -1,3 +1,4 @@
+#include "Engine/Source/Storm/Source/Linux/CrashBreadcrumbs.h"
 #include "Engine/Source/Base/Profiler.h"
 #include "WoW/Source/WorldClient/Linux/WxlModernVisuals.h"
 #include "World.h"
@@ -1392,6 +1393,7 @@ void World::SetFarClip(float farClip) {
 // VERIFY: 833d137a auto
 // OFFSET: 0x00781430
 void CWorld::LoadMap(const char* mapName, C3Vector* position, int32_t zoneID, int32_t unused_a4) {
+    native_crash::Record(native_crash::Event::MapLoad, nullptr, static_cast<uint32_t>(zoneID));
     World::s_farClip = World::ValidateFarClip(CWorldParam::cvar_farClip->m_floatValue, zoneID);
     World::s_nearClip = 0.2f;
     World::s_prevFarClip = World::s_farClip;
@@ -1506,6 +1508,7 @@ void CWorldScene::ClearObjectFadeoutList() {
 // VERIFY: ca15b88d auto
 // OFFSET: 0x00783180
 void World::UnloadMap() {
+    native_crash::Record(native_crash::Event::MapUnload);
 #if defined(WOWDECOMP_LINUX)
     WxlInvalidateWorldEquipment();
     InvalidateNativeWeaponWorld();

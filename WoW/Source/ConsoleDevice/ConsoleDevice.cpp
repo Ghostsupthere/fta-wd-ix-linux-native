@@ -1,3 +1,4 @@
+#include "Engine/Source/Storm/Source/Linux/CrashBreadcrumbs.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -525,6 +526,7 @@ void ConsoleDeviceInitialize(const char* title, bool unused_a2, bool unused_a3) 
         ValidateFormatMonitor(format);
     }
 
+    native_crash::SetBackend(native_crash::Backend::D3d9, format.m_multisampleCount);
     s_requestedFormat = format;
     ConsoleDeviceAdoptDeviceFormat();
     s_lastGoodFormat = s_requestedFormat;

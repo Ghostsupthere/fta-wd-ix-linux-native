@@ -3,6 +3,7 @@
 #include "Engine/Source/Base/OsPosix.h"
 #include <cerrno>
 #include <csignal>
+#include "CrashBreadcrumbs.h"
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
@@ -28,6 +29,15 @@
 #include "Engine/Source/Storm/H/stpl.h"
 #include "Engine/Source/Storm/H/storm.h"
 #include "Engine/Source/Storm/Source/MachineState.h"
+
+// The crash log file gets the same recent-events list as the short report on stderr.
+static FILE* s_breadcrumbLog;
+static void WriteBreadcrumbLine(const char* line) {
+    if (s_breadcrumbLog) {
+        fputs(line, s_breadcrumbLog);
+    }
+}
+
 
 #define SERR_STR_ERROR 0
 #define SERR_STR_CRITICAL 1
@@ -541,6 +551,10 @@ int32_t STORMAPI SErrDisplayError(uint32_t errorcode, const char* filename, int3
 
         if (logfile) {
             LogMachineState(LOG_OPTION_DEFAULT | LOG_OPTION_FRAMEPARAMS, WriteLine, logfile, context ? 0 : 2, context);
+            s_breadcrumbLog = logfile;
+            fputs("\n", logfile);
+            native_crash::WriteRecent(WriteBreadcrumbLine);
+            s_breadcrumbLog = nullptr;
             fclose(logfile);
         }
 
@@ -683,6 +697,7 @@ static void SafeCrashNote(int signal, const siginfo_t* info, void* faultPc) {
     int count = backtrace(frames, 48);
     SafeWrite("Backtrace (module+offset; symbolize with addr2line against the same build):\n");
     backtrace_symbols_fd(frames, count, STDERR_FILENO);
+    native_crash::WriteRecent(SafeWrite);
     SafeWrite("*** end of short crash report\n");
 #endif
 }

@@ -1,5 +1,6 @@
 #include "Engine/Source/Base/Profiler.h"
 #include <algorithm>
+#include "Engine/Source/Storm/Source/Linux/CrashBreadcrumbs.h"
 #include <atomic>
 #include <cfloat>
 #include <cmath>
@@ -501,7 +502,12 @@ void M2BlendBoneMatrices(const C44Matrix* bones, ubyte4 weights, ubyte4 indices,
 
 // VERIFY: 27fe3564 manual
 // OFFSET: 0x0081D510
-M2HitRec* CM2Scene::IntersectHitTestTriangles(const uint16_t* indices, const uint16_t* end, uint32_t vertexStart, const C3Vector& start, uint32_t pass, M2HitRec* rec, float& t, M2HitRec* best) {
+M2HitRec* CM2Scene::IntersectHitTestTriangles(const uint16_t* indices, const uint16_t* end, uint32_t vertexStart, uint32_t vertexCount, const C3Vector& start, uint32_t pass, M2HitRec* rec, float& t, M2HitRec* best) {
+    if (!indices || !this->m_hitVerts || vertexCount > this->m_hitVertCapacity) {
+        return best;
+    }
+
+    bool recordedGuard = false;
     for (; indices < end; indices += 3) {
         // FIX (2026-10-26): indices[] holds skin-wide (global) vertex
         // indices; subtracting vertexStart (this skin SECTION's own first
@@ -524,7 +530,13 @@ M2HitRec* CM2Scene::IntersectHitTestTriangles(const uint16_t* indices, const uin
         uint32_t index1 = indices[1] - vertexStart;
         uint32_t index2 = indices[2] - vertexStart;
 
-        if (index0 >= this->m_hitVertCapacity || index1 >= this->m_hitVertCapacity || index2 >= this->m_hitVertCapacity) {
+        // Hardening from the Windows client (2026-11-20): the scratch array holds only this section's vertexCount transformed vertices from
+        // slot zero; slots up to the capacity can still hold stale vertices from an earlier, larger section.
+        if (index0 >= vertexCount || index1 >= vertexCount || index2 >= vertexCount) {
+            if (!recordedGuard && rec && rec->m_model && rec->m_model->m_shared) {
+                native_crash::RecordIndexGuard(rec->m_model->m_shared->m_fileName, indices[0], vertexStart);
+                recordedGuard = true;
+            }
             continue;
         }
 
@@ -735,7 +747,7 @@ M2HitRec* CM2Scene::HitTestGeometry(const CM2Model* model, uint32_t pass, const 
         }
 
         const uint16_t* indices = &skinData->m_indices[section->m_indexStart];
-        best = this->IntersectHitTestTriangles(indices, indices + section->m_indexCount, section->m_vertexStart, start, pass, rec, t, best);
+        best = this->IntersectHitTestTriangles(indices, indices + section->m_indexCount, section->m_vertexStart, section->m_vertexCount, start, pass, rec, t, best);
     }
 
     return best;
@@ -771,7 +783,7 @@ M2HitRec* CM2Scene::HitTestCollision(const CM2Model* model, uint32_t pass, const
 
     const uint16_t* indices = data->m_collisionIndices.Data();
 
-    return this->IntersectHitTestTriangles(indices, indices + data->m_collisionIndices.m_count, 0, start, pass, rec, t, best);
+    return this->IntersectHitTestTriangles(indices, indices + data->m_collisionIndices.m_count, 0, data->m_collisionPositions.m_count, start, pass, rec, t, best);
 }
 
 // VERIFY: eaeb7d7b manual

@@ -1,4 +1,5 @@
 #include <cstdint>
+#include "Engine/Source/Storm/Source/Linux/CrashBreadcrumbs.h"
 #include <cstdio>
 #include <cstring>
 #include <malloc.h>
@@ -113,6 +114,7 @@ int32_t CM2Shared::CallbackWhenLoaded(CM2Model* model) {
 // OFFSET: 0x00835A00
 void CM2Shared::LoadFailedCallback(void* param) {
     CM2Shared* shared = static_cast<CM2Shared*>(param);
+    native_crash::Record(native_crash::Event::ModelFailed, shared->m_fileName);
     AsyncFileReadDestroyObject(shared->m_asyncObject);
     shared->m_asyncObject = nullptr;
 }
@@ -1717,6 +1719,7 @@ CM2SequenceLoad::~CM2SequenceLoad() {
 // VERIFY: bacb8d39 manual
 // OFFSET: 0x0083D410
 int32_t CM2Shared::Load(SFileImpl* file, int32_t flags, CAaBox* boundingBox) {
+    native_crash::Record(native_crash::Event::ModelLoad, this->m_fileName);
     this->m_flags = (this->m_flags & ~4u) | (flags ? 4 : 0);
     this->m_fileSize = SFileGetFileSize(file, nullptr);
     this->m_data = static_cast<M2Data*>(SIMD::AllocA16(this->m_fileSize, __FILE__, __LINE__));
