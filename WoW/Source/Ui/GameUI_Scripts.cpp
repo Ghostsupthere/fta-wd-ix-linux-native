@@ -5177,9 +5177,10 @@ static int32_t Script_UseItemByName(lua_State* L) {
         }
 
         if (item) {
+            MacroSpellTarget macroTarget(lua_tolstring(L, 2, nullptr));
             WOWGUID target;
 
-            if (Script_GetGUIDFromToken(lua_tolstring(L, 2, nullptr), target, true)) {
+            if (macroTarget.Resolve(target)) {
                 item->UseItem(&target, 0);
             }
         }

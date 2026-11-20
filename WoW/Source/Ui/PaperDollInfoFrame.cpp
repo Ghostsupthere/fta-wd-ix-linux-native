@@ -484,6 +484,11 @@ void CGCharacterInfo::UseItem(int32_t slot, WOWGUID* target) {
         return;
     }
 
+    if (MacroSpellTarget::IsCursor()) {
+        item->UseItem(target, 0);
+        return;
+    }
+
     if (Spell_C_IsTargeting() && !Spell_C_CanTargetItems()) {
         Spell_C_StopTargeting();
     }

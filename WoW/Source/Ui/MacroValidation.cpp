@@ -25,7 +25,7 @@ std::string_view Take(std::string_view& value, char separator) {
 }
 
 bool IsMacroTarget(std::string_view value) {
-    if (value == "cursor") {
+    if (MacroGroundTarget::TokenMatches(value, "cursor")) {
         return true;
     }
     if (value.empty() || value.size() >= 96) {
@@ -204,7 +204,7 @@ int32_t Script_ValidateMacroBody(lua_State* L) {
                 }
                 std::string_view target;
                 ValidateGroup(branch.substr(1, close - 1), target, result);
-                cursor |= target == "cursor";
+                cursor |= MacroGroundTarget::TokenMatches(target, "cursor");
                 branch = Trim(branch.substr(close + 1));
             }
             if (cast) {

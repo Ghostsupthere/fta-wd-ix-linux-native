@@ -23,6 +23,7 @@ class CGObject_C;
 class CKeyEvent;
 class CMouseEvent;
 class CRenderBatch;
+class CTerrainClickEvent;
 
 namespace FFX {
     class Effect;
@@ -187,7 +188,8 @@ class CGWorldFrame : public CSimpleFrame {
     void OnWorldUpdate();
     void UpdateDayNight(float deltaSec);
     int32_t HandleSpriteTrack(WOWGUID guid);
-    int32_t HitTestPoint(float x, float y, int32_t a3, HITTESTRESULT* result);
+    int32_t HitTestPoint(float x, float y, int32_t a3, HITTESTRESULT* result, uint32_t overrideFlags = 0);
+    bool GetMacroGroundTarget(CTerrainClickEvent& target);
     int32_t CanTargetCorpseSelection(const CGCorpse_C* corpse, uint32_t flags);
     static void __stdcall CursorTrackObject(CGGameObject_C* object);
     static void __stdcall CursorTrackUnit(CGUnit_C* unit);

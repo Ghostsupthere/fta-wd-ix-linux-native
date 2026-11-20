@@ -960,9 +960,10 @@ static int32_t Script_UseInventoryItem(lua_State* L) {
         return 0;
     }
 
+    MacroSpellTarget macroTarget(lua_tolstring(L, 2, nullptr));
     WOWGUID target;
 
-    if (Script_GetGUIDFromToken(lua_tolstring(L, 2, nullptr), target, true)) {
+    if (macroTarget.Resolve(target)) {
         CGCharacterInfo::UseItem(slot, &target);
     }
 

@@ -1054,9 +1054,10 @@ static int32_t Script_CastSpellByID(lua_State* L) {
         return 0;
     }
 
+    MacroSpellTarget macroTarget(lua_tolstring(L, 2, nullptr));
     WOWGUID target;
 
-    if (!Script_GetGUIDFromToken(lua_tolstring(L, 2, nullptr), target, true)) {
+    if (!macroTarget.Resolve(target)) {
         return 0;
     }
 
@@ -1071,7 +1072,7 @@ static int32_t Script_CastSpellByID(lua_State* L) {
         return 0;
     }
 
-    if (!CGPetInfo::PetActionsUsable(false)) {
+    if (macroTarget.IsCursor() || !CGPetInfo::PetActionsUsable(false)) {
         return 0;
     }
 
@@ -1128,9 +1129,10 @@ static int32_t Script_CastSpellByName(lua_State* L) {
         return 0;
     }
 
+    MacroSpellTarget macroTarget(lua_tolstring(L, 2, nullptr));
     WOWGUID target;
 
-    if (!Script_GetGUIDFromToken(lua_tolstring(L, 2, nullptr), target, true)) {
+    if (!macroTarget.Resolve(target)) {
         return 0;
     }
 
@@ -1138,7 +1140,7 @@ static int32_t Script_CastSpellByName(lua_State* L) {
     int32_t petSpell;
     int32_t spellId = GetSpellIdByName(name, &petSpell);
 
-    if (!spellId) {
+    if (!spellId || (petSpell && macroTarget.IsCursor())) {
         return 0;
     }
 

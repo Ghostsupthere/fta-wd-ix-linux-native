@@ -52,6 +52,7 @@
 #include "Engine/Source/Model2/M2Model.h"
 #include "WoW/Source/DB/Rec/ChrClassesRec.h"
 #include <cmath>
+#include <utility>
 #include "WoW/Source/DB/Rec/LockRec.h"
 #include "WoW/Source/DB/Rec/SpellCastTimesRec.h"
 #include "WoW/Source/DB/Rec/SpellDurationRec.h"
@@ -86,6 +87,7 @@
 #include "WoW/Source/UIUtil/Tooltip.h"
 #include "WoW/Source/Ui/Tutorial.h"
 #include "WoW/Source/Ui/UIMacros.h"
+#include "WoW/Source/Ui/WorldFrame.h"
 #include "Engine/Source/Event/Event.h"
 #include "Engine/Source/ConsoleBase/IConsole.h"
 #include "WoW/Source/WorldClient/FrameTime.h"
@@ -292,6 +294,28 @@ bool Spell_C_HandleTerrainClick(const CTerrainClickEvent& evt) {
     }
 
     return true;
+}
+
+namespace {
+MacroGroundPlacement macroPlacement = MacroGroundPlacement::None;
+}
+
+MacroSpellTarget::MacroSpellTarget(const char* token) : m_token(token), m_previous(macroPlacement) {
+    macroPlacement = MacroGroundTarget::ParsePlacement(token,
+        token && CGUIMacros::m_executing && CGGameUI::CanPerformAction(3));
+}
+
+MacroSpellTarget::~MacroSpellTarget() {
+    macroPlacement = m_previous;
+}
+
+bool MacroSpellTarget::IsCursor() {
+    return macroPlacement == MacroGroundPlacement::Cursor;
+}
+
+bool MacroSpellTarget::Resolve(WOWGUID& target) const {
+    // The Wrath manual-target sentinel keeps the current unit out of a cursor cast.
+    return Script_GetGUIDFromToken(this->IsCursor() ? "none" : m_token, target, true);
 }
 
 // VERIFY: bfa71bbe auto
@@ -8018,31 +8042,28 @@ static bool Spell_C_IsSpellPending(const WOWGUID& castItem, int32_t spellId, con
     return false;
 }
 
-// VERIFY: 6fd9b453 manual
-// OFFSET: 0x0080C790
-static bool Spell_C_BeginCast(CGUnit_C* caster, const SpellRec* spell, WOWGUID target, PendingSpellCast* cast, bool confirmed) {
+static uint32_t GetCastTargetRequirements(const SpellRec* spell, bool& noTarget) {
     uint32_t needTargets = spell->m_targets;
-    s_needTargets = needTargets;
-    bool noTarget = false;
+    uint32_t required = needTargets;
 
     switch (spell->m_implicitTargetA[0]) {
         case 1:
             if (needTargets & 0x400) {
-                s_needTargets = needTargets & ~0x400u;
+                required = needTargets & ~0x400u;
             }
 
             break;
 
         case 5:
             if (needTargets & 0x8000) {
-                s_needTargets = needTargets & ~0x8000u;
+                required = needTargets & ~0x8000u;
             }
 
             break;
 
         case 6:
         case 53:
-            s_needTargets = needTargets | 0x80;
+            required = needTargets | 0x80;
             break;
 
         case 16:
@@ -8051,11 +8072,11 @@ static bool Spell_C_BeginCast(CGUnit_C* caster, const SpellRec* spell, WOWGUID t
 
         case 21:
         case 45:
-            s_needTargets = needTargets | 0x100;
+            required = needTargets | 0x100;
             break;
 
         case 23:
-            s_needTargets = needTargets | 0x800;
+            required = needTargets | 0x800;
             break;
 
         case 25:
@@ -8070,36 +8091,109 @@ static bool Spell_C_BeginCast(CGUnit_C* caster, const SpellRec* spell, WOWGUID t
         case 71:
         case 74:
         case 75:
-            s_needTargets = needTargets | 0x2;
+            required = needTargets | 0x2;
             break;
 
         case 26:
-            s_needTargets = needTargets | 0x4000;
+            required = needTargets | 0x4000;
             break;
 
         case 35:
-            s_needTargets = needTargets | 0x8;
+            required = needTargets | 0x8;
             break;
 
         case 57:
         case 61:
-            s_needTargets = needTargets | 0x4;
+            required = needTargets | 0x4;
             break;
 
         case 89: {
             SpellMissileRec* missile = g_spellMissileDB.GetRecord(spell->m_spellMissileID);
 
             if (missile && (missile->m_flags & 0x1)) {
-                s_needTargets = needTargets & ~0x40u;
+                required = needTargets & ~0x40u;
             }
 
             break;
         }
 
         case 90:
-            s_needTargets = needTargets | 0x10000;
+            required = needTargets | 0x10000;
             break;
     }
+
+    return required;
+}
+
+static bool ApplyMacroGroundTarget(MacroGroundPlacement placement, CGUnit_C* caster,
+    uint32_t spellId, uint32_t targets, PendingSpellCastData& data) {
+    CTerrainClickEvent event{};
+    if (placement == MacroGroundPlacement::Cursor) {
+        auto* world = CGWorldFrame::s_currentWorldFrame;
+        if (!world || !world->GetMacroGroundTarget(event)) {
+            return false;
+        }
+    } else {
+        auto* player = ClntObjMgrGetActivePlayerObj();
+        if (!player) {
+            return false;
+        }
+        event.m_point = player->GetPosition();
+        event.m_guid = WOWGUID{player->GetTransportGUID()};
+        if (event.m_guid) {
+            C44Matrix transport;
+            if (!MovementGetTransportMtxSafe(event.m_guid, &transport)) {
+                return false;
+            }
+            event.m_point *= transport.AffineInverse();
+        }
+    }
+
+    C3Vector position = event.m_point;
+    if (event.m_guid) {
+        C44Matrix transport;
+        if (!MovementGetTransportMtxSafe(event.m_guid, &transport)) {
+            return false;
+        }
+        position *= transport;
+    }
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)) {
+        return false;
+    }
+    float minRange, maxRange;
+    Spell_C::GetSpellRange(caster, spellId, &minRange, &maxRange, nullptr);
+    const float distance = caster->GetDistanceToPos(position);
+    if (!MacroGroundTarget::IsInRange(distance, minRange, maxRange)) {
+        return false;
+    }
+
+    if (targets & MacroGroundTarget::Source) {
+        data.m_sourcePos = event.m_point;
+        data.m_sourceTarget = event.m_guid;
+    }
+    if (targets & MacroGroundTarget::Destination) {
+        data.m_destPos = event.m_point;
+        data.m_destTarget = event.m_guid;
+    }
+    data.m_targetFlags |= targets;
+    return true;
+}
+
+bool Spell_C_CanPlaceMacroGroundTarget(int32_t spellId) {
+    SpellRec spell;
+    if (!g_spellDB.GetRecord(spellId, &spell)) {
+        return false;
+    }
+    bool manual = false;
+    const uint32_t targets = GetCastTargetRequirements(&spell, manual);
+    return MacroGroundTarget::IsGroundOnly(targets);
+}
+
+// VERIFY: 6fd9b453 manual
+// OFFSET: 0x0080C790
+static bool Spell_C_BeginCast(CGUnit_C* caster, const SpellRec* spell, WOWGUID target,
+    PendingSpellCast* cast, bool confirmed, uint32_t needTargets, bool noTarget) {
+    s_needTargets = needTargets;
 
     if ((s_needTargets & 0x2000) && s_targetString[0]) {
         SStrPrintf(cast->m_data.m_targetString, sizeof(cast->m_data.m_targetString), "%s", s_targetString);
@@ -8254,6 +8348,7 @@ static bool Spell_C_BeginCast(CGUnit_C* caster, const SpellRec* spell, WOWGUID t
 // VERIFY: f2938ae3 manual
 // OFFSET: 0x0080CCE0
 bool Spell_C_CastSpell(CGUnit_C* caster, int32_t spellId, const CGItem_C* item, WOWGUID target, PendingSpellCast* cast, bool confirmed) {
+    const auto placement = std::exchange(macroPlacement, MacroGroundPlacement::None);
     SpellRec spell;
 
     if (!g_spellDB.GetRecord(spellId, &spell) || (spell.m_attributes & 0x40)) {
@@ -8279,6 +8374,13 @@ bool Spell_C_CastSpell(CGUnit_C* caster, int32_t spellId, const CGItem_C* item, 
     }
 
     if (!unit || unit->IsAlteredFormTransitionPreventingMovement()) {
+        return false;
+    }
+
+    bool noTarget = false;
+    uint32_t needTargets = GetCastTargetRequirements(&spell, noTarget);
+    const bool groundOnly = MacroGroundTarget::IsGroundOnly(needTargets);
+    if (placement == MacroGroundPlacement::Cursor && !groundOnly) {
         return false;
     }
 
@@ -8545,7 +8647,15 @@ bool Spell_C_CastSpell(CGUnit_C* caster, int32_t spellId, const CGItem_C* item, 
         SI2::PlaySoundKit("GAMESPELLACTIVATE", nullptr, nullptr, nullptr);
     }
 
-    if (!Spell_C_BeginCast(unit, &spell, target, cast, confirmed)) {
+    if (groundOnly && placement != MacroGroundPlacement::None) {
+        if (!ApplyMacroGroundTarget(placement, unit, spellId, needTargets, cast->m_data)) {
+            Spell_C_SpellFailed(cast, &spell, SPELL_FAILED_OUT_OF_RANGE, -1, -1, false);
+            return false;
+        }
+        needTargets = 0;
+    }
+
+    if (!Spell_C_BeginCast(unit, &spell, target, cast, confirmed, needTargets, noTarget)) {
         if (target.m_guid == 0xFFFFFFFFFFFFFFFEull) {
             Spell_C_SpellFailed(cast, &spell, SPELL_FAILED_BAD_IMPLICIT_TARGETS, -1, -1, false);
             return false;
@@ -8995,6 +9105,12 @@ void Spell_C_ClickSpell(int32_t spellId, const CGItem_C* item, WOWGUID target) {
     SpellRec spell;
 
     if (!g_spellDB.GetRecord(spellId, &spell)) {
+        return;
+    }
+
+    if (MacroSpellTarget::IsCursor() ||
+        (macroPlacement == MacroGroundPlacement::Player && Spell_C_CanPlaceMacroGroundTarget(spellId))) {
+        Spell_C::CastSpell(spellId, item, target, false);
         return;
     }
 
@@ -9518,8 +9634,4 @@ int32_t Spell_C_SendDelayedMissileTrajectoryCast(CGUnit_C* unit) {
     int32_t result = Spell_C_CastSpell(unit, cast->m_data.m_spellId, item, cast->m_data.unk_0038, cast, false);
     s_delayedTrajectoryCast = nullptr;
     return result;
-}
-
-bool Spell_C_CanPlaceMacroGroundTarget(int32_t) {
-    return false;
 }

@@ -285,9 +285,10 @@ static int32_t Script_UseContainerItem(lua_State* L) {
         return 0;
     }
 
+    MacroSpellTarget macroTarget(lua_tolstring(L, 3, nullptr));
     WOWGUID target;
 
-    if (!Script_GetGUIDFromToken(lua_tolstring(L, 3, nullptr), target, true)) {
+    if (!macroTarget.Resolve(target)) {
         return 0;
     }
 
@@ -300,6 +301,13 @@ static int32_t Script_UseContainerItem(lua_State* L) {
 
     WOWGUID guid = item->m_obj->m_guid;
     int32_t itemId = item->m_obj->m_entryID;
+
+    if (MacroSpellTarget::IsCursor()) {
+        if (!bank) {
+            item->UseItem(&target, 0);
+        }
+        return 0;
+    }
 
     if (Spell_C_IsTargeting() && !Spell_C_CanTargetItems()) {
         Spell_C_StopTargeting();

@@ -1521,6 +1521,11 @@ int32_t CGItem_C::UseItem(WOWGUID* target, int32_t confirmed) {
     int32_t spellId = this->GetEnchantmentSpell(0);
     SpellRec spell;
     int32_t hasSpell = g_spellDB.GetRecord(spellId, &spell);
+    const bool cursorMacro = MacroSpellTarget::IsCursor();
+    if (cursorMacro && (!hasSpell || !Spell_C_CanPlaceMacroGroundTarget(spellId))) {
+        return 0;
+    }
+
     int16_t overrideId = static_cast<int16_t>(player->m_player->m_playerFieldBytes2);
 
     if (overrideId) {
@@ -1548,8 +1553,11 @@ int32_t CGItem_C::UseItem(WOWGUID* target, int32_t confirmed) {
     }
 
     if (Spell_C_IsTargeting() && Spell_C_CanTargetItems()) {
-        CGGameUI::CastItemSpell(this->m_obj->m_guid, 0);
-        return 0;
+        if (!cursorMacro) {
+            CGGameUI::CastItemSpell(this->m_obj->m_guid, 0);
+            return 0;
+        }
+        Spell_C_StopTargeting();
     }
 
     if (stats->m_flags[0] & ITEM_FLAG_IS_WRAPPER) {

@@ -1193,7 +1193,7 @@ int32_t CGWorldFrame::HitTest(const C3Vector& start, const C3Vector& end, uint32
 
 // VERIFY: 53a93536 auto
 // OFFSET: 0x004F9DA0
-int32_t CGWorldFrame::HitTestPoint(float x, float y, int32_t a3, HITTESTRESULT* result) {
+int32_t CGWorldFrame::HitTestPoint(float x, float y, int32_t a3, HITTESTRESULT* result, uint32_t overrideFlags) {
     if (!(CGInputControl::GetActive()->m_mouseModeFlags & 0x1)) {
         return HIT_NONE;
     }
@@ -1207,7 +1207,7 @@ int32_t CGWorldFrame::HitTestPoint(float x, float y, int32_t a3, HITTESTRESULT* 
     this->m_camera->SetupWorldProjection(this->m_viewportDDC);
 
     int32_t kind = HIT_NONE;
-    uint32_t flags = this->GetHitTestFilterFlags(a3);
+    const uint32_t flags = overrideFlags ? overrideFlags : this->GetHitTestFilterFlags(a3);
 
     if (flags) {
         C3Vector start = { 0.0f, 0.0f, 0.0f };
@@ -1230,6 +1230,32 @@ int32_t CGWorldFrame::HitTestPoint(float x, float y, int32_t a3, HITTESTRESULT* 
     g_theGxDevicePtr->XformSetProjection(projection);
     g_theGxDevicePtr->XformSetView(view);
     return kind;
+}
+
+bool CGWorldFrame::GetMacroGroundTarget(CTerrainClickEvent& target) {
+    if (!this->m_camera || !this->m_simpleTop || this->m_simpleTop->m_mouseFocus != this) {
+        return false;
+    }
+
+    C2Vector position{};
+    const auto& mouse = this->m_simpleTop->m_mousePosition;
+    NDCToDDC(mouse.m_x, mouse.m_y, &position.x, &position.y);
+    HITTESTRESULT hit{};
+    const int32_t kind = this->HitTestPoint(position.x, position.y, 0, &hit, 0x3);
+    if ((kind != HIT_GROUND && kind != HIT_WORLD_OBJECT) || !std::isfinite(hit.m_point.x) ||
+        !std::isfinite(hit.m_point.y) || !std::isfinite(hit.m_point.z)) {
+        return false;
+    }
+
+    target.m_point = hit.m_point;
+    target.m_guid = {};
+    if (hit.m_guid) {
+        auto* object = ClntObjMgrObjectPtr(hit.m_guid, TYPE_OBJECT, __FILE__, __LINE__);
+        if (object && object->IsTransport()) {
+            target.m_guid = hit.m_guid;
+        }
+    }
+    return true;
 }
 
 // VERIFY: 21cb1ac2 auto
