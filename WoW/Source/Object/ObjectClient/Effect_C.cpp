@@ -1063,6 +1063,28 @@ C44Matrix* CEffect::TransformPosition(C44Matrix* matrix, CGObject_C* object) {
     return matrix;
 }
 
+static CGObject_C* EffectAttachmentOwner(const CEffect& effect) {
+    const WOWGUID& guid = effect.m_targetGuid ? effect.m_targetGuid : effect.m_sourceGuid;
+    return guid ? ClntObjMgrObjectPtr(guid, TYPE_OBJECT, __FILE__, __LINE__) : nullptr;
+}
+
+enum class EffectModelLoadState { Ready, Pending, Failed };
+
+static EffectModelLoadState GetEffectModelLoadState(CM2Model* model) {
+    if (!model) {
+        return EffectModelLoadState::Ready;
+    }
+    const auto* shared = model->m_shared;
+    if (!shared || shared->m_loadFailed) {
+        return EffectModelLoadState::Failed;
+    }
+    if (model->IsLoaded(0, 0)) {
+        return EffectModelLoadState::Ready;
+    }
+    return shared->m_asyncObject || model->m_callbackPrev
+        ? EffectModelLoadState::Pending : EffectModelLoadState::Failed;
+}
+
 // VERIFY: 03a1abb4 manual
 // OFFSET: 0x006F8C50
 int32_t CEffect::UpdateAttachment() {
@@ -1074,34 +1096,21 @@ int32_t CEffect::UpdateAttachment() {
         return 1;
     }
 
-    CGObject_C* object;
-
-    if (this->m_targetGuid) {
-        object = ClntObjMgrObjectPtr(this->m_targetGuid, TYPE_OBJECT, __FILE__, __LINE__);
-    } else if (this->m_sourceGuid) {
-        object = ClntObjMgrObjectPtr(this->m_sourceGuid, TYPE_OBJECT, __FILE__, __LINE__);
-    } else {
-        object = nullptr;
-    }
-
+    CGObject_C* object = EffectAttachmentOwner(*this);
     if (!object) {
-        if (this->m_model && this->m_model->m_attachParent) {
-            this->m_model->DetachFromParent();
-        }
-
+        this->DetachFromParent();
         return 0;
     }
 
     CM2Model* parent = object->m_worldModel;
-
-    if (parent && !parent->IsLoaded(0, 0)) {
-        DebugLog("**** CEffect::UpdateAttachment() called before %s finished loading\n", parent->m_shared->m_fileNameWithoutPath);
-
-        if (this->m_model && this->m_model->m_attachParent) {
-            this->m_model->DetachFromParent();
-        }
-
+    const auto modelState = GetEffectModelLoadState(this->m_model);
+    const auto parentState = GetEffectModelLoadState(parent);
+    if (modelState == EffectModelLoadState::Failed || parentState == EffectModelLoadState::Failed) {
+        this->DetachFromParent();
         this->MoveToDestroyList();
+        return 0;
+    }
+    if (modelState == EffectModelLoadState::Pending || parentState == EffectModelLoadState::Pending) {
         return 0;
     }
 
@@ -1174,7 +1183,7 @@ int32_t CEffect::UpdateAttachment() {
 
     this->m_transportGuid = WOWGUID();
 
-    if (this->m_flags & 0x2000000) {
+    if (this->m_model && (this->m_flags & 0x2000000)) {
         this->m_model->m_fFlags |= 0x100000;
     }
 
@@ -1187,6 +1196,9 @@ int32_t CEffect::UpdateAttachment() {
 void CEffect::EffectUpdate() {
     if (!(this->m_flags & 0x900)) {
         this->PostInitialize();
+        if (this->m_flags & 0x100) {
+            return;
+        }
     }
 
     if ((this->m_flags & 0x40000) && this->m_lightningState > 0 && !--this->m_lightningState && this->m_model) {
@@ -1302,8 +1314,27 @@ void CEffect::UpdateWorldObject(float elapsed, uint32_t flags) {
 // VERIFY: d4130505 manual
 // OFFSET: 0x006F9840
 void CEffect::PostInitialize() {
-    if (this->m_model && !this->m_model->IsLoaded(0, 0)) {
+    const auto modelState = GetEffectModelLoadState(this->m_model);
+    if (modelState == EffectModelLoadState::Failed) {
+        this->MoveToDestroyList();
         return;
+    }
+    if (modelState == EffectModelLoadState::Pending) {
+        return;
+    }
+
+    if (this->m_attachmentId != -1) {
+        auto* owner = EffectAttachmentOwner(*this);
+        const auto parentState = GetEffectModelLoadState(owner ? owner->m_worldModel : nullptr);
+        if (parentState == EffectModelLoadState::Failed) {
+            this->DetachFromParent();
+            this->MoveToDestroyList();
+            return;
+        }
+        if (parentState == EffectModelLoadState::Pending) {
+            // EffectUpdate retries while initialization is still pending.
+            return;
+        }
     }
 
     this->m_flags |= 0x800;
@@ -1351,7 +1382,7 @@ void CEffect::PostInitialize() {
 
     SpellRec spell;
 
-    if (this->m_spellId && g_spellDB.GetRecord(this->m_spellId, &spell) && (spell.m_attributesExE & 0x40000000)) {
+    if (this->m_model && this->m_spellId && g_spellDB.GetRecord(this->m_spellId, &spell) && (spell.m_attributesExE & 0x40000000)) {
         this->m_model->m_fFlags |= 0x4;
     }
 

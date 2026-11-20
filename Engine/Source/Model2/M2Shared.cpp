@@ -115,6 +115,7 @@ int32_t CM2Shared::CallbackWhenLoaded(CM2Model* model) {
 void CM2Shared::LoadFailedCallback(void* param) {
     CM2Shared* shared = static_cast<CM2Shared*>(param);
     native_crash::Record(native_crash::Event::ModelFailed, shared->m_fileName);
+    shared->m_loadFailed = true;
     AsyncFileReadDestroyObject(shared->m_asyncObject);
     shared->m_asyncObject = nullptr;
 }
@@ -1487,7 +1488,9 @@ int32_t CM2Shared::FinishLoadingLowPrioritySequence(uint32_t sequenceIndex, CAsy
 // OFFSET: 0x0083CB10
 void CM2Shared::SkinProfileLoadedCallback(void* param) {
     CM2Shared* shared = static_cast<CM2Shared*>(param);
-    shared->FinishLoadingSkinProfile(shared->m_asyncObject->m_size);
+    if (!shared->m_loadFailed && !shared->FinishLoadingSkinProfile(shared->m_asyncObject->m_size)) {
+        shared->m_loadFailed = true;
+    }
     AsyncFileReadDestroyObject(shared->m_asyncObject);
     shared->m_asyncObject = nullptr;
 }
@@ -1680,6 +1683,7 @@ void CM2Shared::LoadSucceededCallback(void* param) {
 
         if (!data) {
             WxlNativeDiagnostic("modern-m2: failed to allocate transformed model: %s", shared->m_fileName);
+            shared->m_loadFailed = true;
             return;
         }
 
@@ -1695,7 +1699,9 @@ void CM2Shared::LoadSucceededCallback(void* param) {
     }
 #endif
 
-    shared->FinishLoading();
+    if (!shared->FinishLoading()) {
+        shared->m_loadFailed = true;
+    }
 }
 
 // INLINED
