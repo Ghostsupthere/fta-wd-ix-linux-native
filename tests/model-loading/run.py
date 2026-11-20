@@ -67,6 +67,14 @@ def main():
             "WoW/Source/UIUtil/Camera.cpp", "static bool CameraModelHasSettled(",
             "\nfloat CGCamera::GetChaseFacing(",
         ),
+        "barrier_sparkles": extract(
+            "WoW/Source/WorldClient/Barrier.cpp",
+            "    int32_t contactCount = this->m_contacts.Count();", "    C44Matrix world;",
+        ),
+        "doodad_emitters": extract(
+            "WoW/Source/WorldClient/MapObjDef.cpp", "void CMapObjDef::SetDoodadEmittersIgnoresDistance(",
+            "\n}", include_stop=True,
+        ),
         "model_allocations": extract(
             model,
             "    uint8_t* memory = static_cast<uint8_t*>(SMemAlloc(emitterBytes + emitterOffset,",
@@ -81,7 +89,7 @@ def main():
             (build / (name + ".inc")).write_text(text)
 
         for test in ("deferred_effect_test", "model_readiness_test", "model_allocation_test",
-                     "model_consumer_test", "camera_target_test"):
+                     "model_consumer_test", "camera_target_test", "world_emitters_test"):
             executable = build / test
             subprocess.run(
                 [*compiler, "-std=c++20", "-UNDEBUG", "-Wall", "-Wextra", "-Werror",

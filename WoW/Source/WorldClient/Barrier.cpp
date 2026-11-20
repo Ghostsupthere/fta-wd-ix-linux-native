@@ -318,7 +318,7 @@ void CBarrier::Render(const C3Vector& viewerPos, float elapsedSec) {
     for (int32_t i = 0; i < contactCount; i++) {
         CM2Model* sparkle = CBarrier::s_sparkles[i];
 
-        if (!sparkle) {
+        if (!sparkle || !sparkle->WaitForLoad(nullptr) || CBarrier::s_sparkles[i] != sparkle) {
             continue;
         }
 
@@ -334,42 +334,19 @@ void CBarrier::Render(const C3Vector& viewerPos, float elapsedSec) {
         up.z = right.x * normal.y - right.y * normal.x;
         C44Matrix transform(normal, right, up, contact.m_point);
         sparkle->SetAnimating(1);
-        CM2Model* model = CBarrier::s_sparkles[i];
 
-        if (model->m_attachParent) {
-            model->m_fFlags |= 0x80;
+        if (sparkle->m_attachParent) {
+            sparkle->m_fFlags |= 0x80 | 0x20000;
         } else {
-            model->m_fFlags |= 0x8;
+            sparkle->m_fFlags |= 0x8 | 0x10000;
         }
 
-        if (model->m_attachParent) {
-            model->m_fFlags |= 0x20000;
-        } else {
-            model->m_fFlags |= 0x10000;
-        }
+        sparkle->SetWorldTransform(transform);
+        sparkle->m_fadeAlpha = contact.m_strength;
 
-        CBarrier::s_sparkles[i]->m_fFlags |= 0x8000;
-        CBarrier::s_sparkles[i]->m_worldTransform = transform;
-        CBarrier::s_sparkles[i]->m_fadeAlpha = this->m_contacts.m_data[i].m_strength;
-
-        for (uint32_t j = 0; ; j++) {
-            CM2Model* loaded = CBarrier::s_sparkles[i];
-
-            if (!(loaded->m_fFlags & 0x1)) {
-                loaded->WaitForLoad(nullptr);
-            }
-
-            if (j >= loaded->m_shared->m_data->m_particles.m_count) {
-                break;
-            }
-
-            CM2Model* emitterModel = CBarrier::s_sparkles[i];
-
-            if (!(emitterModel->m_fFlags & 0x1)) {
-                emitterModel->WaitForLoad(nullptr);
-            }
-
-            CParticleEmitter2* emitter = emitterModel->m_particleEmitters[j];
+        const uint32_t particleCount = sparkle->m_shared->m_data->m_particles.m_count;
+        for (uint32_t j = 0; j < particleCount; j++) {
+            CParticleEmitter2* emitter = sparkle->m_particleEmitters[j];
             emitter->SetWidth(100.0f);
             emitter->SetHeight(100.0f);
         }

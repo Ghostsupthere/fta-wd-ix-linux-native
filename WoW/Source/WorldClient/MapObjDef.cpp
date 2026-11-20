@@ -386,27 +386,14 @@ void CMapObjDef::SetDoodadEmittersIgnoresDistance(CMapObjDef* mapObjDef, int32_t
                 break;
             }
 
-            if (doodadDef->m_doodadSet != doodadSet || !doodadDef->m_model) {
+            CM2Model* model = doodadDef->m_model;
+            if (doodadDef->m_doodadSet != doodadSet || !model || !model->WaitForLoad(nullptr) ||
+                doodadDef->m_model != model || doodadDef->m_doodadSet != doodadSet) {
                 continue;
             }
 
-            for (uint32_t i = 0;; i++) {
-                CM2Model* model = doodadDef->m_model;
-
-                if (!(model->m_fFlags & 0x1)) {
-                    model->WaitForLoad(nullptr);
-                }
-
-                if (i >= model->m_shared->m_data->m_particles.m_count) {
-                    break;
-                }
-
-                model = doodadDef->m_model;
-
-                if (!(model->m_fFlags & 0x1)) {
-                    model->WaitForLoad(nullptr);
-                }
-
+            const uint32_t particleCount = model->m_shared->m_data->m_particles.m_count;
+            for (uint32_t i = 0; i < particleCount; i++) {
                 CParticleEmitter2* emitter = model->m_particleEmitters[i];
 
                 if (ignore) {
