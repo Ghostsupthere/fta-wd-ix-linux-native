@@ -730,6 +730,35 @@ static int32_t Script_GetMapZones(lua_State* L) {
     return count;
 }
 
+// The map cache needs the same IDs as SetMapZoom followed by GetCurrentMapAreaID,
+// without changing the selected map or sending WORLD_MAP_UPDATE.
+static int32_t Script_WXL_GetMapAreaIDForZoom(lua_State* L) {
+    const auto continentIndex = luaL_checknumber(L, 1);
+    const auto zoneIndex = luaL_checknumber(L, 2);
+    if (!(continentIndex >= 1 && continentIndex <= CGWorldMap::m_continents.Count())) {
+        return 0;
+    }
+
+    const auto continent = static_cast<uint32_t>(continentIndex) - 1;
+    if (continentIndex != continent + 1 || !(zoneIndex >= 0 && zoneIndex <= CGWorldMap::GetNumZones(continent))) {
+        return 0;
+    }
+
+    const auto zone = static_cast<uint32_t>(zoneIndex);
+    if (zoneIndex != zone) {
+        return 0;
+    }
+
+    const int32_t areaID = zone == 0 ? CGWorldMap::m_continents.m_data[continent].m_areaID
+                                    : CGWorldMap::GetZoneID(continent, zone - 1);
+    if (areaID < 0) {
+        return 0;
+    }
+
+    lua_pushnumber(L, static_cast<lua_Number>(areaID) + 1);
+    return 1;
+}
+
 // VERIFY: a9ab4466 manual
 // OFFSET: 0x00545C80
 static int32_t Script_GetMapOverlayInfo(lua_State* L) {
@@ -1163,6 +1192,7 @@ static int32_t Script_GetDebugZoneMap(lua_State* L) {
 static FrameScript_Method s_ScriptFunctions[] = {
     { "GetMapContinents", &Script_GetMapContinents },
     { "GetMapZones", &Script_GetMapZones },
+    { "WXL_GetMapAreaIDForZoom", &Script_WXL_GetMapAreaIDForZoom },
     { "SetMapZoom", &Script_SetMapZoom },
     { "ZoomOut", &Script_ZoomOut },
     { "SetDungeonMapLevel", &Script_SetDungeonMapLevel },

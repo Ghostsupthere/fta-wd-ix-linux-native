@@ -1,6 +1,7 @@
 #include "SpellBookFrame.h"
 #include "Engine/Source/lua-5.1/src/lua.h"
 #include <cstdint>
+#include <cstring>
 #include "Engine/Source/FrameScript/FrameScript.h"
 #include "Engine/Source/FrameScript/FrameScript_Object.h"
 #include "Engine/Source/FrameXML/LoadXML.h"
@@ -176,6 +177,70 @@ static bool GetLuaCompanionType(lua_State* L, int32_t* type) {
     }
 
     return false;
+}
+
+// Installed data, not the learned-companion array. A cursor bounds work for a journal caller;
+// no creature queries, persistent cache, spell ownership changes or GPU/model loads are needed.
+// Ported from the Windows x64 client source without its realm catalog branch (the realm catalog protocol is not ported): a creature
+// qualifies only when its record is already in the local creature cache, and a null callback never enqueues a query.
+static int32_t Script_WXL_GetCompanionCatalog(lua_State* L) {
+    if (!g_spellDB.m_loaded)
+        return 0;
+    double const cursor = luaL_checknumber(L, 1);
+    if (!(cursor >= 0 && cursor <= g_spellDB.m_numRecords) || cursor != static_cast<int32_t>(cursor))
+        return luaL_error(L, "Usage: WXL_GetCompanionCatalog(cursor): invalid cursor");
+    int32_t index = static_cast<int32_t>(cursor);
+    int32_t const end = index + (g_spellDB.m_numRecords - index < 512 ? g_spellDB.m_numRecords - index : 512);
+    lua_createtable(L, 0, 0);
+    int32_t count = 0;
+    for (; index < end; ++index) {
+        SpellRec spell;
+        if (!g_spellDB.GetRecordByIndex(index, &spell) || spell.m_id <= 0 ||
+            (spell.m_attributes & 0xA0) || !spell.m_name || !*spell.m_name ||
+            spell.m_effectMiscValue[0] <= 0 || !SpellIsCallCompanion(&spell))
+            continue;
+        int32_t const type = CGSpellBook::GetCompanionType(&spell);
+        if (type < 0 || type >= 2)
+            continue;
+        uint32_t displays[4]{};
+        auto const* creature = g_creatureDBCache.GetRecord(spell.m_effectMiscValue[0], WOWGUID(), nullptr, nullptr, false);
+        if (!creature || !creature->m_name[0] || !*creature->m_name[0]) continue;
+        for (unsigned i = 0; i < 4; ++i) displays[i] = creature->m_displayId[i];
+        uint32_t displayId = 0;
+        for (uint32_t candidate : displays) {
+            auto const* display = g_creatureDisplayInfoDB.GetRecord(static_cast<int32_t>(candidate));
+            auto const* model = display ? g_creatureModelDataDB.GetRecord(display->m_modelID) : nullptr;
+            if (!model || !model->m_modelName || !*model->m_modelName || std::strlen(model->m_modelName) >= 260) continue;
+            char path[260]; SStrCopy(path, model->m_modelName, sizeof(path)); SStrLower(path);
+            char* ext = std::strrchr(path, '.');
+            if (!ext) continue;
+            if (!std::strcmp(ext, ".mdx") || !std::strcmp(ext, ".mdl")) std::strcpy(ext, ".m2");
+            else if (std::strcmp(ext, ".m2")) continue;
+            // Same alias normalization as CM2Cache::CreateShared, metadata only; no model load.
+            if (SFile::FileExists(path)) { displayId = candidate; break; }
+        }
+        if (!displayId) continue;
+        bool flying = false, swimming = false;
+        for (int32_t aura : spell.m_effectAura) {
+            flying |= aura >= 206 && aura <= 211;
+            swimming |= aura == 58;
+        }
+        lua_createtable(L, 0, 6);
+        lua_pushstring(L, s_companionTypes[type]); lua_setfield(L, -2, "kind");
+        lua_pushinteger(L, spell.m_id); lua_setfield(L, -2, "spellID");
+        lua_pushinteger(L, spell.m_effectMiscValue[0]); lua_setfield(L, -2, "creatureID");
+        lua_pushinteger(L, displayId); lua_setfield(L, -2, "displayID");
+        lua_pushstring(L, spell.m_name); lua_setfield(L, -2, "name");
+        if (SpellIconRec const* icon = g_spellIconDB.GetRecord(spell.m_spellIconID)) {
+            lua_pushstring(L, icon->m_textureFilename); lua_setfield(L, -2, "icon");
+        }
+        lua_pushboolean(L, flying); lua_setfield(L, -2, "flying");
+        lua_pushboolean(L, swimming); lua_setfield(L, -2, "swimming");
+        lua_rawseti(L, -2, ++count);
+    }
+    if (index < g_spellDB.m_numRecords) lua_pushinteger(L, index);
+    else lua_pushnil(L);
+    return 2;
 }
 
 // VERIFY: 5b1a870f manual
@@ -1278,6 +1343,7 @@ static int32_t Script_GetSpellInfo(lua_State* L) {
 // STATIC: 0x00ACCCE0
 static FrameScript_Method s_ScriptFunctions[] = {
     { "GetNumSpellTabs", &Script_GetNumSpellTabs },
+    { "WXL_GetCompanionCatalog", &Script_WXL_GetCompanionCatalog },
     { "GetSpellTabInfo", &Script_GetSpellTabInfo },
     { "GetSpellName", &Script_GetSpellName },
     { "GetSpellLink", &Script_GetSpellLink },
