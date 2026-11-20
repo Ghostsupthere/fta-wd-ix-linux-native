@@ -1161,11 +1161,8 @@ int32_t CGUnit_C::ComputeMissileTrajectory(const SpellRec* spell, float* pitch, 
     CM2Model* rootModel = root->GetObjectModel();
     C3Vector center;
 
-    if (rootModel && rootModel->IsLoaded(0, 0)) {
-        if (!(rootModel->m_shared->m_flags & 0x1)) {
-            rootModel->WaitForLoad(nullptr);
-        }
-
+    if (rootModel && rootModel->IsLoaded(0, 0) && rootModel->WaitForLoad(nullptr) &&
+        root->GetObjectModel() == rootModel) {
         center = rootModel->m_shared->m_data->m_collisionBounds.m_extent.Center();
     } else {
         center.x = 0.0f;

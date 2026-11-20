@@ -276,8 +276,9 @@ void CGCharacterModelBase::SetUpModel(CGUnit_C* unit) {
         return;
     }
 
-    if (!(model->m_fFlags & 0x1)) {
-        model->WaitForLoad(nullptr);
+    if (!model->IsLoaded() && !model->WaitForLoad(nullptr)) {
+        model->Release();
+        return;
     }
 
     CCharacterComponent::RemoveVisuals(model);

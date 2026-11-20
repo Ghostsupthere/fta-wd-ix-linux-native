@@ -55,6 +55,14 @@ def main():
         "model_initialize": extract(
             model, "int32_t CM2Model::InitializeLoaded()", "    M2Data* data = shared->m_data;",
         ),
+        "portrait_setup": extract(
+            "WoW/Source/Ui/CharacterModelBase.cpp",
+            "void CGCharacterModelBase::SetUpModel(CGUnit_C* unit)", "\n}", include_stop=True,
+        ),
+        "trajectory_center": extract(
+            "WoW/Source/Object/ObjectClient/UnitMissileTrajectory_C.cpp",
+            "    CM2Model* rootModel = root->GetObjectModel();", "    C3Vector normal = root->",
+        ),
         "model_allocations": extract(
             model,
             "    uint8_t* memory = static_cast<uint8_t*>(SMemAlloc(emitterBytes + emitterOffset,",
@@ -68,7 +76,8 @@ def main():
         for name, text in sections.items():
             (build / (name + ".inc")).write_text(text)
 
-        for test in ("deferred_effect_test", "model_readiness_test", "model_allocation_test"):
+        for test in ("deferred_effect_test", "model_readiness_test", "model_allocation_test",
+                     "model_consumer_test"):
             executable = build / test
             subprocess.run(
                 [*compiler, "-std=c++20", "-UNDEBUG", "-Wall", "-Wextra", "-Werror",
