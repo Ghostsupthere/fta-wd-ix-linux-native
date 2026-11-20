@@ -1,5 +1,9 @@
 #include "MacroConditions.h"
 #include <cstring>
+#include <string>
+#include <string_view>
+#include <iterator>
+#include "Engine/Source/Event/Event.h"
 #include "WoW/Source/Ui/MacroSubstring.h"
 #include "WoW/Source/Ui/UIMacros.h"
 
@@ -10,107 +14,134 @@
 #include "WoW/Source/Ui/UIBindings.h"
 
 // STATIC: 0x00C2438C
-TSHashTable<MacroConditions, HASHKEY_STR> s_macroConditions;
+static TSHashTable<MacroConditions, HASHKEY_STR> s_macroConditions;
+static size_t s_conditionCacheBytes;
+static uint32_t s_conditionCacheEntries;
 
-// STATIC: 0x00AD14D8
-static const char* s_conditionNames[33] = { "", "combat", "exists", "help", "harm", "party", "raid", "dead", "flyable", "indoors", "outdoors", "swimming", "flying", "mounted", "stealth", "group", "stance", "form", "pet", "modifier", "mod", "button", "btn", "actionbar", "bar", "bonusbar", "equipped", "worn", "channeling", "spec", "vehicleui", "unithasvehicleui", "cursor" };
-
-// VERIFY: 92beef98 auto
-// OFFSET: 0x008C8DE0
-static int32_t EvaluateNone(const WOWGUID* unit, const TSGrowableArray<MacroSubstring>* args) {
-    return 1;
+void ClearMacroConditionCache() {
+    s_macroConditions.Clear();
+    s_conditionCacheBytes = 0;
+    s_conditionCacheEntries = 0;
 }
 
-// STATIC: 0x00AD1560
-static MACROCONDITIONFUNC s_conditionFuncs[33] = { EvaluateNone, EvaluateCombat, EvaluateExists, EvaluateHelp, EvaluateHarm, EvaluateParty, EvaluateRaid, EvaluateDead, EvaluateFlyable, EvaluateIndoors, EvaluateOutdoors, EvaluateSwimming, EvaluateFlying, EvaluateMounted, EvaluateStealth, EvaluateGroup, EvaluateStance, EvaluateStance, EvaluatePet, EvaluateModifier, EvaluateModifier, EvaluateButton, EvaluateButton, EvaluateActionBar, EvaluateActionBar, EvaluateBonusBar, EvaluateEquipped, EvaluateEquipped, EvaluateChanneling, EvaluateSpec, EvaluateVehicleUI, EvaluateUnitHasVehicleUI, EvaluateCursor };
+struct MacroConditionDefinition {
+    const char* name;
+    MACROCONDITIONFUNC evaluate;
+};
 
-// VERIFY: 7d0b0703 manual
-// OFFSET: 0x005F0DF0
+static const MacroConditionDefinition s_conditions[] = {
+    {"combat", EvaluateCombat}, {"exists", EvaluateExists}, {"help", EvaluateHelp},
+    {"harm", EvaluateHarm}, {"party", EvaluateParty}, {"raid", EvaluateRaid}, {"dead", EvaluateDead},
+    {"flyable", EvaluateFlyable}, {"indoors", EvaluateIndoors}, {"outdoors", EvaluateOutdoors},
+    {"swimming", EvaluateSwimming}, {"flying", EvaluateFlying}, {"mounted", EvaluateMounted},
+    {"stealth", EvaluateStealth}, {"group", EvaluateGroup}, {"stance", EvaluateStance}, {"form", EvaluateStance},
+    {"pet", EvaluatePet}, {"modifier", EvaluateModifier}, {"mod", EvaluateModifier}, {"button", EvaluateButton},
+    {"btn", EvaluateButton}, {"actionbar", EvaluateActionBar}, {"bar", EvaluateActionBar}, {"bonusbar", EvaluateBonusBar},
+    {"equipped", EvaluateEquipped}, {"worn", EvaluateEquipped}, {"channeling", EvaluateChanneling}, {"spec", EvaluateSpec},
+    {"vehicleui", EvaluateVehicleUI}, {"unithasvehicleui", EvaluateUnitHasVehicleUI}, {"cursor", EvaluateCursor},
+    {"known", EvaluateKnown}, {"wtalent", EvaluateWrathTalent}, {"tree", EvaluateTalentTree}, {"glyph", EvaluateGlyph},
+    {"resting", EvaluateResting}, {"overridebar", EvaluateOverrideBar}, {"possessbar", EvaluatePossessBar},
+    {"timewalking", EvaluateTimewalking},
+};
+
+int32_t GetMacroConditionType(std::string_view name) {
+    for (size_t index = 0; index < std::size(s_conditions); ++index) {
+        if (name == s_conditions[index].name) {
+            return static_cast<int32_t>(index);
+        }
+    }
+    return -1;
+}
+
+static bool MacroSpace(char c) {
+    return c == ' ' || c == '\t';
+}
+
+static bool EvaluateMacroGroup(const char* start, const char* end, MacroSubstring* target) {
+    const size_t length = end - start;
+    char shortKey[128];
+    std::string longKey;
+    const char* key;
+    if (length < sizeof(shortKey)) {
+        memcpy(shortKey, start, length);
+        shortKey[length] = '\0';
+        key = shortKey;
+    } else {
+        longKey.assign(start, length);
+        key = longKey.c_str();
+    }
+
+    MacroConditions temporary;
+    MacroConditions* parsed = s_macroConditions.Ptr(key);
+    if (!parsed) {
+        if (s_conditionCacheEntries < 512 && s_conditionCacheBytes + length <= 64 * 1024) {
+            ++s_conditionCacheEntries;
+            s_conditionCacheBytes += length;
+            parsed = s_macroConditions.New(key, 0, 0);
+        } else {
+            temporary.m_key = key;
+            parsed = &temporary;
+        }
+        parsed->Parse();
+    }
+
+    MacroSubstring selected{};
+    if (!parsed->Evaluate(&selected)) {
+        return false;
+    }
+    const char* base = parsed->m_key.m_str;
+    *target = selected.m_start
+        ? MacroSubstring{start + (selected.m_start - base), start + (selected.m_end - base)} : MacroSubstring{};
+    return true;
+}
+
+// Only leading bracket groups are options. A literal name or link can contain brackets.
 int32_t EvaluateMacroOptions(const char* start, const char* end, MacroSubstring* result, MacroSubstring* target) {
+    *target = {};
     if (!start) {
         return 1;
     }
-
     const char* cursor = start;
-    const char* conditions = nullptr;
-    const char* optionStart;
-    int32_t matched = 0;
-
     while (true) {
-        while (true) {
-            optionStart = cursor;
-
-            while (cursor < end && *cursor != '[' && *cursor != ';') {
-                cursor++;
+        while (cursor < end && MacroSpace(*cursor)) {
+            ++cursor;
+        }
+        bool matched = cursor == end || *cursor != '[';
+        MacroSubstring selected{};
+        while (cursor < end && *cursor == '[') {
+            const char* open = ++cursor;
+            while (cursor < end && *cursor != ']' && *cursor != ';' && *cursor != '[') {
+                ++cursor;
             }
-
-            if (cursor >= end || *cursor == ';') {
-                break;
+            if (cursor == end || *cursor != ']') {
+                return 0;
             }
-
-            for (conditions = cursor + 1; conditions < end && *conditions == ' '; conditions++) {
-            }
-
-            const char* close = conditions;
-
-            while (close < end && *close != ']') {
-                close++;
-            }
-
-            const char* last = close;
-
-            while (last > conditions && last[-1] == ' ') {
-                last--;
-            }
-
             if (!matched) {
-                uint32_t length = last - conditions;
-
-                if (length > 1023) {
-                    length = 1023;
-                }
-
-                char text[1024];
-                memcpy(text, conditions, length);
-                text[length] = '\0';
-                MacroConditions* macroConditions = s_macroConditions.Ptr(text);
-
-                if (!macroConditions) {
-                    macroConditions = s_macroConditions.New(text, 0, 0);
-                    macroConditions->Parse();
-                }
-
-                matched = macroConditions->Evaluate(target);
+                matched = EvaluateMacroGroup(open, cursor, &selected);
             }
-
-            cursor = close + 1;
+            ++cursor;
+            while (cursor < end && MacroSpace(*cursor)) {
+                ++cursor;
+            }
         }
-
-        if (!conditions || matched) {
-            break;
+        const char* argument = cursor;
+        while (cursor < end && *cursor != ';') {
+            ++cursor;
         }
-
-        if (cursor >= end) {
+        if (matched) {
+            const char* tail = cursor;
+            while (tail > argument && MacroSpace(tail[-1])) {
+                --tail;
+            }
+            *target = selected;
+            *result = {argument, tail};
+            return 1;
+        }
+        if (cursor == end) {
             return 0;
         }
-
-        conditions = nullptr;
-        cursor++;
+        ++cursor;
     }
-
-    result->m_start = optionStart;
-
-    while (result->m_start < cursor && *result->m_start == ' ') {
-        result->m_start++;
-    }
-
-    result->m_end = cursor;
-
-    while (result->m_end > result->m_start && result->m_end[-1] == ' ') {
-        result->m_end--;
-    }
-
-    return 1;
 }
 
 // VERIFY: 77048a72 manual
@@ -119,6 +150,9 @@ void MacroConditions::Parse() {
     const char* text = this->m_key.m_str;
     const char* end = text + SStrLen(text);
 
+    while (text < end && MacroSpace(*text)) {
+        ++text;
+    }
     if (text == end) {
         return;
     }
@@ -134,7 +168,7 @@ void MacroConditions::Parse() {
         const char* cursor = text;
 
         while (cursor < end) {
-            while (cursor < end && *cursor == ' ') {
+            while (cursor < end && MacroSpace(*cursor)) {
                 cursor++;
             }
 
@@ -144,9 +178,9 @@ void MacroConditions::Parse() {
                 tokenEnd++;
             }
 
-            const char* next = tokenEnd + 1;
+            const char* next = tokenEnd < end ? tokenEnd + 1 : end;
 
-            while (tokenEnd > cursor && tokenEnd[-1] == ' ') {
+            while (tokenEnd > cursor && MacroSpace(tokenEnd[-1])) {
                 tokenEnd--;
             }
 
@@ -197,21 +231,17 @@ int32_t MacroConditions::Evaluate(MacroSubstring* target) {
     uint32_t count = this->m_conditions.m_count;
 
     if (count) {
-        WOWGUID unit;
-        char token[32];
-        uint32_t length = this->m_target.m_end - this->m_target.m_start;
-
-        if (length > 31) {
-            length = 31;
-        }
-
-        memcpy(token, this->m_target.m_start, length);
-        token[length] = '\0';
-        Script_GetGUIDFromToken(token, unit, true);
+        WOWGUID unit{};
+        const auto token = this->m_target.m_start
+            ? std::string(this->m_target.m_start, this->m_target.m_end) : std::string{};
+        Script_GetGUIDFromToken(token.c_str(), unit, true);
 
         for (uint32_t i = 0; i < count; i++) {
             MacroCondition* condition = &this->m_conditions.m_data[i];
-            int32_t result = s_conditionFuncs[condition->m_type](&unit, &condition->m_args);
+            if (condition->m_type < 0) {
+                return 0;
+            }
+            int32_t result = s_conditions[condition->m_type].evaluate(&unit, &condition->m_args);
 
             if (condition->m_negate) {
                 result = !result;
@@ -243,30 +273,15 @@ void MacroCondition::Parse(const char* start, const char* end) {
     }
 
     option.SetText(cursor, end, ':', &cursor);
-    int32_t type = 0;
-
-    for (; type < 33; type++) {
-        if (option == s_conditionNames[type]) {
-            this->m_type = type;
-            break;
-        }
-    }
-
-    if (type == 33) {
-        char text[1024];
-        uint32_t length = option.m_end - option.m_start;
-
-        if (length > 1023) {
-            length = 1023;
-        }
-
-        memcpy(text, option.m_start, length);
-        text[length] = '\0';
-        CGGameUI::DisplayError(ERR_UNKNOWN_MACRO_OPTION_S, text);
+    this->m_type = GetMacroConditionType(std::string_view(option.m_start, option.m_end - option.m_start));
+    if (this->m_type < 0) {
         return;
     }
 
-    if (cursor + 1 >= end) {
+    if (cursor >= end || end - cursor <= 1) {
+        if (option == "known" || option == "wtalent" || option == "glyph" || option == "tree") {
+            this->m_type = -1;
+        }
         return;
     }
 
@@ -338,11 +353,20 @@ int32_t EvaluateModifier(const WOWGUID* unit, const TSGrowableArray<MacroSubstri
 
     for (uint32_t i = args->m_count; i; i--) {
         const MacroSubstring& arg = args->m_data[i - 1];
+        const std::string_view modifier(arg.m_start, arg.m_end - arg.m_start);
+        static constexpr const char* sides[] = {"lshift", "rshift", "lctrl", "rctrl", "lalt", "ralt"};
+        static constexpr KEY keys[] = {KEY_LSHIFT, KEY_RSHIFT, KEY_LCONTROL, KEY_RCONTROL, KEY_LALT, KEY_RALT};
+        for (size_t side = 0; side < std::size(sides); ++side) {
+            if (modifier == sides[side] && (bindings->m_keyStateOverride
+                ? (bindings->m_heldModifiers & (1u << side)) != 0 : EventIsKeyDown(keys[side]) != 0)) {
+                return 1;
+            }
+        }
         char action[1024];
         uint32_t length = arg.m_end - arg.m_start;
 
-        if (length > 1023) {
-            length = 1023;
+        if (length >= sizeof(action)) {
+            continue;
         }
 
         memcpy(action, arg.m_start, length);

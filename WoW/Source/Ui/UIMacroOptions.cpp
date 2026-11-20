@@ -25,9 +25,6 @@
 #include "WoW/Source/Ui/UIBindings.h"
 #include "WoW/Source/Ui/UIMacros.h"
 
-void InitializeMacroOptions() {
-}
-
 // VERIFY: a046a90a auto
 // OFFSET: 0x005EED70
 int32_t EvaluateExists(const WOWGUID* unit, const TSGrowableArray<MacroSubstring>* args) {
@@ -88,12 +85,9 @@ int32_t EvaluateGroup(const WOWGUID* unit, const TSGrowableArray<MacroSubstring>
     for (uint32_t i = args->m_count; i; i--) {
         MacroSubstring& arg = args->m_data[i - 1];
 
-        if (arg == "party") {
-            return CGPartyInfo::GetNumPartyMembers() != 0;
-        }
-
-        if (arg == "raid") {
-            return CGRaidInfo::m_numMembers != 0;
+        if ((arg == "party" && CGPartyInfo::GetNumPartyMembers() != 0) ||
+            (arg == "raid" && CGRaidInfo::m_numMembers != 0)) {
+            return 1;
         }
     }
 
@@ -129,8 +123,8 @@ int32_t EvaluateButton(const WOWGUID* unit, const TSGrowableArray<MacroSubstring
         } else {
             uint32_t length = arg.m_end - arg.m_start;
 
-            if (length > 1023) {
-                length = 1023;
+            if (length >= sizeof(name)) {
+                continue;
             }
 
             memcpy(name, arg.m_start, length);
@@ -177,11 +171,8 @@ int32_t EvaluateBonusBar(const WOWGUID* unit, const TSGrowableArray<MacroSubstri
 
     for (uint32_t i = args->m_count; i; i--) {
         const MacroSubstring& arg = args->m_data[i - 1];
-        int32_t offset = 0;
-
-        for (const char* c = arg.m_start; c < arg.m_end && *c >= '0' && *c <= '9'; c++) {
-            offset = *c + 10 * offset - '0';
-        }
+        MacroSubstring number = arg;
+        const int32_t offset = number.ToNumber();
 
         if (offset == CGActionBar::m_bonusBarOffset) {
             return 1;
@@ -330,8 +321,8 @@ int32_t EvaluateCursor(const WOWGUID* unit, const TSGrowableArray<MacroSubstring
         char text[1024];
         uint32_t length = arg.m_end - arg.m_start;
 
-        if (length > 1023) {
-            length = 1023;
+        if (length >= sizeof(text)) {
+            continue;
         }
 
         memcpy(text, arg.m_start, length);
@@ -537,8 +528,8 @@ int32_t EvaluatePet(const WOWGUID* unit, const TSGrowableArray<MacroSubstring>* 
         char text[1024];
         uint32_t length = arg.m_end - arg.m_start;
 
-        if (length > 1023) {
-            length = 1023;
+        if (length >= sizeof(text)) {
+            continue;
         }
 
         memcpy(text, arg.m_start, length);

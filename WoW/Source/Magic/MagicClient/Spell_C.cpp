@@ -9519,3 +9519,7 @@ int32_t Spell_C_SendDelayedMissileTrajectoryCast(CGUnit_C* unit) {
     s_delayedTrajectoryCast = nullptr;
     return result;
 }
+
+bool Spell_C_CanPlaceMacroGroundTarget(int32_t) {
+    return false;
+}

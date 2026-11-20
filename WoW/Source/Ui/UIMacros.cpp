@@ -1,4 +1,5 @@
 #include "UIMacros.h"
+#include "ExtendedMacroFormat.h"
 #include "WoW/Source/Ui/ActionBarFrame.h"
 #include "Engine/Source/Storm/H/storm.h"
 #include "WoW/Source/DB/DBClient/DBCacheInstances.h"
@@ -17,6 +18,7 @@
 #include "Engine/Source/BlizzardCore/SFile2-Core.h"
 #include "Engine/Source/FrameScript/FrameScript.h"
 #include "Engine/Source/Os/OsFile.h"
+#include "Engine/Source/Os/TimeManager.h"
 #include "Engine/Source/lua-5.1/src/lua.h"
 #include "WoW/Source/Client.h"
 #include "WoW/Source/Ui/GameUI.h"
@@ -27,6 +29,23 @@
 #include "WoW/Source/Object/ObjectClient/Bag_C.h"
 #include "WoW/Source/Object/ObjectClient/Player_C.h"
 #include "WoW/Source/Ui/MacroConditions.h"
+
+namespace {
+
+uint32_t pendingCollections = 0;
+uint32_t unreadableCollections = 0;
+
+const char* CollectionError(uint32_t scope) {
+    if (pendingCollections & (1u << scope)) {
+        return "Your macros are still loading.";
+    }
+    if (unreadableCollections & (1u << scope)) {
+        return "The macro collection could not be read. Your saved macro file has been kept.";
+    }
+    return nullptr;
+}
+
+} // namespace
 
 // STATIC: 0x00ACE2A0
 static TSExplicitList<MACRONODE, offsetof(MACRONODE, m_dynamicLink)> s_dynamicMacros;
@@ -50,7 +69,8 @@ uint32_t CGUIMacros::m_state;
 const char* CGUIMacros::m_macroRunning;
 
 // STATIC: 0x00BEAF4C
-MACRONODE* CGUIMacros::m_macroButton;
+uint32_t CGUIMacros::m_runningMacroID;
+bool CGUIMacros::m_executing;
 
 // STATIC: 0x00BEAF50
 uint32_t CGUIMacros::m_numMacros[2];
@@ -59,22 +79,16 @@ uint32_t CGUIMacros::m_numMacros[2];
 static uint32_t s_maxMacroID[2];
 
 // STATIC: 0x00A0F82C
-static const uint32_t s_maxMacros[2] = { 36, 18 };
+static constexpr uint32_t s_maxMacros[2] = { ExtendedMacros::SlotCount(0), ExtendedMacros::SlotCount(1) };
 
 // STATIC: 0x00A0F834
-static const uint32_t s_macroIDBase[2] = { 0, 0x1000000 };
+static constexpr uint32_t s_macroIDBase[2] = { ExtendedMacros::IDBase(0), ExtendedMacros::IDBase(1) };
 
 // STATIC: 0x00BEAF90
 TSGrowableArray<char*> s_macroIcons;
 
 // STATIC: 0x00BEAFA0
 TSGrowableArray<char*> s_macroItemIcons;
-
-// STATIC: 0x00BEAF60
-static uint16_t s_initCounter;
-
-// STATIC: 0x00BEAF64
-static uint32_t s_pendingLoads;
 
 // VERIFY: 395f9dc1 auto
 // OFFSET: 0x00564AB0
@@ -245,7 +259,7 @@ MACRONODE* CGUIMacros::FindMacro(const char* name) {
 // VERIFY: ebb01234 auto
 // OFFSET: 0x0050F4D0
 bool CGUIMacros::IsActionAllowed(uint32_t action) {
-    return !CGUIMacros::m_macroButton || ((1 << action) & CGUIMacros::m_state);
+    return !CGUIMacros::m_executing || (action < 32 && ((1u << action) & CGUIMacros::m_state));
 }
 
 // VERIFY: 2f0aa8c8 auto
@@ -257,10 +271,6 @@ void CGUIMacros::RemoveDynamicMacro(MACRONODE* macro) {
 // VERIFY: 4406f3d1 auto
 // OFFSET: 0x00566140
 void CGUIMacros::Initialize() {
-    do {
-        s_initCounter++;
-    } while (!s_initCounter);
-
     InitializeMacroOptions();
     CGUIMacros::LoadIcons();
 }
@@ -268,9 +278,10 @@ void CGUIMacros::Initialize() {
 // VERIFY: 7d331447 auto
 // OFFSET: 0x00567FD0
 void CGUIMacros::LoadMacros() {
-    s_pendingLoads = 0x30000;
-    LoadAccountData(4, CGUIMacros::LoadMacrosCallback, reinterpret_cast<void*>(static_cast<uintptr_t>(s_initCounter | 0x10000)));
-    LoadAccountData(5, CGUIMacros::LoadMacrosCallback, reinterpret_cast<void*>(static_cast<uintptr_t>(s_initCounter | 0x20000)));
+    pendingCollections = 3;
+    unreadableCollections = 0;
+    LoadMacroAccountData(0, CGUIMacros::LoadMacroCollection);
+    LoadMacroAccountData(1, CGUIMacros::LoadMacroCollection);
 }
 
 // VERIFY: 1a2a9c35 auto
@@ -472,9 +483,10 @@ MACRONODE::~MACRONODE() {
 // VERIFY: 3c4c57e8 auto
 // OFFSET: 0x00565BA0
 MACRONODE::MACRONODE() {
+    this->m_id = 0;
+    this->m_type = 0;
     this->m_name[0] = '\0';
     this->m_icon[0] = '\0';
-    this->m_body[0] = '\0';
     this->m_actionBarCount = 0;
     this->m_spellID = 0;
     this->m_itemID = 0;
@@ -502,17 +514,21 @@ int32_t MACRONODE::Parse() {
     this->m_dynamic = 0;
     this->m_commands.SetCount(0);
 
-    const char* cursor = this->m_body;
-    const char* end = this->m_body + SStrLen(this->m_body);
-    MacroSubstring line = { nullptr, nullptr };
+    std::string_view body = this->m_body;
     MacroSubstring command = { nullptr, nullptr };
     MacroSubstring args = { nullptr, nullptr };
 
-    while (cursor < end) {
+    while (!body.empty()) {
+        const auto line = ExtendedMacros::NextLine(body);
+        if (line.empty()) {
+            continue;
+        }
+        const char* lineEnd = line.data() + line.size();
         int32_t type = 0;
-        line.SetText(cursor, end, '\n', &cursor);
-        cursor++;
-        command.SetText(line.m_start, line.m_end, ' ', &args.m_start);
+        command.SetText(line.data(), lineEnd, ' ', &args.m_start);
+        if (command.m_start == command.m_end) {
+            continue;
+        }
 
         if (*command.m_start == '/') {
             // STATIC: 0x00ACE300
@@ -566,7 +582,7 @@ int32_t MACRONODE::Parse() {
             type = 1;
         }
 
-        args.SetText(args.m_start, line.m_end, '\0', nullptr);
+        args.SetText(args.m_start, lineEnd, '\0', nullptr);
 
         if (args.m_end == args.m_start) {
             continue;
@@ -661,64 +677,76 @@ void CGUIMacros::SortMacros() {
     FrameScript_SignalEvent(SCRIPT_EVENT_UPDATE_MACROS, nullptr);
 }
 
-// VERIFY: 18506b38 auto
-// OFFSET: 0x005663A0
-int32_t CGUIMacros::SetMacroBody(MACRONODE* macro, const char* body) {
-    SStrCopy(macro->m_body, body, sizeof(macro->m_body));
-    char* cursor = macro->m_body;
-    int32_t chars;
-
-    for (uint32_t i = 0; sgetu8(reinterpret_cast<const uint8_t*>(cursor), &chars) != 0xFFFFFFFF && i < 256; i++) {
-        cursor += chars;
+static bool CanStoreRecord(uint32_t scope, const ExtendedMacros::Record& candidate) {
+    size_t size = ExtendedMacros::Magic.size() + ExtendedMacros::RecordBytes(candidate);
+    for (auto* node = s_macros.m_fulllist.Head(); node; node = s_macros.m_fulllist.Next(node)) {
+        if (node->m_type == scope && node->m_id != candidate.id) {
+            size += ExtendedMacros::RecordBytes({node->m_id, node->m_name, node->m_icon, node->m_body});
+        }
     }
-
-    *cursor = '\0';
-
-    return macro->Parse();
+    return size <= ExtendedMacros::CollectionBytes;
 }
 
 // VERIFY: 8cfe58b9 auto
 // OFFSET: 0x00566CD0
-void CGUIMacros::EditMacro(uint32_t id, const char* name, const char* icon, const char* body) {
+const char* CGUIMacros::EditMacro(uint32_t id, const char* name, const char* icon,
+    std::optional<std::string_view> body) {
     HASHKEY_NONE key;
     MACRONODE* macro = s_macros.Ptr(id, key);
 
     if (!macro) {
-        return;
+        return "This macro no longer exists.";
+    }
+    const uint32_t scope = macro->m_type;
+    if (const char* error = CollectionError(scope)) {
+        return error;
+    }
+    char newName[sizeof(macro->m_name)];
+    char newIcon[sizeof(macro->m_icon)];
+    SStrCopy(newName, name ? name : macro->m_name, sizeof(newName));
+    SStrCopy(newIcon, icon ? icon : macro->m_icon, sizeof(newIcon));
+    if (!newName[0]) {
+        return "A macro name is required.";
+    }
+    if (!CanStoreRecord(scope, {id, newName, newIcon, body.value_or(macro->m_body)})) {
+        return "This macro collection is full. Shorten or remove another macro before saving.";
     }
 
-    if (name) {
-        SStrCopy(macro->m_name, name, sizeof(macro->m_name));
-    }
-
-    if (icon) {
-        SStrCopy(macro->m_icon, icon, sizeof(macro->m_icon));
-    }
-
+    SStrCopy(macro->m_name, newName, sizeof(macro->m_name));
+    SStrCopy(macro->m_icon, newIcon, sizeof(macro->m_icon));
     if (body) {
-        CGUIMacros::SetMacroBody(macro, body);
+        macro->m_body.assign(*body);
+        macro->Parse();
     }
 
-    CGUIMacros::m_saveMacros = 1;
+    CGUIMacros::m_saveMacros |= 1u << scope;
+    CGUIMacros::SaveMacros();
     CGUIMacros::SortMacros();
     CGActionBar::UpdateMacro(id);
+    return nullptr;
 }
 
 // VERIFY: e32ab7eb auto
 // OFFSET: 0x00566D50
-void CGUIMacros::DeleteMacro(uint32_t id) {
+const char* CGUIMacros::DeleteMacro(uint32_t id) {
     HASHKEY_NONE key;
     MACRONODE* macro = s_macros.Ptr(id, key);
 
     if (!macro) {
-        return;
+        return "This macro no longer exists.";
     }
 
-    CGUIMacros::m_numMacros[macro->m_type]--;
+    const uint32_t scope = macro->m_type;
+    if (const char* error = CollectionError(scope)) {
+        return error;
+    }
+    CGUIMacros::m_numMacros[scope]--;
     s_macros.Delete(macro);
-    CGUIMacros::m_saveMacros = 1;
+    CGUIMacros::m_saveMacros |= 1u << scope;
+    CGUIMacros::SaveMacros();
     CGActionBar::RemoveMacroActions(id);
     CGUIMacros::SortMacros();
+    return nullptr;
 }
 
 // VERIFY: 781ecbc4 manual
@@ -746,120 +774,99 @@ void CGUIMacros::CheckActionBar() {
     }
 }
 
-// VERIFY: 7e2f0778 manual
-// OFFSET: 0x00567C10
-void CGUIMacros::LoadMacrosCallback(HOSFILE localFile, HOSFILE cacheFile, void* param) {
-    uint32_t value = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(param));
-
-    if (static_cast<uint16_t>(value) != s_initCounter) {
-        return;
-    }
-
-    uint32_t flag = value & 0xFFFF0000;
-
-    if (!(flag & s_pendingLoads)) {
-        return;
-    }
-
-    s_pendingLoads &= ~flag;
-    uint32_t type = (flag >> 16) - 1;
-
-    for (MACRONODE* macro = s_macros.m_fulllist.Head(); macro; ) {
-        if (macro->m_type == type) {
-            macro = s_macros.DeleteNode(macro);
-        } else {
-            macro = s_macros.m_fulllist.Next(macro);
+// Import the Wrath cache once per load. The old line format cannot distinguish a final
+// separator from a final newline in the macro. Preserve its established LF representation.
+static bool ImportWrathMacros(std::string_view data, uint32_t scope, std::string& encoded) {
+    encoded.assign(ExtendedMacros::Magic);
+    while (!data.empty()) {
+        const auto line = ExtendedMacros::NextLine(data);
+        if (line.empty()) {
+            continue;
         }
-    }
+        if (line.size() > 400 || line.find('\0') != std::string_view::npos) {
+            return false;
+        }
+        const std::string header(line);
+        const char* fields = header.c_str();
+        char kind[8];
+        char idText[32];
+        char name[64];
+        char icon[256];
+        SStrTokenize(&fields, kind, sizeof(kind), " ", nullptr);
+        if (SStrCmpI(kind, "MACRO", sizeof(kind))) {
+            // Ignore non-record lines, including obsolete comments, as Wrath did.
+            continue;
+        }
+        SStrTokenize(&fields, idText, sizeof(idText), " ", nullptr);
+        uint32_t id = 0;
+        if (!ExtendedMacros::ReadUnsigned(idText, id) || !id) {
+            return false;
+        }
+        if (id < ExtendedMacros::IDBase(scope)) {
+            id += ExtendedMacros::IDBase(scope);
+        }
+        SStrTokenize(&fields, name, sizeof(name), " \"\r\n", nullptr);
+        SStrTokenize(&fields, icon, sizeof(icon), " \"\r\n", nullptr);
 
-    CGUIMacros::m_numMacros[type] = 0;
-    s_maxMacroID[type] = s_macroIDBase[type];
-
-    if (cacheFile != OS_INVALID_FILE) {
-        uint32_t size = static_cast<uint32_t>(OsGetFileSize(cacheFile));
-
-        if (size) {
-            char* buffer = static_cast<char*>(alloca(size + 1));
-            uint32_t bytesRead;
-
-            if (OsReadFile(cacheFile, buffer, size, &bytesRead)) {
-                buffer[bytesRead] = '\0';
-
-                MACRONODE* current = nullptr;
-                const char* cursor = buffer;
-                char body[1024];
-                char line[1024];
-                char token[1024];
-
-                do {
-                    SStrTokenize(&cursor, line, sizeof(line), "\r\n", nullptr);
-
-                    if (!line[0]) {
-                        continue;
-                    }
-
-                    if (current) {
-                        if (SStrCmpI(line, "END", STORM_MAX_STR)) {
-                            if (SStrLen(line)) {
-                                SStrPack(body, line, sizeof(body));
-                                SStrPack(body, "\n", sizeof(body));
-                            }
-                        } else {
-                            CGUIMacros::SetMacroBody(current, body);
-                            current = nullptr;
-                        }
-
-                        continue;
-                    }
-
-                    const char* tokens = line;
-                    SStrTokenize(&tokens, token, sizeof(token), " ", nullptr);
-
-                    if (SStrCmpI(token, "MACRO", STORM_MAX_STR) || CGUIMacros::m_numMacros[type] >= 36) {
-                        continue;
-                    }
-
-                    SStrTokenize(&tokens, token, sizeof(token), " ", nullptr);
-                    uint32_t id = SStrToInt(token);
-
-                    if (!id || s_macros.Ptr(id, HASHKEY_NONE())) {
-                        continue;
-                    }
-
-                    if (id < s_macroIDBase[type]) {
-                        id += s_macroIDBase[type];
-                    }
-
-                    if (id > s_maxMacroID[type]) {
-                        s_maxMacroID[type] = id;
-                    }
-
-                    SStrTokenize(&tokens, token, sizeof(token), " \"\r\n", nullptr);
-
-                    if (!token[0]) {
-                        continue;
-                    }
-
-                    CGUIMacros::m_numMacros[type]++;
-                    token[63] = '\0';
-
-                    current = s_macros.New(id, HASHKEY_NONE(), 0, 0);
-                    current->m_id = id;
-                    current->m_type = type;
-                    SStrCopy(current->m_name, token, sizeof(current->m_name));
-                    body[0] = '\0';
-
-                    SStrTokenize(&tokens, token, sizeof(token), " \"\r\n", nullptr);
-
-                    if (token[0]) {
-                        token[255] = '\0';
-                        SStrCopy(current->m_icon, token, sizeof(current->m_icon));
-                    }
-                } while (cursor && *cursor);
+        std::string body;
+        bool ended = false;
+        while (!data.empty()) {
+            auto bodyLine = ExtendedMacros::NextLine(data);
+            if (bodyLine.size() == 3 && !SStrCmpI(bodyLine.data(), "END", 3)) {
+                ended = true;
+                break;
+            }
+            if (!bodyLine.empty()) {
+                body.append(bodyLine);
+                body += '\n';
+            }
+            if (body.size() > ExtendedMacros::DefaultCharacters * 4) {
+                return false;
             }
         }
+        if (!ended) {
+            return false;
+        }
+        ExtendedMacros::AppendRecord(encoded, {id, name, icon, body});
+        if (encoded.size() > ExtendedMacros::CollectionBytes) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void CGUIMacros::LoadMacroCollection(uint32_t scope, std::string_view data, bool readable) {
+    if (!(pendingCollections & (1u << scope))) {
+        return;
     }
 
+    std::string imported;
+    std::vector<ExtendedMacros::Record> records;
+    if (readable && data.substr(0, ExtendedMacros::Magic.size()) != ExtendedMacros::Magic) {
+        readable = ImportWrathMacros(data, scope, imported);
+        data = imported;
+    }
+    if (!readable || !ExtendedMacros::Decode(data, scope, records)) {
+        unreadableCollections |= 1u << scope;
+        pendingCollections &= ~(1u << scope);
+        FrameScript_SignalEvent(SCRIPT_EVENT_UI_ERROR_MESSAGE, "%s", CollectionError(scope));
+        return;
+    }
+
+    uint32_t maxId = s_macroIDBase[scope];
+    for (const auto& record : records) {
+        auto* macro = s_macros.New(record.id, HASHKEY_NONE(), 0, 0);
+        macro->m_id = record.id;
+        macro->m_type = scope;
+        SStrCopy(macro->m_name, std::string(record.name).c_str(), sizeof(macro->m_name));
+        SStrCopy(macro->m_icon, std::string(record.icon).c_str(), sizeof(macro->m_icon));
+        macro->m_body.assign(record.body);
+        macro->Parse();
+        maxId = std::max(maxId, record.id);
+    }
+    CGUIMacros::m_numMacros[scope] = static_cast<uint32_t>(records.size());
+    s_maxMacroID[scope] = maxId;
+    pendingCollections &= ~(1u << scope);
     CGUIMacros::SortMacros();
     CGUIMacros::UpdateMacroSpells();
     CGUIMacros::CheckActionBar();
@@ -889,43 +896,64 @@ const char* GetMacroItemIcon(uint32_t index) {
     return s_macroItemIcons.m_data[index];
 }
 
-// VERIFY: 436ee2a2 auto
-// OFFSET: 0x00564DB0
 void CGUIMacros::RunMacro(MACRONODE* macro, const char* button) {
-    MACRONODE* savedMacro = CGUIMacros::m_macroButton;
-    const char* savedButton = CGUIMacros::m_macroRunning;
+    if (macro) {
+        CGUIMacros::RunMacroText(macro->m_body, macro->m_id, button);
+    }
+}
 
-    if (!CGGameUI::CanPerformAction(3) || !macro) {
+void CGUIMacros::RunMacroText(std::string_view body, uint32_t id, const char* button) {
+    if (!CGGameUI::CanPerformAction(3) || body.empty()) {
         return;
     }
 
-    if (!CGUIMacros::m_macroButton) {
-        CGUIMacros::m_state = 0xFFFFFFFF;
+    static uint32_t depth = 0;
+    static uint32_t commandsLeft = 0;
+    static uint32_t started = 0;
+    static bool extended = false;
+    if (depth == 8) {
+        return;
     }
+    if (!depth) {
+        CGUIMacros::m_state = UINT32_MAX;
+        commandsLeft = ExtendedMacros::CommandBudget;
+        started = OsGetAsyncTimeMs();
+        extended = false;
+    }
+    extended = extended || body.size() > 1023 || ExtendedMacros::CharacterCount(body) > 255;
 
-    CGUIMacros::m_macroButton = macro;
+    // The existing dispatch can call back into Lua. Keep the active body independent
+    // of any edit or deletion made during one of its commands.
+    const std::string activeBody(body);
+    std::string_view remaining = activeBody;
+    std::string command;
+    const auto savedID = CGUIMacros::m_runningMacroID;
+    const auto savedButton = CGUIMacros::m_macroRunning;
+    const bool savedExecuting = CGUIMacros::m_executing;
+    ++depth;
+    CGUIMacros::m_runningMacroID = id;
     CGUIMacros::m_macroRunning = button;
-    const char* text = macro->m_body;
+    CGUIMacros::m_executing = true;
 
-    if (text) {
-        do {
-            if (!*text || !CGUIMacros::m_macroButton) {
-                break;
-            }
-
-            char line[1024];
-            SStrTokenize(&text, line, sizeof(line), "\r\n", nullptr);
-
-            if (line[0] && line[0] != '-' && line[0] != '#') {
-                FrameScript_SignalEvent(SCRIPT_EVENT_EXECUTE_CHAT_LINE, "%s", line);
-            }
-        } while (text);
+    while (!remaining.empty() && CGUIMacros::m_executing && commandsLeft) {
+        const auto line = ExtendedMacros::NextLine(remaining);
+        if (!ExtendedMacros::IsCommand(line)) {
+            continue;
+        }
+        // Check between commands. The command's own Lua code remains under the stock Lua policy.
+        if (extended && OsGetAsyncTimeMs() - started >= 50) {
+            commandsLeft = 0;
+            break;
+        }
+        --commandsLeft;
+        command.assign(line);
+        FrameScript_SignalEvent(SCRIPT_EVENT_EXECUTE_CHAT_LINE, "%s", command.c_str());
     }
 
-    if (CGGameUI::CanPerformAction(3)) {
-        CGUIMacros::m_macroButton = savedMacro;
-        CGUIMacros::m_macroRunning = savedButton;
-    }
+    --depth;
+    CGUIMacros::m_runningMacroID = savedID;
+    CGUIMacros::m_macroRunning = savedButton;
+    CGUIMacros::m_executing = savedExecuting;
 }
 
 // VERIFY: a7a6a7f6 manual
@@ -1066,7 +1094,9 @@ int32_t MACRONODE::FindSpellID() {
 // VERIFY: 4415731b manual
 // OFFSET: 0x00566530
 void CGUIMacros::Shutdown() {
-    s_initCounter++;
+    ClearMacroAccountDataCallbacks();
+    pendingCollections = unreadableCollections = 0;
+    CGUIMacros::m_saveMacros = 0;
     s_dynamicMacros.UnlinkAll();
     s_macros.Clear();
 
@@ -1083,90 +1113,81 @@ void CGUIMacros::Shutdown() {
     s_macroItemIcons.Clear();
     CGUIMacros::m_numMacros[0] = 0;
     CGUIMacros::m_numMacros[1] = 0;
-    s_macroConditions.Clear();
+    ClearMacroConditionCache();
 }
 
-// VERIFY: 55fecf8f auto
-// OFFSET: 0x005668F0
-void CGUIMacros::SaveMacrosCallback(HOSFILE localFile, HOSFILE cacheFile, void* param) {
-    if (cacheFile == OS_INVALID_FILE) {
-        return;
-    }
-
-    uint32_t set = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(param));
-    uint32_t written = 0;
-
-    for (uint32_t i = 0; i < CGUIMacros::m_numMacros[set]; i++) {
-        MACRONODE* macro = s_macros.Ptr(CGUIMacros::m_sortedMacros[36 * set + i], HASHKEY_NONE());
-        char text[1536];
-        SStrPrintf(text, sizeof(text), "MACRO %d \"%s\" %s\r\n", macro->m_id, macro->m_name, macro->m_icon);
-        const char* body = macro->m_body;
-
-        while (body && *body) {
-            char line[1024];
-            SStrTokenize(&body, line, sizeof(line), "\r\n", nullptr);
-
-            if (line[0]) {
-                SStrPack(text, line, sizeof(text));
-                SStrPack(text, "\r\n", sizeof(text));
-            }
+void CGUIMacros::SaveMacros() {
+    for (uint32_t scope = 0; scope < 2; ++scope) {
+        if (!(CGUIMacros::m_saveMacros & (1u << scope))) {
+            continue;
         }
 
-        SStrPack(text, "END\r\n", sizeof(text));
-        OsWriteFile(cacheFile, text, SStrLen(text), &written);
+        std::vector<ExtendedMacros::Record> records;
+        size_t bytes = ExtendedMacros::Magic.size();
+        for (auto* macro = s_macros.m_fulllist.Head(); macro; macro = s_macros.m_fulllist.Next(macro)) {
+            if (macro->m_type == scope) {
+                records.push_back({macro->m_id, macro->m_name, macro->m_icon, macro->m_body});
+                bytes += ExtendedMacros::RecordBytes(records.back());
+            }
+        }
+        if (bytes > ExtendedMacros::CollectionBytes) {
+            continue;
+        }
+        std::sort(records.begin(), records.end(), [](const auto& a, const auto& b) { return a.id < b.id; });
+        std::string data(ExtendedMacros::Magic);
+        data.reserve(bytes);
+        for (const auto& record : records) {
+            ExtendedMacros::AppendRecord(data, record);
+        }
+        if (SaveMacroAccountData(scope, std::move(data))) {
+            CGUIMacros::m_saveMacros &= ~(1u << scope);
+        }
     }
 }
 
-// VERIFY: 67e45d3d auto
-// OFFSET: 0x00566A30
-void CGUIMacros::SaveMacros() {
-    if (!CGUIMacros::m_saveMacros) {
-        return;
-    }
-
-    CGUIMacros::m_saveMacros = 0;
-    SaveAccountData(4, CGUIMacros::SaveMacrosCallback, nullptr);
-    SaveAccountData(5, CGUIMacros::SaveMacrosCallback, reinterpret_cast<void*>(1));
-}
-
-// VERIFY: 9cd8630d manual
-// OFFSET: 0x00568020
-uint32_t CGUIMacros::CreateMacro(const char* name, const char* icon, const char* body, int32_t perCharacter) {
+const char* CGUIMacros::CreateMacro(const char* name, const char* icon, std::string_view body,
+    bool perCharacter, uint32_t& id) {
     if (!name || !*name) {
-        return 0;
+        return "A macro name is required.";
+    }
+    const uint32_t scope = perCharacter ? 1 : 0;
+    if (const char* error = CollectionError(scope)) {
+        return error;
+    }
+    if (CGUIMacros::m_numMacros[scope] >= s_maxMacros[scope]) {
+        return "All macro slots in this collection are in use.";
     }
 
-    uint32_t type = perCharacter != 0;
-
-    if (CGUIMacros::m_numMacros[type] >= s_maxMacros[type]) {
-        return 0;
+    const uint32_t next = s_maxMacroID[scope] + 1;
+    if (next - s_macroIDBase[scope] >= ExtendedMacros::CharacterIDBase) {
+        return "No macro IDs remain in this collection.";
+    }
+    char newName[sizeof(MACRONODE::m_name)];
+    char newIcon[sizeof(MACRONODE::m_icon)];
+    SStrCopy(newName, name, sizeof(newName));
+    SStrCopy(newIcon, icon ? icon : "", sizeof(newIcon));
+    if (!CanStoreRecord(scope, {next, newName, newIcon, body})) {
+        return "This macro collection is full. Shorten or remove another macro before saving.";
     }
 
-    uint32_t id = ++s_maxMacroID[type];
-    HASHKEY_NONE key;
-    MACRONODE* macro = s_macros.New(id, key, 0, 0);
+    id = next;
+    s_maxMacroID[scope] = id;
+    MACRONODE* macro = s_macros.New(id, HASHKEY_NONE(), 0, 0);
     macro->m_id = id;
-    macro->m_type = type;
-    SStrCopy(macro->m_name, name, sizeof(macro->m_name));
-
-    if (icon) {
-        SStrCopy(macro->m_icon, icon, sizeof(macro->m_icon));
-    }
-
-    if (body) {
-        CGUIMacros::SetMacroBody(macro, body);
-    }
-
-    CGUIMacros::m_numMacros[type]++;
-    CGUIMacros::m_saveMacros = 1;
-    CGUIMacros::SortMacros();
+    macro->m_type = scope;
+    SStrCopy(macro->m_name, newName, sizeof(macro->m_name));
+    SStrCopy(macro->m_icon, newIcon, sizeof(macro->m_icon));
+    macro->m_body.assign(body);
+    macro->Parse();
+    CGUIMacros::m_numMacros[scope]++;
+    CGUIMacros::m_saveMacros |= 1u << scope;
+    CGUIMacros::SaveMacros();
     CGUIMacros::CountActionBarSlots(macro);
-
     if (macro->m_itemID > 0 || macro->m_spellID > 0) {
-        CGActionBar::UpdateMacro(macro->m_id);
+        CGActionBar::UpdateMacro(id);
     }
-
-    return id;
+    CGUIMacros::SortMacros();
+    return nullptr;
 }
 
 // VERIFY: 1e57ffdd auto

@@ -1,5 +1,6 @@
 #include "MacroSubstring.h"
 #include <cstring>
+#include <limits>
 
 // VERIFY: 8f25a363 manual
 // OFFSET: 0x005EEA40
@@ -69,7 +70,11 @@ int32_t MacroSubstring::ToNumber() {
             break;
         }
 
-        value = *c + 10 * value - '0';
+        const int32_t digit = *c - '0';
+        if (value > (std::numeric_limits<int32_t>::max() - digit) / 10) {
+            return std::numeric_limits<int32_t>::max();
+        }
+        value = value * 10 + digit;
     }
 
     return value;

@@ -1,5 +1,8 @@
 #include "UIMacros.h"
+#include "ExtendedMacroFormat.h"
 #include <cstdint>
+#include <cstring>
+#include <iterator>
 #include "Engine/Source/FrameScript/FrameScript.h"
 #include "Engine/Source/FrameScript/FrameScript_Object.h"
 #include "WoW/Source/Ui/GameUI.h"
@@ -20,11 +23,67 @@
 #include "WoW/Source/ObjectMgrClient/ObjectMgrClient.h"
 #include "Engine/Source/FrameXML/LoadXML.h"
 
+namespace {
+
+const char* MacroBodyError(std::string_view body, int32_t characters) {
+    if (characters < 0) {
+        return "Macro text must be valid UTF-8 and cannot contain a NUL character.";
+    }
+    if (static_cast<uint32_t>(characters) > ExtendedMacros::DefaultCharacters) {
+        return "This macro is longer than the character limit.";
+    }
+    if (!ExtendedMacros::WithinCommandBudget(body)) {
+        return "This macro has too many command lines.";
+    }
+    return nullptr;
+}
+
+std::string_view ReadMacroBody(lua_State* L, int index) {
+    size_t size = 0;
+    const char* value = lua_tolstring(L, index, &size);
+    std::string_view body(value, size);
+    if (size > ExtendedMacros::DefaultCharacters * 4) {
+        luaL_error(L, "Macro text may contain at most %d characters.", ExtendedMacros::DefaultCharacters);
+        return {};
+    }
+    const int32_t characters = ExtendedMacros::CharacterCount(body);
+    if (const char* error = MacroBodyError(body, characters)) {
+        luaL_error(L, "%s", error);
+        return {};
+    }
+    return body;
+}
+
+} // namespace
+
+static int32_t Script_GetMacroBodyLimits(lua_State* L) {
+    lua_pushinteger(L, ExtendedMacros::DefaultCharacters);
+    lua_pushinteger(L, ExtendedMacros::CollectionBytes);
+    lua_pushinteger(L, ExtendedMacros::CommandBudget);
+    return 3;
+}
+
+static int32_t Script_GetMacroBodyInfo(lua_State* L) {
+    size_t size = 0;
+    const char* value = luaL_checklstring(L, 1, &size);
+    const std::string_view body(value, size);
+    const int32_t count = ExtendedMacros::CharacterCount(body);
+    if (count < 0) {
+        lua_pushnil(L);
+    } else {
+        lua_pushinteger(L, count);
+    }
+    lua_pushnumber(L, static_cast<double>(size));
+    lua_pushstring(L, MacroBodyError(body, count));
+    return 3;
+}
+
 // VERIFY: 3dacc7a5 auto
 // OFFSET: 0x00564B90
 static int32_t Script_StopMacro(lua_State* L) {
     if (CGGameUI::CanPerformAction(3)) {
-        CGUIMacros::m_macroButton = nullptr;
+        CGUIMacros::m_executing = false;
+        CGUIMacros::m_runningMacroID = 0;
         CGUIMacros::m_macroRunning = nullptr;
     }
 
@@ -49,9 +108,8 @@ static int32_t Script_GetNumMacros(lua_State* L) {
 // VERIFY: c78f099b auto
 // OFFSET: 0x00564C10
 static int32_t Script_GetRunningMacro(lua_State* L) {
-    uint32_t id;
-
-    if (CGUIMacros::m_macroButton && (id = CGUIMacros::m_macroButton->m_id)) {
+    const uint32_t id = CGUIMacros::m_runningMacroID;
+    if (CGUIMacros::m_executing && id && CGUIMacros::GetMacroByID(id)) {
         lua_pushnumber(L, CGUIMacros::GetMacroIndexByID(id) + 1);
         return 1;
     }
@@ -64,10 +122,9 @@ static int32_t Script_GetRunningMacro(lua_State* L) {
 // OFFSET: 0x00566DF0
 static MACRONODE* GetMacroFromLua(lua_State* L) {
     if (lua_isnumber(L, 1)) {
-        uint32_t index = static_cast<uint32_t>(lua_tonumber(L, 1)) - 1;
-
-        if (index < 72) {
-            return CGUIMacros::GetMacroByID(CGUIMacros::m_sortedMacros[index]);
+        const double number = lua_tonumber(L, 1);
+        if (number >= 1 && number <= std::size(CGUIMacros::m_sortedMacros)) {
+            return CGUIMacros::GetMacroByIndex(static_cast<uint32_t>(number) - 1);
         }
     } else if (lua_isstring(L, 1)) {
         return CGUIMacros::FindMacro(lua_tolstring(L, 1, nullptr));
@@ -145,7 +202,8 @@ static int32_t Script_GetMacroSpell(lua_State* L) {
 // VERIFY: cbd63495 auto
 // OFFSET: 0x00564AE0
 static int32_t Script_SecureCmdOptionParse(lua_State* L) {
-    const char* options = lua_tolstring(L, 1, nullptr);
+    size_t size = 0;
+    const char* options = lua_tolstring(L, 1, &size);
 
     if (!options) {
         luaL_error(L, "Usage: SecureCmdOptionParse(\"options\")");
@@ -155,7 +213,8 @@ static int32_t Script_SecureCmdOptionParse(lua_State* L) {
     MacroSubstring result = { nullptr, nullptr };
     MacroSubstring target = { nullptr, nullptr };
 
-    if (!EvaluateMacroOptions(options, options + SStrLen(options), &result, &target)) {
+    if (size > ExtendedMacros::SupportedCharacters * 4 || std::memchr(options, 0, size) ||
+        !EvaluateMacroOptions(options, options + size, &result, &target)) {
         return 0;
     }
 
@@ -222,9 +281,9 @@ static int32_t Script_RunMacroText(lua_State* L) {
         return 0;
     }
 
-    MACRONODE macro;
-    SStrCopy(macro.m_body, lua_tolstring(L, 1, nullptr), sizeof(macro.m_body));
-    CGUIMacros::RunMacro(&macro, lua_tolstring(L, 2, nullptr));
+    if (CGGameUI::CanPerformAction(3)) {
+        CGUIMacros::RunMacroText(ReadMacroBody(L, 1), 0, lua_tolstring(L, 2, nullptr));
+    }
     return 0;
 }
 
@@ -293,7 +352,7 @@ static int32_t Script_GetMacroInfo(lua_State* L) {
         lua_pushnil(L);
     }
 
-    lua_pushstring(L, macro->m_body);
+    lua_pushlstring(L, macro->m_body.data(), macro->m_body.size());
     return 3;
 }
 
@@ -306,7 +365,7 @@ static int32_t Script_GetMacroBody(lua_State* L) {
         return 0;
     }
 
-    lua_pushstring(L, macro->m_body);
+    lua_pushlstring(L, macro->m_body.data(), macro->m_body.size());
     return 1;
 }
 
@@ -317,7 +376,9 @@ static int32_t Script_DeleteMacro(lua_State* L) {
         MACRONODE* macro = GetMacroFromLua(L);
 
         if (macro) {
-            CGUIMacros::DeleteMacro(macro->m_id);
+            if (const char* error = CGUIMacros::DeleteMacro(macro->m_id)) {
+                return luaL_error(L, "%s", error);
+            }
         }
     }
 
@@ -340,7 +401,7 @@ static int32_t Script_EditMacro(lua_State* L) {
         if (id) {
             const char* name = nullptr;
             const char* icon = nullptr;
-            const char* body = nullptr;
+            std::optional<std::string_view> body;
 
             if (lua_isstring(L, 2)) {
                 name = lua_tolstring(L, 2, nullptr);
@@ -359,10 +420,12 @@ static int32_t Script_EditMacro(lua_State* L) {
             }
 
             if (lua_isstring(L, 4)) {
-                body = lua_tolstring(L, 4, nullptr);
+                body = ReadMacroBody(L, 4);
             }
 
-            CGUIMacros::EditMacro(id, name, icon, body);
+            if (const char* error = CGUIMacros::EditMacro(id, name, icon, body)) {
+                return luaL_error(L, "%s", error);
+            }
         } else {
             id = 0;
         }
@@ -494,15 +557,37 @@ static int32_t Script_CreateMacro(lua_State* L) {
         icon = GetMacroIcon(index);
     }
 
-    const char* body = lua_isstring(L, 3) ? lua_tolstring(L, 3, nullptr) : nullptr;
-    uint32_t id = CGUIMacros::CreateMacro(name, icon, body, StringToBOOL(L, 4, 0));
-
-    if (!id) {
-        luaL_error(L, "CreateMacro() failed, already have %d macros", 36);
-        return 0;
+    const auto body = lua_isstring(L, 3) ? ReadMacroBody(L, 3) : std::string_view{};
+    uint32_t id = 0;
+    if (const char* error = CGUIMacros::CreateMacro(name, icon, body, StringToBOOL(L, 4, 0) != 0, id)) {
+        return luaL_error(L, "%s", error);
     }
 
     lua_pushnumber(L, CGUIMacros::GetMacroIndexByID(id) + 1);
+    return 1;
+}
+
+int32_t Script_ValidateMacroBody(lua_State* L);
+
+static int32_t Script_DuplicateMacro(lua_State* L) {
+    if (!CGGameUI::CanPerformAction(12)) {
+        return 0;
+    }
+    auto* source = GetMacroFromLua(L);
+    size_t bytes = 0;
+    const char* name = luaL_checklstring(L, 2, &bytes);
+    if (!source) {
+        return 0;
+    }
+    if (!bytes || bytes >= sizeof(source->m_name) ||
+        ExtendedMacros::CharacterCount(std::string_view(name, bytes)) < 0) {
+        return luaL_error(L, "Choose a valid macro name under 64 UTF-8 bytes.");
+    }
+    uint32_t id = 0;
+    if (const char* error = CGUIMacros::CreateMacro(name, source->m_icon, source->m_body, source->m_type != 0, id)) {
+        return luaL_error(L, "%s", error);
+    }
+    lua_pushinteger(L, CGUIMacros::GetMacroIndexByID(id) + 1);
     return 1;
 }
 
@@ -511,6 +596,10 @@ static FrameScript_Method s_ScriptFunctions[] = {
     { "SecureCmdOptionParse", &Script_SecureCmdOptionParse },
     { "RunMacro", &Script_RunMacro },
     { "RunMacroText", &Script_RunMacroText },
+    { "GetMacroBodyLimits", &Script_GetMacroBodyLimits },
+    { "GetMacroBodyInfo", &Script_GetMacroBodyInfo },
+    { "ValidateMacroBody", &Script_ValidateMacroBody },
+    { "DuplicateMacro", &Script_DuplicateMacro },
     { "StopMacro", &Script_StopMacro },
     { "CreateMacro", &Script_CreateMacro },
     { "GetNumMacros", &Script_GetNumMacros },

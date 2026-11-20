@@ -8,6 +8,7 @@
 #endif
 #include "GameUI.h"
 #include "BonusLootClient.h"
+#include "UIMacroOptions.h"
 #include "WoW/Source/DB/Rec/FileDataRec.h"
 #include "WoW/Source/DB/Rec/MovieFileDataRec.h"
 #include "WoW/Source/DB/Rec/MovieRec.h"
@@ -3775,6 +3776,7 @@ void CGGameUI::EnterWorld() {
 
     FrameScript_SignalEvent(SCRIPT_EVENT_PLAYER_ENTERING_WORLD, nullptr);
     BonusLootClient::EnterWorld();
+    RequestMacroTimewalking();
     CGMinimapFrame::EnterWorld();
     CGChat::EnterWorld();
     CGActionBar::EnterWorld();
@@ -8172,6 +8174,7 @@ void CCapturePointUIManager::DeleteNode(CapturePointUIManagerNode* node) {
 // OFFSET: 0x00528C30
 void CGGameUI::LeaveWorld() {
     BonusLootClient::Reset();
+    ResetMacroTimewalking();
     if (!CGGameUI::s_inWorld) {
         return;
     }

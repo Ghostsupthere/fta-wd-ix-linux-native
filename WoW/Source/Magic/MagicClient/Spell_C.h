@@ -28,6 +28,10 @@ class CGObject_C;
 class CGPlayer_C;
 class CGUnit_C;
 class CM2Model;
+
+// The Windows client's cursor/player ground-target macros ([@cursor], [@player]) are not ported yet, so no spell can be placed that way.
+// MacroValidation asks this to flag such branches; replace it with the real check when the ground-target port lands.
+bool Spell_C_CanPlaceMacroGroundTarget(int32_t spellId);
 class CTerrainClickEvent;
 class PendingSpellCast : public TSLinkedNode<PendingSpellCast> {
     public:

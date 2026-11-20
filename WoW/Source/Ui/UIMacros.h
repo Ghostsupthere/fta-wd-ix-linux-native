@@ -3,6 +3,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
 #include "Engine/Source/Storm/H/stpl.h"
 #include "WoW/Source/Object/WGUID.h"
 #include "WoW/Source/Ui/MacroSubstring.h"
@@ -21,7 +24,7 @@ class MACRONODE : public TSHashObject<MACRONODE, HASHKEY_NONE> {
     /* 001C */ uint32_t m_type;
     /* 0020 */ char m_name[64];
     /* 0060 */ char m_icon[256];
-    /* 0160 */ char m_body[1024];
+    std::string m_body;
     /* 0560 */ uint32_t m_actionBarCount;
     /* 0564 */ int32_t m_spellID;
     /* 0568 */ int32_t m_itemID;
@@ -49,7 +52,8 @@ class CGUIMacros {
     static void Shutdown();
     static uint32_t m_state;
     static const char* m_macroRunning;
-    static MACRONODE* m_macroButton;
+    static uint32_t m_runningMacroID;
+    static bool m_executing;
     static uint32_t m_numMacros[2];
     static int32_t m_saveMacros;
     static uint32_t m_sortedMacros[72];
@@ -63,20 +67,20 @@ class CGUIMacros {
     static MACRONODE* GetMacroByIndex(uint32_t index);
     static void Initialize();
     static void LoadIcons();
-    static int32_t SetMacroBody(MACRONODE* macro, const char* body);
     static void SortMacros();
     static void CheckActionBar();
     static void LoadMacros();
-    static void LoadMacrosCallback(HOSFILE localFile, HOSFILE cacheFile, void* param);
-    static void SaveMacrosCallback(HOSFILE localFile, HOSFILE cacheFile, void* param);
+    static void LoadMacroCollection(uint32_t scope, std::string_view data, bool readable);
+    static void RunMacroText(std::string_view body, uint32_t id, const char* button);
     static void RunMacro(MACRONODE* macro, const char* button);
     static void UpdateDynamicMacros();
     static void RunMacro(int32_t id, const char* button);
     static void GetFullIconPath(uint32_t id, char* buffer, uint32_t size);
     static int32_t GetSortedIndexByName(const char* name);
-    static void EditMacro(uint32_t id, const char* name, const char* icon, const char* body);
-    static void DeleteMacro(uint32_t id);
-    static uint32_t CreateMacro(const char* name, const char* icon, const char* body, int32_t perCharacter);
+    static const char* EditMacro(uint32_t id, const char* name, const char* icon, std::optional<std::string_view> body);
+    static const char* DeleteMacro(uint32_t id);
+    static const char* CreateMacro(const char* name, const char* icon, std::string_view body,
+        bool perCharacter, uint32_t& id);
     static void CountActionBarSlots(MACRONODE* macro);
 };
 

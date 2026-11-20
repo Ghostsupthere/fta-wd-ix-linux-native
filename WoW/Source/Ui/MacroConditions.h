@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include "Engine/Source/Storm/H/stpl.h"
 #include "WoW/Source/Object/WGUID.h"
 #include "WoW/Source/Ui/MacroCondition.h"
@@ -12,14 +13,23 @@ typedef int32_t (*MACROCONDITIONFUNC)(const WOWGUID* unit, const TSGrowableArray
 
 class MacroConditions : public TSHashObject<MacroConditions, HASHKEY_STR> {
     public:
-    /* 0018 */ MacroSubstring m_target;
+    /* 0018 */ MacroSubstring m_target{};
     /* 0020 */ TSGrowableArray<MacroCondition> m_conditions;
 
     void Parse();
     int32_t Evaluate(MacroSubstring* target);
 };
 
-extern TSHashTable<MacroConditions, HASHKEY_STR> s_macroConditions;
+void ClearMacroConditionCache();
+int32_t GetMacroConditionType(std::string_view name);
+int32_t EvaluateKnown(const WOWGUID*, const TSGrowableArray<MacroSubstring>* args);
+int32_t EvaluateWrathTalent(const WOWGUID*, const TSGrowableArray<MacroSubstring>* args);
+int32_t EvaluateTalentTree(const WOWGUID*, const TSGrowableArray<MacroSubstring>* args);
+int32_t EvaluateGlyph(const WOWGUID*, const TSGrowableArray<MacroSubstring>* args);
+int32_t EvaluateResting(const WOWGUID*, const TSGrowableArray<MacroSubstring>* args);
+int32_t EvaluateOverrideBar(const WOWGUID*, const TSGrowableArray<MacroSubstring>* args);
+int32_t EvaluatePossessBar(const WOWGUID*, const TSGrowableArray<MacroSubstring>* args);
+int32_t EvaluateTimewalking(const WOWGUID*, const TSGrowableArray<MacroSubstring>* args);
 
 int32_t EvaluateCombat(const WOWGUID* unit, const TSGrowableArray<MacroSubstring>* args);
 int32_t EvaluateExists(const WOWGUID* unit, const TSGrowableArray<MacroSubstring>* args);

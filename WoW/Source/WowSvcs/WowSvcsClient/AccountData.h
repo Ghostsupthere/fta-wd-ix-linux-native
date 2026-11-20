@@ -2,6 +2,8 @@
 #define WOW_SOURCE_WOWSVCS_WOWSVCSCLIENT_ACCOUNTDATA_H
 
 #include <cstdint>
+#include <string>
+#include <string_view>
 #include "Engine/Source/Os/OsFile.h"
 #include "WoW/Source/Net/Types.h"
 
@@ -9,6 +11,7 @@ class CDataStore;
 struct CVar;
 
 typedef void (*ACCOUNTDATALOADFUNC)(HOSFILE localFile, HOSFILE cacheFile, void* param);
+using MacroAccountLoadFunc = void (*)(uint32_t scope, std::string_view data, bool readable);
 
 struct AccountDataInfo {
     /* 0000 */ bool m_active;
@@ -36,6 +39,9 @@ void AccountDataShutdownBasicSystem();
 void DownloadAccountData(int32_t type);
 void LoadAccountData(int32_t type, ACCOUNTDATALOADFUNC func, void* param);
 void SaveAccountData(int32_t type, ACCOUNTDATALOADFUNC func, void* param);
+void LoadMacroAccountData(uint32_t scope, MacroAccountLoadFunc callback);
+bool SaveMacroAccountData(uint32_t scope, std::string data);
+void ClearMacroAccountDataCallbacks();
 void AccountDataFlush();
 int32_t Packet_SMSG_CHECK_FOR_BOTS(void* param, NETMESSAGE msgId, uint32_t time, CDataStore* msg);
 void SetClearConfigData(int32_t clear);
