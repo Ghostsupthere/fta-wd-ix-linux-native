@@ -959,6 +959,18 @@ CAaSphere CM2Model::GetMaxBoundingSpherePlusAttachments() {
     return sphere;
 }
 
+static const M2Bounds& GetRootSequenceBounds(const CM2Model& model) {
+    const M2Data* data = model.m_shared->m_data;
+    // A loaded model can still lack a pose while its appearance is being initialized.
+    if (model.m_bones && data->m_bones.m_count) {
+        const uint16_t sequence = model.m_bones[0].m_sequence.m_sequenceIndex;
+        if (sequence != 0xFFFF && sequence < data->m_sequences.m_count) {
+            return data->m_sequences[sequence].m_bounds;
+        }
+    }
+    return data->m_bounds;
+}
+
 // VERIFY: 4e809ba8 manual
 // OFFSET: 0x00825750
 CAaBox CM2Model::GetCurrentBoundingBox() {
@@ -987,7 +999,7 @@ CAaBox CM2Model::GetCurrentBoundingBox() {
         return CAaBox::Transform(this->m_shared->m_data->m_bounds.m_extent, *world);
     }
 
-    const CAaBox& extent = data->m_sequences[this->m_bones->m_sequence.m_sequenceIndex].m_bounds.m_extent;
+    const CAaBox& extent = GetRootSequenceBounds(*this).m_extent;
     CAaBox box;
 
     if (extent.IsInverted()) {
@@ -1052,14 +1064,19 @@ CAaBox CM2Model::GetSplitBodyBoundingBox(uint32_t boneId) {
         return this->GetCurrentBoundingBox();
     }
 
-    uint16_t boneIndex = data->m_boneIndicesById[boneId];
+    const uint16_t boneIndex = data->m_boneIndicesById[boneId];
 
-    if (!boneIndex || boneIndex == 0xFFFF || this->m_bones[boneIndex].m_sequence.m_sequenceIndex >= count) {
+    if (!this->m_bones || !boneIndex || boneIndex == 0xFFFF || boneIndex >= data->m_bones.m_count) {
         return this->GetCurrentBoundingBox();
     }
 
-    CAaBox box = data->m_sequences[this->m_bones->m_sequence.m_sequenceIndex].m_bounds.m_extent;
-    box |= this->m_shared->m_data->m_sequences[this->m_bones[boneIndex].m_sequence.m_sequenceIndex].m_bounds.m_extent;
+    const uint16_t sequence = this->m_bones[boneIndex].m_sequence.m_sequenceIndex;
+    if (sequence == 0xFFFF || sequence >= count) {
+        return this->GetCurrentBoundingBox();
+    }
+
+    CAaBox box = GetRootSequenceBounds(*this).m_extent;
+    box |= data->m_sequences[sequence].m_bounds.m_extent;
 
     if (box.IsValid()) {
         const C44Matrix* world = &this->m_worldTransform;
@@ -4289,19 +4306,18 @@ CAaSphere CM2Model::GetCurrentBoundingSphere() {
         return result;
     }
 
-    M2Bounds* bounds = &data->m_sequences[this->m_bones->m_sequence.m_sequenceIndex].m_bounds;
+    const M2Bounds& bounds = GetRootSequenceBounds(*this);
     CAaSphere spheres[2];
     spheres[0].r = 0.0f;
     spheres[1].r = 0.0f;
 
     C44Matrix matrix = this->m_attachParent ? this->m_matrixF4 * this->m_scene->m_viewInv : this->m_worldTransform;
 
-    if (fnotequal(bounds->m_radius, 0.0f)) {
-        C3Vector center((bounds->m_extent.t.x + bounds->m_extent.b.x) * 0.5f, (bounds->m_extent.t.y + bounds->m_extent.b.y) * 0.5f, 0.5f * (bounds->m_extent.t.z + bounds->m_extent.b.z));
-        spheres[0].c = center * matrix;
+    if (fnotequal(bounds.m_radius, 0.0f)) {
+        spheres[0].c = bounds.m_extent.Center() * matrix;
     }
 
-    spheres[0].r = sqrtf(matrix.a1 * matrix.a1 + matrix.a2 * matrix.a2 + matrix.a0 * matrix.a0) * bounds->m_radius;
+    spheres[0].r = sqrtf(matrix.a1 * matrix.a1 + matrix.a2 * matrix.a2 + matrix.a0 * matrix.a0) * bounds.m_radius;
 
     M2Data* current = this->m_shared->m_data;
     uint32_t particleCount = current->m_particles.m_count;

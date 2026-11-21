@@ -91,8 +91,12 @@ def main():
         ),
         "shared_model_bounds": (
             extract(model, "namespace {\nclass ModelLoadReference", "bool CM2Model::HasLoadFailed()")
-            + extract(model, "static M2Bounds CachedModelBounds(", "CAaBox CM2Model::GetCurrentBoundingBox()")
+            + extract(model, "static M2Bounds CachedModelBounds(", "static const M2Bounds& GetRootSequenceBounds(")
             + extract(model, "static M2Bounds ReadModelBounds(", "C44Matrix CM2Model::GetAnimatedWorldTransform()")
+        ),
+        "sequence_bounds": (
+            extract(model, "static const M2Bounds& GetRootSequenceBounds(", "void CM2Model::UnoptimizeVisibleGeometry()")
+            + extract(model, "CAaSphere CM2Model::GetCurrentBoundingSphere()", "\n}", include_stop=True)
         ),
         "doodad_preparation": extract(
             map_source, "void CMap::PrepareMapDoodadDefs()", "\n}", include_stop=True,
@@ -115,7 +119,7 @@ def main():
 
         for test in ("deferred_effect_test", "model_readiness_test", "model_allocation_test",
                      "model_consumer_test", "camera_target_test", "world_emitters_test",
-                     "doodad_bounds_test", "shared_bounds_preparation_test"):
+                     "doodad_bounds_test", "shared_bounds_preparation_test", "sequence_bounds_test"):
             executable = build / test
             subprocess.run(
                 [*compiler, "-std=c++20", "-UNDEBUG", "-Wall", "-Wextra", "-Werror",
