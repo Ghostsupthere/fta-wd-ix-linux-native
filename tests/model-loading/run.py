@@ -116,6 +116,17 @@ def main():
         "terrain_ray": extract(
             map_source, "static bool ReserveTerrainRayCells(", "World::ObjectCollisionData::ObjectCollisionData()",
         ),
+        "sequence_tracks": (
+            extract(shared, "template <class T>\nstatic bool RelocateSequenceTrack(", "\n}", include_stop=True)
+            + extract(shared, "int32_t M2Init(uint8_t* base, uint32_t size, const M2Data& data, M2TrackBase& track)",
+                      "// VERIFY: 89b5df34 auto")
+        ),
+        "sequence_complete": extract(
+            shared, "static bool ValidSequenceAliasRing(", "// VERIFY: 803bac57 auto",
+        ),
+        "shoulder_scroll": extract(
+            shared, "static void RepairShoulderScrollPeriod(", "\n}", include_stop=True,
+        ),
         "model_allocations": extract(
             model,
             "    uint8_t* memory = static_cast<uint8_t*>(SMemAlloc(emitterBytes + emitterOffset,",
@@ -132,7 +143,7 @@ def main():
         for test in ("deferred_effect_test", "model_readiness_test", "model_allocation_test",
                      "model_consumer_test", "camera_target_test", "world_emitters_test",
                      "doodad_bounds_test", "shared_bounds_preparation_test", "sequence_bounds_test",
-                     "bulk_query_test"):
+                     "bulk_query_test", "external_sequence_test"):
             executable = build / test
             subprocess.run(
                 [*compiler, "-std=c++20", "-UNDEBUG", "-Wall", "-Wextra", "-Werror",

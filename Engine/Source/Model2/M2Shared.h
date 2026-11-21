@@ -91,7 +91,6 @@ class CM2Shared {
     bool ConvertTextureValuesToCombos();
     void DestroyBuffers();
     int32_t FinishLoading();
-    int32_t FinishLoadingLowPrioritySequence(uint32_t sequenceIndex, uint8_t* buffer, uint32_t size);
     int32_t FinishLoadingLowPrioritySequence(uint32_t sequenceIndex, CAsyncObject* object);
     int32_t FinishLoadingSkinProfile(uint32_t size);
     uint32_t GetSkinProfileIndex(uint32_t maxBones);

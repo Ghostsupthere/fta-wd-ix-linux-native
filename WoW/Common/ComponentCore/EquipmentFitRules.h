@@ -271,4 +271,3 @@ inline ParseResult Parse(std::string_view input) {
 }
 
 } // namespace EquipmentFit
-

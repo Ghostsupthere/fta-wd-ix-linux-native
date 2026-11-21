@@ -56,6 +56,19 @@ static uint8_t* s_sequenceData;
 
 // STATIC: 0x00D4125C
 static uint32_t s_sequenceSize;
+static bool s_validateSequence;
+
+template <class T>
+static bool RelocateSequenceTrack(M2Array<T>& array) {
+    if (array.m_count && (array.m_offset > s_sequenceSize ||
+        array.m_count > (s_sequenceSize - array.m_offset) / sizeof(T))) {
+        return false;
+    }
+    if (!s_validateSequence) {
+        array.Relocate(s_sequenceData);
+    }
+    return true;
+}
 
 // VERIFY: eb5cb8e9 auto
 // OFFSET: 0x00835950
@@ -198,8 +211,8 @@ int32_t M2Init(uint8_t* base, uint32_t size, const M2Data& data, M2TrackBase& tr
         } else if (!M2Init(base, size, data, track.m_sequenceTimes)) {
             return 0;
         }
-    } else if (s_sequenceIndex < track.m_sequenceTimes.m_count) {
-        track.m_sequenceTimes[s_sequenceIndex].Relocate(s_sequenceData);
+    } else if (track.m_loopIndex == 0xFFFF && s_sequenceIndex < track.m_sequenceTimes.m_count) {
+        return RelocateSequenceTrack(track.m_sequenceTimes[s_sequenceIndex]);
     }
 
     return 1;
@@ -232,14 +245,9 @@ int32_t M2Init(uint8_t* base, uint32_t size, const M2Data& data, M2Track<T>& tra
         } else if (!M2Init(base, size, data, track.m_sequenceKeys)) {
             return 0;
         }
-    } else {
-        if (s_sequenceIndex < track.m_sequenceTimes.m_count) {
-            track.m_sequenceTimes[s_sequenceIndex].Relocate(s_sequenceData);
-        }
-
-        if (s_sequenceIndex < track.m_sequenceKeys.m_count) {
-            track.m_sequenceKeys[s_sequenceIndex].Relocate(s_sequenceData);
-        }
+    } else if (track.m_loopIndex == 0xFFFF) {
+        return (s_sequenceIndex >= track.m_sequenceTimes.m_count || RelocateSequenceTrack(track.m_sequenceTimes[s_sequenceIndex])) &&
+            (s_sequenceIndex >= track.m_sequenceKeys.m_count || RelocateSequenceTrack(track.m_sequenceKeys[s_sequenceIndex]));
     }
 
     return 1;
@@ -1403,85 +1411,70 @@ int32_t M2Init(uint8_t* base, uint32_t size, M2Data& data) {
     return M2Init(base, size, data, data.m_name) && M2Init(base, size, data, data.m_loops) && M2Init(base, size, data, data.m_sequences) && M2Init(base, size, data, data.m_sequenceIdxHashById) && M2Init(base, size, data, data.m_bones) && M2Init(base, size, data, data.m_boneIndicesById) && M2Init(base, size, data, data.m_vertices) && M2Init(base, size, data, data.m_colors) && M2Init(base, size, data, data.m_textures) && M2Init(base, size, data, data.m_textureWeights) && M2Init(base, size, data, data.m_textureTransforms) && M2Init(base, size, data, data.m_textureIndicesById) && M2Init(base, size, data, data.m_materials) && M2Init(base, size, data, data.m_boneCombos) && M2Init(base, size, data, data.m_textureCombos) && M2Init(base, size, data, data.m_textureCoordCombos) && M2Init(base, size, data, data.m_textureWeightCombos) && M2Init(base, size, data, data.m_textureTransformCombos) && M2Init(base, size, data, data.m_collisionIndices) && M2Init(base, size, data, data.m_collisionPositions) && M2Init(base, size, data, data.m_collisionFaceNormals) && M2Init(base, size, data, data.m_attachments) && M2Init(base, size, data, data.m_attachmentIndicesById) && M2Init(base, size, data, data.m_events) && M2Init(base, size, data, data.m_lights) && M2Init(base, size, data, data.m_cameras) && M2Init(base, size, data, data.m_cameraIndicesById) && M2Init(base, size, data, data.m_ribbons) && M2Init(base, size, data, data.m_particles) && (!(data.m_flags & 8) || M2Init(base, size, data, data.m_textureCombinerCombos));
 }
 
-// VERIFY: 8000b812 manual
-// OFFSET: 0x0083C6E0
-int32_t CM2Shared::FinishLoadingLowPrioritySequence(uint32_t sequenceIndex, uint8_t* buffer, uint32_t size) {
-    // Not in the original client, which was 32-bit and could not hit this.
-    // M2Array stores relocated pointers as SELF-RELATIVE 32-bit deltas
-    // (M2Data.h Set/Data), so every byte of the anim buffer must lie within
-    // +/-2GB of every descriptor in the m2 block. On 64-bit glibc that is not
-    // a given: large allocations live in mmap space and small ones in the
-    // heap, terabytes apart, so relocating this buffer would store truncated
-    // deltas that read back as wild pointers -- a SIGSEGV in CM2Model::FindKey
-    // that the sequence-residency flag could not catch, because relocation
-    // "succeeded" and set it.
-    //
-    // Refusing here leaves the sequence non-resident, which the track
-    // residency gates animate as a zero-key track -- the default pose, the
-    // same pose the model would hold one frame later if the data were simply
-    // still in flight.
-    //
-    // THIS IS A MITIGATION, NOT A CURE. It converts a wild write into a
-    // missing animation; it does not make the allocation land in range. The
-    // real fix is a shared arena for the m2 block and its anim payloads so
-    // the 32-bit delta is always representable.
-    {
-        intptr_t dataLo = reinterpret_cast<intptr_t>(this->m_data);
-        intptr_t dataHi = dataLo + static_cast<intptr_t>(this->m_fileSize);
-        intptr_t bufLo = reinterpret_cast<intptr_t>(buffer);
-        intptr_t bufHi = bufLo + static_cast<intptr_t>(size);
-
-        if (bufHi - dataLo > 0x7F000000LL || dataHi - bufLo > 0x7F000000LL) {
-            return 0;
+static bool ValidSequenceAliasRing(const M2Data& data, uint32_t sequenceIndex) {
+    const auto& sequences = data.m_sequences;
+    uint32_t alias = sequenceIndex;
+    for (uint32_t visited = 0; visited < sequences.m_count && alias < sequences.m_count; ++visited) {
+        alias = sequences[alias].m_aliasNext;
+        if (alias == sequenceIndex) {
+            return true;
         }
     }
-
-    s_sequenceIndex = sequenceIndex;
-    s_sequenceData = buffer;
-
-    int32_t result = M2Init(reinterpret_cast<uint8_t*>(this->m_data), this->m_fileSize, *this->m_data);
-    M2Sequence* sequence = &this->m_data->m_sequences[sequenceIndex];
-
-    s_sequenceIndex = 0xFFFFFFFF;
-    s_sequenceData = nullptr;
-    s_sequenceSize = 0;
-
-    if (!result) {
-        DebugLog("Corrupt model sequence data: %s (%d)", this->m_fileName, sequenceIndex);
-        return 0;
-    }
-
-    sequence->m_flags = (sequence->m_flags & ~0x30u) | 0x20;
-
-    return 1;
+    return false;
 }
 
 // VERIFY: b8d661f9 manual
 // OFFSET: 0x0083CA90
 int32_t CM2Shared::FinishLoadingLowPrioritySequence(uint32_t sequenceIndex, CAsyncObject* object) {
-    M2Sequence* sequence = &this->m_data->m_sequences[sequenceIndex];
-
-    if (!this->FinishLoadingLowPrioritySequence(sequenceIndex, static_cast<uint8_t*>(object->m_buffer), object->m_size)) {
+    if (!this->m_data || !object || !object->m_buffer || !ValidSequenceAliasRing(*this->m_data, sequenceIndex)) {
         return 0;
     }
 
-#if defined(WOWDECOMP_LINUX)
-    // Aliases share the buffer, so a mirrored copy mirrors each key array once.
-    WxlModelMirror::Seen mirrored;
-    const bool mirror = (this->m_flags & WxlModelMirror::kSharedFlag) != 0;
-    if (mirror) WxlModelMirror::MirrorLoadedSequence(*this->m_data, sequenceIndex, mirrored);
-#endif
-
-    for (uint16_t* alias = &sequence->m_aliasNext; *alias != sequenceIndex; alias = &this->m_data->m_sequences[*alias].m_aliasNext) {
-        if (!this->FinishLoadingLowPrioritySequence(*alias, static_cast<uint8_t*>(object->m_buffer), object->m_size)) {
-            return 0;
-        }
-#if defined(WOWDECOMP_LINUX)
-        if (mirror) WxlModelMirror::MirrorLoadedSequence(*this->m_data, *alias, mirrored);
-#endif
+    auto* data = this->m_data;
+    auto* modelBytes = reinterpret_cast<uint8_t*>(data);
+    auto* buffer = static_cast<uint8_t*>(object->m_buffer);
+    // Every relative track pointer must fit in a signed 32-bit descriptor offset.
+    const auto modelAddress = reinterpret_cast<intptr_t>(modelBytes);
+    const auto bufferAddress = reinterpret_cast<intptr_t>(buffer);
+    if (bufferAddress + object->m_size - modelAddress > 0x7F000000LL ||
+        modelAddress + this->m_fileSize - bufferAddress > 0x7F000000LL) {
+        return 0;
     }
 
-    return 1;
+    s_sequenceData = buffer;
+    s_sequenceSize = object->m_size;
+    s_validateSequence = true;
+    s_sequenceIndex = sequenceIndex;
+    bool valid = true;
+    do {
+        valid = M2Init(modelBytes, this->m_fileSize, *data);
+        s_sequenceIndex = data->m_sequences[s_sequenceIndex].m_aliasNext;
+    } while (valid && s_sequenceIndex != sequenceIndex);
+
+    s_validateSequence = false;
+    if (valid) {
+#if defined(WOWDECOMP_LINUX)
+        WxlModelMirror::Seen mirrored;
+        const bool mirror = (this->m_flags & WxlModelMirror::kSharedFlag) != 0;
+#endif
+        do {
+            M2Init(modelBytes, this->m_fileSize, *data);
+#if defined(WOWDECOMP_LINUX)
+            if (mirror) WxlModelMirror::MirrorLoadedSequence(*data, s_sequenceIndex, mirrored);
+#endif
+            M2Sequence& sequence = data->m_sequences[s_sequenceIndex];
+            sequence.m_flags = (sequence.m_flags & ~0x30u) | 0x20;
+            s_sequenceIndex = sequence.m_aliasNext;
+        } while (s_sequenceIndex != sequenceIndex);
+    }
+    s_sequenceIndex = 0xFFFFFFFF;
+    s_sequenceData = nullptr;
+    s_sequenceSize = 0;
+
+    if (!valid) {
+        DebugLog("Corrupt model sequence data: %s (%d)", this->m_fileName, sequenceIndex);
+    }
+    return valid;
 }
 
 // VERIFY: 803bac57 auto
@@ -1624,6 +1617,39 @@ int32_t CM2Shared::Initialize() {
     return 1;
 }
 
+static void RepairShoulderScrollPeriod(M2Data& data, const char* path) {
+    if (data.m_loops.m_count != 1 || data.m_loops[0].m_length != 2 || data.m_textureTransforms.m_count != 1) {
+        return;
+    }
+
+    const auto& translation = data.m_textureTransforms[0].m_translation;
+    if (translation.m_loopIndex != 0 || translation.m_sequenceTimes.m_count != 1) {
+        return;
+    }
+    const auto& times = translation.m_sequenceTimes[0];
+    if (times.m_count != 2 || times[0] != 0 || times[1] != 10000) {
+        return;
+    }
+
+    const char* name = path;
+    for (const char* c = path; *c; ++c) {
+        if (*c == '/' || *c == '\\') {
+            name = c + 1;
+        }
+    }
+    constexpr const char* affected[] = {
+        "dkt6_blood_lshoulder.m2", "dkt6_blood_rshoulder.m2",
+        "dkt6_frost_lshoulder.m2", "dkt6_frost_rshoulder.m2",
+        "dkt6_unholy_lshoulder.m2", "dkt6_unholy_rshoulder.m2",
+    };
+    for (const char* candidate : affected) {
+        if (!SStrCmpI(name, candidate, 0x7FFFFFFF)) {
+            data.m_loops[0].m_length = times[1];
+            return;
+        }
+    }
+}
+
 // INLINED
 int32_t CM2Shared::FinishLoading() {
     if (this->m_flags & 1) {
@@ -1636,6 +1662,7 @@ int32_t CM2Shared::FinishLoading() {
     }
 
     this->m_data->m_flags &= ~0x60u;
+    RepairShoulderScrollPeriod(*this->m_data, this->m_fileName);
 
 #if defined(WOWDECOMP_LINUX)
     if (this->m_flags & WxlModelMirror::kSharedFlag) {
@@ -1889,8 +1916,11 @@ void CM2Shared::LowPrioritySequenceLoadedCallback(void* param) {
     if (animationResult == ModernAnimationTransformResult::Unwrapped)
         WxlNativeDiagnostic("modern-anim: unwrapped sequence %u for %s", load->m_sequenceIndex, shared->m_fileName);
 #endif
+    if (!shared->FinishLoadingLowPrioritySequence(load->m_sequenceIndex, load->m_asyncObject)) {
+        CM2Shared::LowPrioritySequenceFailedCallback(param);
+        return;
+    }
     shared->m_flags |= 0x10;
-    shared->FinishLoadingLowPrioritySequence(load->m_sequenceIndex, load->m_asyncObject);
 
     CM2SequencePlayBack* playback = load->m_playbacks.Head();
 
@@ -1947,7 +1977,21 @@ void CM2Shared::LowPrioritySequenceFailedCallback(void* param) {
 // VERIFY: 0ec0803c manual
 // OFFSET: 0x0083DA10
 CM2SequenceLoad* CM2Shared::LoadLowPrioritySequence(uint16_t sequenceIndex) {
+    if (!this->m_data || !this->m_lowPrioritySequenceBuffers || !ValidSequenceAliasRing(*this->m_data, sequenceIndex) ||
+        this->m_lowPrioritySequenceCount >= this->m_lowPrioritySequenceCapacity) {
+        return nullptr;
+    }
     M2Sequence* sequence = &this->m_data->m_sequences[sequenceIndex];
+    const M2Sequence* source = sequence;
+    do {
+        if (!(source->m_flags & 0x40)) {
+            break;
+        }
+        source = &this->m_data->m_sequences[source->m_aliasNext];
+    } while (source != sequence);
+    if (source->m_flags & 0x40) {
+        return nullptr;
+    }
     CM2SequenceLoad* load = this->m_sequenceLoads.NewNode(2, 0, 0);
 
     if (!load) {
@@ -1956,12 +2000,6 @@ CM2SequenceLoad* CM2Shared::LoadLowPrioritySequence(uint16_t sequenceIndex) {
 
     load->m_sequenceIndex = sequenceIndex;
     load->m_shared = this;
-
-    M2Sequence* source = sequence;
-
-    while (source->m_flags & 0x40) {
-        source = &this->m_data->m_sequences[source->m_aliasNext];
-    }
 
     char fileName[260];
     MakeAnimFileName(this->m_fileName, source->m_id, source->m_variationIndex, fileName);
