@@ -34,6 +34,9 @@ struct FrameRecord {
     uint32_t draws;
     uint64_t triangles;
     uint64_t frameNs;
+    uint64_t frameId;
+    double gpuRenderMs;
+    bool gpuRenderSample;
 };
 
 uint64_t NowNs() {
@@ -56,6 +59,7 @@ FrameRecord g_ring[kKeptFrames] = {};
 uint32_t g_count = 0;          // frames stored (<= kKeptFrames)
 uint32_t g_next = 0;           // ring slot for the next frame
 uint64_t g_lastFrameEnd = 0;
+uint64_t g_frameId = 1;
 uint64_t g_logIntervalNs = 0;
 uint64_t g_lastLog = 0;
 bool g_logResolved = false;
@@ -86,6 +90,13 @@ void LogSummary() {
         std::fprintf(stderr, " %s %.*f/%.*f ms", s.zones[i].name,
             precision, s.zones[i].selfMs, precision, s.zones[i].totalMs);
         if (s.zones[i].selfDraws >= 0.5) std::fprintf(stderr, " (%.0f draws)", s.zones[i].selfDraws);
+    }
+    if (GpuTimingEnabled()) {
+        if (s.gpuRenderSamples) {
+            std::fprintf(stderr, " | GPU render span %.3f ms (%u samples)", s.gpuRenderMs, s.gpuRenderSamples);
+        } else {
+            std::fprintf(stderr, " | GPU render span unavailable (0 samples)");
+        }
     }
     std::fprintf(stderr, "\n");
 }
@@ -220,6 +231,7 @@ void CountDraw(uint32_t primitives) {
 void EndFrame() {
     if (!g_enabled.load(std::memory_order_relaxed) || !OnOwnerThread()) return;
     const uint64_t now = NowNs();
+    g_open.frameId = g_frameId++;
     if (g_lastFrameEnd) {
         g_open.frameNs = now - g_lastFrameEnd;
         g_ring[g_next] = g_open;
@@ -239,6 +251,30 @@ void EndFrame() {
     }
 }
 
+bool GpuTimingEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_PROFILE_GPU");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+
+uint64_t CurrentFrameId() {
+    return Enabled() && OnOwnerThread() ? g_frameId : 0;
+}
+
+void RecordGpuRenderTime(uint64_t frameId, double milliseconds) {
+    const uint64_t current = CurrentFrameId();
+    if (!frameId || frameId >= current || current - frameId > g_count) return;
+
+    const uint32_t age = static_cast<uint32_t>(current - frameId);
+    FrameRecord& frame = g_ring[(g_next + kKeptFrames - age) % kKeptFrames];
+    if (frame.frameId == frameId) {
+        frame.gpuRenderMs = milliseconds;
+        frame.gpuRenderSample = true;
+    }
+}
+
 uint32_t Summarize(uint32_t frameCount, Summary& out) {
     std::memset(&out, 0, sizeof(out));
     for (uint32_t i = 0; i < Count; ++i) out.zones[i].name = kNames[i];
@@ -251,6 +287,10 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
         frameNs += static_cast<double>(r.frameNs);
         draws += r.draws;
         triangles += static_cast<double>(r.triangles);
+        if (r.gpuRenderSample) {
+            out.gpuRenderMs += r.gpuRenderMs;
+            ++out.gpuRenderSamples;
+        }
         for (uint32_t i = 0; i < Count; ++i) {
             self[i] += static_cast<double>(r.self[i]);
             total[i] += static_cast<double>(r.total[i]);
@@ -264,6 +304,7 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
     out.fps = out.frameMs > 0.0 ? 1000.0 / out.frameMs : 0.0;
     out.drawCalls = draws / n;
     out.triangles = triangles / n;
+    if (out.gpuRenderSamples) out.gpuRenderMs /= out.gpuRenderSamples;
     for (uint32_t i = 0; i < Count; ++i) {
         out.zones[i].selfMs = self[i] / n * 1.0e-6;
         out.zones[i].totalMs = total[i] / n * 1.0e-6;
@@ -284,6 +325,7 @@ void Reset() {
     g_count = 0;
     g_next = 0;
     g_lastFrameEnd = 0;
+    ++g_frameId;
     std::memset(&g_open, 0, sizeof(g_open));
     g_current = nullptr;
 }

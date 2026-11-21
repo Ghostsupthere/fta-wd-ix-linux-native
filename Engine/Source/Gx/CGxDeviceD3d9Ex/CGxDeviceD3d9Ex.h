@@ -9,6 +9,9 @@
 #include <windows.h>
 #endif
 #include <d3d9.h>
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/Gx/CGxDeviceD3d9Ex/GpuRenderTimer.h"
+#endif
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
 #include "Engine/Source/Gx/CGxTex.h"
 #include "Engine/Source/Storm/H/stpl.h"
@@ -257,6 +260,10 @@ class CGxDeviceD3d9Ex : public CGxDevice {
     /* 3C44 */ uint32_t m_texCacheSize;
     /* 3C48 */ uint32_t m_deviceStates [DeviceStates_Last];
     /* 3F20 */ bool m_texEnabled [8];
+
+#if defined(WOWDECOMP_LINUX)
+    GpuRenderTimer m_gpuRenderTimer;
+#endif
 
     virtual void ITexMarkAsUpdated(CGxTex* texId);
     virtual void IRsSendToHw(EGxRenderState which);

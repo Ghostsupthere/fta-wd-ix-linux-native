@@ -43,6 +43,8 @@ struct Summary {
     double drawCalls;    // average per frame
     double triangles;    // average per frame
     uint32_t frames;     // frames averaged
+    uint32_t gpuRenderSamples;
+    double gpuRenderMs;  // GPU timestamp span averaged over sampled frames
     ZoneLine zones[Count];
 };
 
@@ -65,6 +67,11 @@ void CountDraw(uint32_t primitives);
 
 // Marks the end of a frame (call once per presented frame).
 void EndFrame();
+
+// GPU queries report asynchronously. Use the original CPU frame ID when the result is ready.
+bool GpuTimingEnabled();
+uint64_t CurrentFrameId();
+void RecordGpuRenderTime(uint64_t frameId, double milliseconds);
 
 // Averages the most recent `frameCount` frames (at most the 240 kept). Returns how many frames it used; 0 means
 // no frame has been recorded yet.

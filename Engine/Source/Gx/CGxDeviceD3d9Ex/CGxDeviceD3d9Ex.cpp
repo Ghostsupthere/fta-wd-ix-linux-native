@@ -2732,6 +2732,9 @@ int32_t CGxDeviceD3d9Ex::ICreateD3dDevice(const CGxFormat& format) {
 // VERIFY: 22679807 manual
 // OFFSET: 0x006A1CE0
 void CGxDeviceD3d9Ex::IReleaseD3dResources(int32_t freeTextures, bool terminalDestroy) {
+#if defined(WOWDECOMP_LINUX)
+    this->m_gpuRenderTimer.Reset();
+#endif
     if (NativeVisualHooks::deviceLost) NativeVisualHooks::deviceLost();
     if (NativeVisualHooks::overlayDeviceLost) NativeVisualHooks::overlayDeviceLost();
     if (NativeVisualHooks::outlineDeviceLost) NativeVisualHooks::outlineDeviceLost();
@@ -3188,6 +3191,10 @@ void CGxDeviceD3d9Ex::ScenePresent() {
     // Destroyed in reverse order: the Present zone closes first, then the frame ends.
     struct FrameEnd { ~FrameEnd() { Profiler::EndFrame(); } } frameEnd;
     Profiler::Scope profilePresent(Profiler::Present);
+#if defined(WOWDECOMP_LINUX)
+    const bool gpuTiming = Profiler::GpuTimingEnabled();
+    if (gpuTiming) this->m_gpuRenderTimer.Poll();
+#endif
     if (this->m_context) {
         int32_t scrShotClick = this->m_scrShotClick;
 
@@ -3196,6 +3203,9 @@ void CGxDeviceD3d9Ex::ScenePresent() {
         if (NativeVisualHooks::overlayDraw) NativeVisualHooks::overlayDraw(this->m_d3dDevice);
         this->ISceneEnd();
         this->ICursorDraw();
+#if defined(WOWDECOMP_LINUX)
+        if (gpuTiming) this->m_gpuRenderTimer.End();
+#endif
 
         if (this->m_format.m_fixLag) {
             if (this->m_eventQuery) {
@@ -3230,6 +3240,9 @@ void CGxDeviceD3d9Ex::ScenePresent() {
 
         if (FAILED(this->m_d3dDevice->Present(nullptr, nullptr, nullptr, nullptr))) {
             this->m_context = 0;
+#if defined(WOWDECOMP_LINUX)
+            if (gpuTiming) this->m_gpuRenderTimer.Reset();
+#endif
         }
 
 #ifndef WOWDECOMP_LINUX
@@ -3246,6 +3259,12 @@ void CGxDeviceD3d9Ex::ScenePresent() {
     }
 
     this->ISceneBegin();
+#if defined(WOWDECOMP_LINUX)
+    // Offscreen render-target switches also call ISceneBegin. Mark only the frame boundary.
+    if (gpuTiming && this->m_context && this->m_inScene) {
+        this->m_gpuRenderTimer.Begin(this->m_d3dDevice);
+    }
+#endif
 }
 
 // VERIFY: 8cf389a5 manual
