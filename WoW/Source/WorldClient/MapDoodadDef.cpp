@@ -1,3 +1,4 @@
+#include <cmath>
 #include "MapDoodadDef.h"
 #include "WoW/Source/WorldClient/WorldLightingConstants.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
@@ -46,25 +47,29 @@ void CMapDoodadDef::ExtendChunkBounds() {
     }
 }
 
+static CAaBox DoodadCachedBounds(const CM2Model* model) {
+    return model && model->m_shared ? model->m_shared->m_boundingBox : CAaBox{};
+}
+
 // VERIFY: 2d4db79f manual
 // OFFSET: 0x007BDB10
 void CMapDoodadDef::UpdateBounds() {
-    CAaBox box;
-    CAaSphere sphere;
-    sphere.r = 0.0f;
-    CAaBox collisionBox;
+    CAaBox box{};
+    CAaSphere sphere{};
+    CAaBox collisionBox{};
 
-    if (this->m_model) {
-        box = this->m_model->GetBoundingBox();
-        sphere = this->m_model->GetBoundingSphere();
-
-        CM2Model* model = this->m_model;
-
-        if (!(model->m_shared->m_flags & 0x1)) {
-            model->WaitForLoad(nullptr);
-        }
-
+    CM2Model* model = this->m_model;
+    const bool ready = model && model->WaitForLoad(nullptr) && this->m_model == model;
+    if (ready) {
+        box = model->GetBoundingBox();
+        sphere = model->GetBoundingSphere();
         collisionBox = model->m_shared->m_data->m_collisionBounds.m_extent;
+    } else {
+        collisionBox = DoodadCachedBounds(this->m_model);
+        box = collisionBox;
+        sphere.c = box.Center();
+        const C3Vector half = (box.t - box.b) * 0.5f;
+        sphere.r = std::sqrt(half.SquaredMag());
     }
 
     this->m_sphere.c = sphere.c * this->m_mat;
@@ -105,8 +110,8 @@ void CMapDoodadDef::UpdateBounds() {
 
     this->m_fadeLevel = fadeLevel;
 
-    if (!(CWorld::enables & Enable_NoAnimation) && fadeLevel < 3) {
-        this->m_model->m_fFlags &= ~0x40u;
+    if (ready && !(CWorld::enables & Enable_NoAnimation) && fadeLevel < 3) {
+        model->m_fFlags &= ~0x40u;
     }
 }
 
@@ -255,7 +260,8 @@ void CMapDoodadDef::CreateModel(const char* fileName, CMapDoodadDef* doodadDef, 
 // VERIFY: 5cc39abd manual
 // OFFSET: 0x007C1380
 void CMapDoodadDef::UpdateMatrixOnly(const C44Matrix& matrix) {
-    if (!this->m_model) {
+    CM2Model* model = this->m_model;
+    if (!model) {
         return;
     }
 
@@ -265,37 +271,25 @@ void CMapDoodadDef::UpdateMatrixOnly(const C44Matrix& matrix) {
     this->m_position.z = this->m_identity.d2;
     this->m_position *= matrix;
     this->m_mat = this->m_identity * matrix;
-    CAaBox box;
-    box.b = C3Vector(0.0f, 0.0f, 0.0f);
-    box.t = C3Vector(0.0f, 0.0f, 0.0f);
-    CAaBox collisionBox;
-    collisionBox.b = C3Vector(0.0f, 0.0f, 0.0f);
-    collisionBox.t = C3Vector(0.0f, 0.0f, 0.0f);
-    CAaSphere sphere;
-    sphere.c = C3Vector(0.0f, 0.0f, 0.0f);
-    sphere.r = 0.0f;
+    CAaBox box{};
+    CAaBox collisionBox{};
+    CAaSphere sphere{};
 
-    if (this->m_model->IsLoaded(0, 0)) {
-        box = this->m_model->GetBoundingBox();
-        CM2Model* model = this->m_model;
-
-        if (!(model->m_shared->m_flags & 0x1)) {
-            model->WaitForLoad(nullptr);
-        }
-
+    if (model->IsLoaded(0, 0) && model->WaitForLoad(nullptr) && this->m_model == model) {
+        box = model->GetBoundingBox();
         collisionBox = model->m_shared->m_data->m_collisionBounds.m_extent;
-        sphere = this->m_model->GetBoundingSphere();
+        sphere = model->GetBoundingSphere();
     } else {
-        collisionBox = this->m_model->m_shared->m_boundingBox;
+        collisionBox = DoodadCachedBounds(this->m_model);
     }
 
     this->m_sphere.c = sphere.c * this->m_mat;
     this->m_sphere.r = this->m_scale * sphere.r;
     CWorldMath::TransformAABox(this->m_mat, box, this->m_bbox);
     CWorldMath::TransformAABox(this->m_mat, collisionBox, this->m_bboxDoodadDef);
-    CM2Model* model = this->m_model;
-    model->m_fFlags |= 0x8000;
-    model->m_worldTransform = this->m_mat;
+    if (CM2Model* current = this->m_model) {
+        current->SetWorldTransform(this->m_mat);
+    }
     SI2::Set3DPosition(&this->m_soundKitObject, &this->m_position);
 }
 

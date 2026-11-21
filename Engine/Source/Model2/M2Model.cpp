@@ -5251,8 +5251,8 @@ uint32_t CM2Model::ProcessSequenceCallback(uint32_t boneIndex, uint32_t frame, u
 // VERIFY: 745168f8 manual
 // OFFSET: 0x0082EC30
 void CM2Model::GetCollisionFacets(const CAaBox& box, const C44Matrix& transform, TSGrowableArray<CFacet>& facets) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    if (this->HasLoadFailed() || (!this->IsLoaded() && !this->WaitForLoad(nullptr))) {
+        return;
     }
 
     M2Data* data = this->m_shared->m_data;

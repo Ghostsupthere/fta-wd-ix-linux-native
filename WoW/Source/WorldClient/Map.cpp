@@ -6421,9 +6421,9 @@ void CMap::UpdateDoodadDefBounds(CMapDoodadDef* doodadDef) {
             doodadDef->m_sphere.r = sqrtf(dx * dx + (dy * dy + dz * dz));
         }
 
-        CM2Model* current = doodadDef->m_model;
-        current->m_fFlags |= 0x8000;
-        current->m_worldTransform = doodadDef->m_mat;
+        if (CM2Model* current = doodadDef->m_model) {
+            current->SetWorldTransform(doodadDef->m_mat);
+        }
     }
 
     doodadDef->m_staticFlags &= ~0x1u;
