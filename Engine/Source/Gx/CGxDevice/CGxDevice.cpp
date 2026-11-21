@@ -2,6 +2,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <new>
 #include "Engine/Source/Storm/H/storm.h"
@@ -11,6 +12,7 @@
 #include "Engine/Source/Gx/CGxDevice/CGxShader.h"
 #include "Engine/Source/Gx/CGxPool.h"
 #include "Engine/Source/Gx/Gx.h"
+#include "Engine/Source/Gx/ShaderConstantUpdate.h"
 #include "Engine/Source/Os/Input.h"
 #include "Engine/Source/Os/OsFile.h"
 #include "Engine/Source/Os/Processor.h"
@@ -850,29 +852,21 @@ void CGxDevice::ShaderConstantsSet(EGxShTarget target, uint32_t index, const flo
     ShadowConstants& shadow = s_shadowConstants[target ? 0 : 1];
     float* dest = &shadow.constants[index * 4];
 
-    for (uint32_t i = index; i < index + count; i++) {
-        int32_t changed = 0;
-
-        for (uint32_t c = 0; c < 4; c++) {
-            if (constants[c] != dest[c]) {
-                dest[c] = constants[c];
-                changed = 1;
-            }
+#if defined(WOWDECOMP_LINUX) && defined(__SSE2__)
+    static const bool useSimd = [] {
+        const char* setting = std::getenv("WXL_SHADER_CONSTANT_SIMD");
+        const bool enabled = setting && std::strcmp(setting, "1") == 0;
+        if (setting) {
+            std::fprintf(stderr, "WXL_SHADER_CONSTANT_SIMD=%u\n", enabled ? 1u : 0u);
         }
-
-        if (changed) {
-            if (shadow.dirtyMin > i) {
-                shadow.dirtyMin = i;
-            }
-
-            if (shadow.dirtyMax < i) {
-                shadow.dirtyMax = i;
-            }
-        }
-
-        dest += 4;
-        constants += 4;
+        return enabled;
+    }();
+    if (useSimd) {
+        GxShaderConstantUpdate::Simd(dest, constants, index, count, shadow.dirtyMin, shadow.dirtyMax);
+        return;
     }
+#endif
+    GxShaderConstantUpdate::Scalar(dest, constants, index, count, shadow.dirtyMin, shadow.dirtyMax);
 }
 
 // VERIFY: 713bcd86 manual
