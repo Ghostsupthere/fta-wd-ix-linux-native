@@ -27,7 +27,6 @@ int main() {
         }
         Profiler::CountDraw(100);
         Profiler::CountDraw(50);
-        Profiler::CountM2MergedSections(2);
         Profiler::EndFrame();
     }
     assert(Profiler::Summarize(100, s) == 5);
@@ -39,7 +38,7 @@ int main() {
     assert(std::fabs(inner.selfMs - inner.totalMs) < 0.01);            // no nested zones inside
     assert(outer.totalMs >= outer.selfMs + inner.totalMs - 0.1);      // total includes the child
     assert(outer.selfMs >= 3.5 && outer.selfMs < 8.0);                 // the 4 ms outside the children
-    assert(s.drawCalls == 2.0 && s.triangles == 150.0 && s.m2MergedSections == 2.0);
+    assert(s.drawCalls == 2.0 && s.triangles == 150.0);
     assert(s.frameMs >= 11.5 && s.fps > 0.0 && s.fps < 90.0);
     assert(s.zones[Profiler::Terrain].calls == 0.0);
 
@@ -63,7 +62,6 @@ int main() {
     assert(Profiler::Summarize(10, s) == 0);
     if (Profiler::M2DiagnosticsEnabled()) {
         using Type = Profiler::M2DrawType;
-        using Result = Profiler::M2MergeResult;
         Profiler::EndFrame();
         {
             Profiler::M2DrawScope doodad(Type::Doodad);
@@ -75,15 +73,10 @@ int main() {
             Profiler::CountDraw(24);
         }
         Profiler::CountDraw(10);
-        Profiler::CountM2MergeResult(Result::IndexGap);
-        Profiler::CountM2MergeResult(Result::DifferentModel);
-        Profiler::CountM2MergeResult(Result::IndexGap);
         Profiler::EndFrame();
         assert(Profiler::Summarize(1, s) == 1 && s.drawCalls == 4.0 && s.triangles == 58.0);
         assert(s.m2DrawsByType[static_cast<uint32_t>(Type::Doodad)] == 2.0);
         assert(s.m2DrawsByType[static_cast<uint32_t>(Type::Particle)] == 1.0);
-        assert(s.m2MergeResults[static_cast<uint32_t>(Result::IndexGap)] == 2.0);
-        assert(s.m2MergeResults[static_cast<uint32_t>(Result::DifferentModel)] == 1.0);
         Profiler::EndFrame();
         assert(Profiler::Summarize(2, s) == 2);
         assert(s.m2DrawsByType[static_cast<uint32_t>(Type::Doodad)] == 1.0);

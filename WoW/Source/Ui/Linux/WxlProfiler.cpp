@@ -25,13 +25,12 @@ int GetZones(lua_State* L) {
         lua_pushnil(L);
         return 1;
     }
-    lua_createtable(L, 0, 11);
+    lua_createtable(L, 0, 9);
     SetNumber(L, "frames", summary.frames);
     SetNumber(L, "frameMs", summary.frameMs);
     SetNumber(L, "fps", summary.fps);
     SetNumber(L, "drawCalls", summary.drawCalls);
     SetNumber(L, "triangles", summary.triangles);
-    SetNumber(L, "m2MergedSections", summary.m2MergedSections);
     SetNumber(L, "gpuRenderSamples", summary.gpuRenderSamples);
     if (summary.gpuRenderSamples) SetNumber(L, "gpuRenderMs", summary.gpuRenderMs);
     if (Profiler::M2DiagnosticsEnabled()) {
@@ -40,12 +39,6 @@ int GetZones(lua_State* L) {
             SetNumber(L, Profiler::M2DrawTypeName(static_cast<Profiler::M2DrawType>(i)), summary.m2DrawsByType[i]);
         }
         lua_setfield(L, -2, "m2DrawsByType");
-
-        lua_createtable(L, 0, static_cast<int>(Profiler::M2MergeResult::Count));
-        for (uint32_t i = 0; i < static_cast<uint32_t>(Profiler::M2MergeResult::Count); ++i) {
-            SetNumber(L, Profiler::M2MergeResultName(static_cast<Profiler::M2MergeResult>(i)), summary.m2MergeResults[i]);
-        }
-        lua_setfield(L, -2, "m2MergeResults");
     }
     lua_createtable(L, Profiler::Count, 0);
     for (uint32_t i = 0; i < Profiler::Count; ++i) {

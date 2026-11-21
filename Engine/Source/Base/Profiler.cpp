@@ -27,14 +27,8 @@ constexpr const char* kNames[Count] = {
 };
 
 constexpr uint32_t kM2DrawTypes = static_cast<uint32_t>(M2DrawType::Count);
-constexpr uint32_t kM2MergeResults = static_cast<uint32_t>(M2MergeResult::Count);
 constexpr const char* kM2DrawNames[kM2DrawTypes] = {
     "model", "projected", "doodad", "ribbon", "particle", "callback"
-};
-constexpr const char* kM2MergeNames[kM2MergeResults] = {
-    "compatible", "pass", "backend", "visual_hook", "fixed_function", "no_next_section", "section_flags", "alpha",
-    "material", "body_shape", "instancing", "local_vertices", "palette_limit", "index_buffer", "next_element_type",
-    "different_model", "shader", "draw_state", "batch_state", "index_gap", "index_range", "vertex_range", "different_palette"
 };
 thread_local M2DrawType g_m2DrawType = M2DrawType::Count;
 
@@ -44,9 +38,7 @@ struct FrameRecord {
     uint32_t calls[Count];
     uint32_t selfDraws[Count];
     uint32_t draws;
-    uint32_t m2MergedSections;
     uint32_t m2DrawsByType[kM2DrawTypes];
-    uint32_t m2MergeResults[kM2MergeResults];
     uint64_t triangles;
     uint64_t frameNs;
     uint64_t frameId;
@@ -106,19 +98,10 @@ void LogSummary() {
             precision, s.zones[i].selfMs, precision, s.zones[i].totalMs);
         if (s.zones[i].selfDraws >= 0.5) std::fprintf(stderr, " (%.0f draws)", s.zones[i].selfDraws);
     }
-    if (s.m2MergedSections > 0) {
-        std::fprintf(stderr, " | M2 merged sections %.2f/frame", s.m2MergedSections);
-    }
     if (M2DiagnosticsEnabled()) {
         std::fprintf(stderr, " | M2 draws/frame");
         for (uint32_t i = 0; i < kM2DrawTypes; ++i) {
             std::fprintf(stderr, " %s=%.2f", kM2DrawNames[i], s.m2DrawsByType[i]);
-        }
-        std::fprintf(stderr, " | M2 merge outcomes/frame compatible=%.2f", s.m2MergeResults[0]);
-        for (uint32_t i = 1; i < kM2MergeResults; ++i) {
-            if (s.m2MergeResults[i] > 0) {
-                std::fprintf(stderr, " %s=%.2f", kM2MergeNames[i], s.m2MergeResults[i]);
-            }
         }
     }
     if (GpuTimingEnabled()) {
@@ -264,18 +247,8 @@ const char* M2DrawTypeName(M2DrawType type) {
     return index < kM2DrawTypes ? kM2DrawNames[index] : "";
 }
 
-const char* M2MergeResultName(M2MergeResult result) {
-    const auto index = static_cast<uint32_t>(result);
-    return index < kM2MergeResults ? kM2MergeNames[index] : "";
-}
-
 M2DrawScope::M2DrawScope(M2DrawType type) : m_previous(g_m2DrawType) { g_m2DrawType = type; }
 M2DrawScope::~M2DrawScope() { g_m2DrawType = m_previous; }
-
-void CountM2MergeResult(M2MergeResult result) {
-    const auto index = static_cast<uint32_t>(result);
-    if (index < kM2MergeResults && Enabled() && OnOwnerThread()) ++g_open.m2MergeResults[index];
-}
 
 void CountDraw(uint32_t primitives) {
     if (!g_enabled.load(std::memory_order_relaxed) || !OnOwnerThread()) return;
@@ -284,11 +257,6 @@ void CountDraw(uint32_t primitives) {
     if (m2Type < kM2DrawTypes) ++g_open.m2DrawsByType[m2Type];
     g_open.triangles += primitives;
     if (g_current) ++g_open.selfDraws[g_current->Zone()];
-}
-
-void CountM2MergedSections(uint32_t sectionCount) {
-    if (!g_enabled.load(std::memory_order_relaxed) || !OnOwnerThread()) return;
-    g_open.m2MergedSections += sectionCount;
 }
 
 void EndFrame() {
@@ -351,10 +319,8 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
         frameNs += static_cast<double>(r.frameNs);
         draws += r.draws;
         triangles += static_cast<double>(r.triangles);
-        out.m2MergedSections += r.m2MergedSections;
         if (m2Diagnostics) {
             for (uint32_t i = 0; i < kM2DrawTypes; ++i) out.m2DrawsByType[i] += r.m2DrawsByType[i];
-            for (uint32_t i = 0; i < kM2MergeResults; ++i) out.m2MergeResults[i] += r.m2MergeResults[i];
         }
         if (r.gpuRenderSample) {
             out.gpuRenderMs += r.gpuRenderMs;
@@ -372,10 +338,8 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
     out.frameMs = frameNs / n * 1.0e-6;
     out.fps = out.frameMs > 0.0 ? 1000.0 / out.frameMs : 0.0;
     out.drawCalls = draws / n;
-    out.m2MergedSections /= n;
     if (m2Diagnostics) {
         for (double& count : out.m2DrawsByType) count /= n;
-        for (double& count : out.m2MergeResults) count /= n;
     }
     out.triangles = triangles / n;
     if (out.gpuRenderSamples) out.gpuRenderMs /= out.gpuRenderSamples;
