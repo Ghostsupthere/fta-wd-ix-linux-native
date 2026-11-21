@@ -929,6 +929,6 @@ void CSimpleMovieFrame::OnFrameRender(CRenderBatch* batch, uint32_t layer) {
     CSimpleFrame::OnFrameRender(batch, layer);
 
     if (layer == 2) {
-        batch->QueueCallback(&CSimpleMovieFrame::RenderMovie, this);
+        batch->QueueCallback(&CSimpleMovieFrame::RenderMovie, this, Profiler::UiCallbackMovie);
     }
 }

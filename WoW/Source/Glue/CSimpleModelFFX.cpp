@@ -140,6 +140,6 @@ void CSimpleModelFFX::OnFrameRender(CRenderBatch* batch, uint32_t layer) {
     this->CSimpleFrame::OnFrameRender(batch, layer);
 
     if (layer == 2) {
-        batch->QueueCallback(CSimpleModelFFX::Render, this);
+        batch->QueueCallback(CSimpleModelFFX::Render, this, Profiler::UiCallbackModelFfx);
     }
 }

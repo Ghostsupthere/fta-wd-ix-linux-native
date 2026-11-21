@@ -814,6 +814,7 @@ void CSimpleRender::DrawBatch(CRenderBatch* batch) {
     if (!CallbackList::IsEnd(node)) {
         Profiler::Scope profile(Profiler::UiDetailZone(Profiler::UiCallbacks, Profiler::UiRender));
         for (; !CallbackList::IsEnd(node); node = node->RawNext()) {
+            Profiler::Scope callbackProfile(Profiler::UiDetailZone(node->m_profileZone, Profiler::UiCallbacks));
             node->m_callback(node->m_param);
         }
     }

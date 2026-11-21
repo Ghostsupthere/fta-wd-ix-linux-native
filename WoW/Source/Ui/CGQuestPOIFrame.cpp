@@ -187,7 +187,7 @@ void CGQuestPOIFrame::OnFrameRender(CRenderBatch* batch, uint32_t layer) {
     CSimpleFrame::OnFrameRender(batch, layer);
 
     if (layer == 3) {
-        batch->QueueCallback(CGQuestPOIFrame::RenderCallback, this);
+        batch->QueueCallback(CGQuestPOIFrame::RenderCallback, this, Profiler::UiCallbackQuestPoi);
     }
 }
 

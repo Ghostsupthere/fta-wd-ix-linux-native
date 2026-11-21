@@ -595,7 +595,7 @@ void CGMinimapFrame::OnFrameRender(CRenderBatch* batch, uint32_t layer) {
     CSimpleFrame::OnFrameRender(batch, layer);
 
     if (!layer) {
-        batch->QueueCallback(CGMinimapFrame::RenderCallback, this);
+        batch->QueueCallback(CGMinimapFrame::RenderCallback, this, Profiler::UiCallbackMinimap);
     }
 }
 

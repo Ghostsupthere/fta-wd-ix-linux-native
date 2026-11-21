@@ -382,7 +382,7 @@ void CSimpleScrollFrame::OnFrameRender(CRenderBatch* batch, uint32_t layer) {
     CSimpleFrame::OnFrameRender(batch, layer);
 
     if (layer == 4) {
-        batch->QueueCallback(&CSimpleScrollFrame::RenderScrollChild, this);
+        batch->QueueCallback(&CSimpleScrollFrame::RenderScrollChild, this, Profiler::UiCallbackScroll);
     }
 }
 

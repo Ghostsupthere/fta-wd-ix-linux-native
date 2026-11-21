@@ -2195,7 +2195,7 @@ void CGWorldFrame::OnFrameRender(CRenderBatch* batch, uint32_t layer) {
     this->CSimpleFrame::OnFrameRender(batch, layer);
 
     if (!layer) {
-        batch->QueueCallback(CGWorldFrame::RenderWorld, this);
+        batch->QueueCallback(CGWorldFrame::RenderWorld, this, Profiler::UiCallbackWorld);
     }
 }
 

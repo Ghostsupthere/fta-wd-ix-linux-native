@@ -33,6 +33,15 @@ enum Id : uint32_t {
     UiTextures,
     UiText,
     UiCallbacks,
+    UiCallbackWorld,
+    UiCallbackUnitModel,
+    UiCallbackModel,
+    UiCallbackMinimap,
+    UiCallbackQuestPoi,
+    UiCallbackScroll,
+    UiCallbackMovie,
+    UiCallbackModelFfx,
+    UiCallbackOther,
     Count
 };
 

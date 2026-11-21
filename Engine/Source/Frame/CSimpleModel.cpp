@@ -643,13 +643,17 @@ void CSimpleModel::OnModelLoaded(CM2Model* model) {
     this->Resize(0);
 }
 
+Profiler::Id CSimpleModel::RenderCallbackProfile() const {
+    return Profiler::UiCallbackModel;
+}
+
 // VERIFY: 268cc7ee auto
 // OFFSET: 0x00960240
 void CSimpleModel::OnFrameRender(CRenderBatch* batch, uint32_t layer) {
     this->CSimpleFrame::OnFrameRender(batch, layer);
 
     if (this->m_model && layer == 2) {
-        batch->QueueCallback(&CSimpleModel::RenderModel, this);
+        batch->QueueCallback(&CSimpleModel::RenderModel, this, this->RenderCallbackProfile());
     }
 }
 

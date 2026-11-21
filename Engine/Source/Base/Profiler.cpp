@@ -24,7 +24,9 @@ constexpr const char* kNames[Count] = {
     "World render", "World scene", "Terrain", "WMO draw", "Weather",
     "M2 animate", "M2 draw", "Present", "Paint", "Client idle",
     "World update", "UI idle", "UI update", "UI render", "M2 transparent sort",
-    "UI layout", "UI frame updates", "UI OnUpdate scripts", "UI batch build", "UI textures", "UI text", "UI callbacks"
+    "UI layout", "UI frame updates", "UI OnUpdate scripts", "UI batch build", "UI textures", "UI text", "UI callbacks",
+    "UI callback world frame", "UI callback unit model", "UI callback other model", "UI callback minimap",
+    "UI callback quest POI", "UI callback scroll", "UI callback movie", "UI callback model effects", "UI callback other"
 };
 
 constexpr uint32_t kM2DrawTypes = static_cast<uint32_t>(M2DrawType::Count);
@@ -95,9 +97,10 @@ void LogSummary() {
     const uint32_t zoneCount = UiDetailEnabled() ? Count : UiLayout;
     for (uint32_t i = 0; i < zoneCount; ++i)
     {
-        const int precision = i == M2TransparentSort ? 3 : 2;
+        const int precision = (i == M2TransparentSort || i >= UiLayout) ? 3 : 2;
         std::fprintf(stderr, " %s %.*f/%.*f ms", s.zones[i].name,
             precision, s.zones[i].selfMs, precision, s.zones[i].totalMs);
+        if (i >= UiCallbackWorld) std::fprintf(stderr, " (%.2f calls)", s.zones[i].calls);
         if (s.zones[i].selfDraws >= 0.5) std::fprintf(stderr, " (%.0f draws)", s.zones[i].selfDraws);
     }
     if (M2DiagnosticsEnabled()) {
@@ -247,7 +250,10 @@ bool UiDetailEnabled() {
 Id UiDetailZone(Id detail, Id parent) {
     if (!UiDetailEnabled() || !Enabled() || !OnOwnerThread()) return Count;
     for (const auto* scope = g_current; scope; scope = scope->m_parent) {
-        if (scope->Zone() == static_cast<int32_t>(parent)) return detail;
+        const auto zone = scope->Zone();
+        // Nested scroll batches are already included in the outer callback group.
+        if (detail == UiCallbacks && zone == static_cast<int32_t>(UiCallbacks)) return Count;
+        if (zone == static_cast<int32_t>(parent)) return detail;
     }
     return Count;
 }

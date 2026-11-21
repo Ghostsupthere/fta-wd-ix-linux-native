@@ -14,6 +14,8 @@
 #include "Engine/Source/ModernAssets/NativeModelPresentation.h"
 #endif
 
+namespace Profiler { enum Id : uint32_t; }
+
 class CCamera;
 class CM2Lighting;
 class CM2Model;
@@ -88,6 +90,7 @@ class CSimpleModel : public CSimpleFrame {
     virtual void LoadXML(XMLNode* node, CStatus* status);
     virtual float GetWidth();
     virtual float GetHeight();
+    virtual Profiler::Id RenderCallbackProfile() const;
 
     CSimpleModel(CSimpleFrame* parent);
     int32_t AdvanceTime();

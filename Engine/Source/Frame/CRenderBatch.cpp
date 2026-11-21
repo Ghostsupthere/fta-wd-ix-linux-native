@@ -89,10 +89,11 @@ CRenderBatch::CRenderBatch() {
 
 // VERIFY: 6542125c manual
 // OFFSET: 0x004858E0
-void CRenderBatch::QueueCallback(void (*callback)(void*), void* param) {
+void CRenderBatch::QueueCallback(void (*callback)(void*), void* param, Profiler::Id profileZone) {
     RENDERCALLBACKNODE* node = this->m_callbacks.NewNode(2, 0, 0);
     node->m_callback = callback;
     node->m_param = param;
+    node->m_profileZone = profileZone;
     this->m_count++;
 }
 

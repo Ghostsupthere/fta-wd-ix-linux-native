@@ -20,6 +20,7 @@
 #include "WoW/Source/DB/Rec/CreatureModelDataRec.h"
 #include "Engine/Source/Services/Camera.h"
 #include "Engine/Source/Base/Handle.h"
+#include "Engine/Source/Base/Profiler.h"
 #include "Engine/Source/Tempest/CAaSphere.h"
 #include "WoW/Source/DB/DBClient/CreatureStats_C.h"
 
@@ -95,6 +96,10 @@ const char* CGCharacterModelBase::GetObjectTypeName() {
 // OFFSET: 0x005970E0
 int32_t CGCharacterModelBase::GetScriptMetaTable() {
     return CGCharacterModelBase::s_metatable;
+}
+
+Profiler::Id CGCharacterModelBase::RenderCallbackProfile() const {
+    return this->m_unitGuid != WOWGUID() ? Profiler::UiCallbackUnitModel : Profiler::UiCallbackModel;
 }
 
 // VERIFY: 8f4f2545 auto

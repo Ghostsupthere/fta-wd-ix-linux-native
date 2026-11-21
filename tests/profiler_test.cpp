@@ -102,5 +102,34 @@ int main() {
         assert(s.zones[Profiler::UiTextures].selfDraws == 0.0);
         assert(s.zones[Profiler::UiRender].selfDraws == 1.0);
     }
+    if (Profiler::UiDetailEnabled()) {
+        Profiler::Reset();
+        Profiler::EndFrame();
+        {
+            Profiler::Scope render(Profiler::UiRender);
+            Profiler::Scope callbacks(Profiler::UiDetailZone(Profiler::UiCallbacks, Profiler::UiRender));
+            {
+                Profiler::Scope world(Profiler::UiDetailZone(Profiler::UiCallbackWorld, Profiler::UiCallbacks));
+                Profiler::CountDraw(3);
+                Profiler::Scope worldRender(Profiler::WorldRender);
+                Profiler::CountDraw(100);
+            }
+            {
+                Profiler::Scope scroll(Profiler::UiDetailZone(Profiler::UiCallbackScroll, Profiler::UiCallbacks));
+                Profiler::CountDraw(2);
+                assert(Profiler::UiDetailZone(Profiler::UiCallbacks, Profiler::UiRender) == Profiler::Count);
+                Profiler::Scope portrait(Profiler::UiDetailZone(Profiler::UiCallbackUnitModel, Profiler::UiCallbacks));
+                Profiler::CountDraw(4);
+            }
+        }
+        Profiler::EndFrame();
+        assert(Profiler::Summarize(1, s) == 1 && s.zones[Profiler::UiCallbacks].calls == 1.0);
+        assert(s.zones[Profiler::UiCallbacks].selfDraws == 0.0);
+        assert(s.zones[Profiler::UiCallbackWorld].calls == 1.0 && s.zones[Profiler::UiCallbackWorld].selfDraws == 1.0);
+        assert(s.zones[Profiler::WorldRender].selfDraws == 1.0);
+        assert(s.zones[Profiler::UiCallbackScroll].selfDraws == 1.0);
+        assert(s.zones[Profiler::UiCallbackUnitModel].selfDraws == 1.0);
+        assert(s.drawCalls == 4.0 && s.triangles == 109.0);
+    }
     return 0;
 }

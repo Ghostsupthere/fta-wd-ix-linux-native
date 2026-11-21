@@ -43,6 +43,7 @@ class CGCharacterModelBase : public CSimpleModel {
     int32_t IsDrawable() override;
     void UpdateModel() override;
     void OnModelLoaded(CM2Model* model) override;
+    Profiler::Id RenderCallbackProfile() const override;
     virtual CM2Model* GetDuplicateUnitCharacterModel(CGUnit_C* unit);
 
     CGCharacterModelBase(CSimpleFrame* parent);
