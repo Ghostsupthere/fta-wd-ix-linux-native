@@ -47,7 +47,7 @@ class CCharacterCreation {
     static int32_t GetRandomClassID();
     static void GetRandomRaceAndSex(ComponentData* data);
     static int32_t Idle(const void* data, void* param);
-    static void InitCharacterComponents(ComponentData* data, bool randomize);
+    static bool InitCharacterComponents(ComponentData* data, bool randomize);
     static void Initialize();
     static bool IsClassAvailable(int32_t classID);
     static void OnHide();

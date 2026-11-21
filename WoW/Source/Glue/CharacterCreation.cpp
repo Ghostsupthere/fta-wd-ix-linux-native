@@ -174,11 +174,6 @@ bool IsRaceClassValid(int32_t raceID, int32_t classID) {
 // VERIFY: 0df0d554 auto
 // OFFSET: 0x004E0040
 void CCharacterCreation::SetCharCustomizeModel(const char* modelName) {
-#if defined(WOWDECOMP_LINUX)
-    // wxl-character-customizer: release the druid/eye-halo previews and show them against the new background.
-    WxlCreationBackgroundScope previews;
-#endif
-
     if (!CCharacterCreation::m_charCustomizeFrame || !modelName || !*modelName) {
         return;
     }
@@ -186,6 +181,11 @@ void CCharacterCreation::SetCharCustomizeModel(const char* modelName) {
     if (CCharacterCreation::m_charCustomizeFrame->m_model && !SStrCmpI(modelName, CCharacterCreation::m_charCustomizeFrame->m_model->m_shared->m_fileName, STORM_MAX_STR)) {
         return;
     }
+
+#if defined(WOWDECOMP_LINUX)
+    // wxl-character-customizer: release the druid/eye-halo previews and show them against the new background.
+    WxlCreationBackgroundScope previews;
+#endif
 
     CCharacterCreation::m_charCustomizeFrame->SetModel(modelName);
     CCharacterCreation::m_charCustomizeFrame->m_lightArray1[0].unk_01B5 = 1;
@@ -199,7 +199,8 @@ void CCharacterCreation::SetCharCustomizeModel(const char* modelName) {
         model->IsDrawable(1, 1);
     }
 
-    if (CCharacterCreation::m_charCustomizeFrame->m_model && CCharacterCreation::m_character->m_data.m_model) {
+    if (CCharacterCreation::m_charCustomizeFrame->m_model && CCharacterCreation::m_character &&
+        CCharacterCreation::m_character->m_data.m_model) {
         CCharacterCreation::m_character->m_data.m_model->AttachToParent(CCharacterCreation::m_charCustomizeFrame->m_model, 0, nullptr, 0);
     }
 }
@@ -209,7 +210,7 @@ void CCharacterCreation::SetCharCustomizeModel(const char* modelName) {
 void CCharacterCreation::SetCharacterFacing(float facing) {
     CCharacterCreation::m_charFacing = facing;
 
-    if (CCharacterCreation::m_character->m_data.m_model) {
+    if (CCharacterCreation::m_character && CCharacterCreation::m_character->m_data.m_model) {
         C3Vector position(0.0f, 0.0f, 0.0f);
         CCharacterCreation::m_character->m_data.m_model->SetWorldTransform(position, facing, 1.0f);
     }
@@ -234,6 +235,10 @@ bool CCharacterCreation::IsClassAvailable(int32_t classID) {
 // VERIFY: e48266b8 auto
 // OFFSET: 0x004E01F0
 void CCharacterCreation::CycleCharCustomization(CHAR_CUSTOMIZATION_TYPE type, int32_t delta) {
+    if (!CCharacterCreation::m_character) {
+        return;
+    }
+
     if (!delta) {
         return;
     }
@@ -302,6 +307,10 @@ void CCharacterCreation::CycleCharCustomization(CHAR_CUSTOMIZATION_TYPE type, in
 // VERIFY: 0b8a8ec0 manual
 // OFFSET: 0x004E0380
 void CCharacterCreation::CreateCharacter(const char* name) {
+    if (!CCharacterCreation::m_character) {
+        return;
+    }
+
     WOWGUID guid = WOWGUID();
     CharacterSelectionDisplay* display = nullptr;
     bool validate = true;
@@ -423,6 +432,10 @@ int32_t CCharacterCreation::GetRandomClassID() {
 // VERIFY: b15e5451 auto
 // OFFSET: 0x004E0FD0
 void CCharacterCreation::Dress() {
+    if (!CCharacterCreation::m_character) {
+        return;
+    }
+
 #if defined(WOWDECOMP_LINUX)
     // wxl-character-customizer: "armor off" keeps the preview unequipped across rebuilds.
     if (WxlCharacterCreateHidesArmor()) {
@@ -564,39 +577,46 @@ void CCharacterCreation::Dress() {
 
 // VERIFY: 6d456576 auto
 // OFFSET: 0x004E13A0
-void CCharacterCreation::InitCharacterComponents(ComponentData* data, bool randomize) {
+bool CCharacterCreation::InitCharacterComponents(ComponentData* data, bool randomize) {
+    auto* frame = CCharacterCreation::m_charCustomizeFrame;
+    CreatureModelDataRec* modelRec = GetModelDataRec(data->m_preferences.m_raceID, data->m_preferences.m_sexID);
+    if (!frame || !modelRec || !*modelRec->m_modelName) {
+        return false;
+    }
+
+    CCharacterComponent* replacement = CCharacterComponent::AllocComponent();
+    if (!replacement) {
+        return false;
+    }
+
+    data->m_model = frame->GetScene()->CreateModel(modelRec->m_modelName, 0);
+    if (!data->m_model) {
+        CCharacterComponent::FreeComponent(replacement);
+        return false;
+    }
+
+    frame->m_lightArray2[0].unk_01BC = 1;
+    data->m_model->m_lightingCallback = &CCharacterSelection::GenericLightingCallback;
+    data->m_model->m_lightingArg = frame->m_lightArray2;
+    data->m_model->SetBoneSequence(0xFFFFFFFF, 0, 0, 0, 1.0f, 1, 1);
+
+    data->m_flags |= 0x2;
+    if (!replacement->Init(data, nullptr)) {
+        CCharacterComponent::FreeComponent(replacement);
+        data->m_model = nullptr;
+        return false;
+    }
+
 #if defined(WOWDECOMP_LINUX)
     WxlCreationSceneBeforeBuild();
 #endif
-
-    CreatureModelDataRec* modelRec = GetModelDataRec(data->m_preferences.m_raceID, data->m_preferences.m_sexID);
-
-    if (!modelRec || !*modelRec->m_modelName) {
-        return;
-    }
-
-    if (CCharacterCreation::m_character) {
-        if (CCharacterCreation::m_character->m_data.m_model->m_attachParent) {
-            CCharacterCreation::m_character->m_data.m_model->DetachFromParent();
+    if (CCharacterComponent* previous = CCharacterCreation::m_character) {
+        if (auto* model = previous->m_data.m_model; model && model->m_attachParent) {
+            model->DetachFromParent();
         }
-
-        CCharacterComponent::FreeComponent(CCharacterCreation::m_character);
+        CCharacterComponent::FreeComponent(previous);
     }
-
-    CCharacterCreation::m_character = CCharacterComponent::AllocComponent();
-    data->m_model = CCharacterCreation::m_charCustomizeFrame->GetScene()->CreateModel(modelRec->m_modelName, 0);
-
-    if (!data->m_model) {
-        return;
-    }
-
-    CCharacterCreation::m_charCustomizeFrame->m_lightArray2[0].unk_01BC = 1;
-    data->m_model->m_lightingCallback = &CCharacterSelection::GenericLightingCallback;
-    data->m_model->m_lightingArg = CCharacterCreation::m_charCustomizeFrame->m_lightArray2;
-    data->m_model->SetBoneSequence(0xFFFFFFFF, 0, 0, 0, 1.0f, 1, 1);
-    data->m_flags |= 0x2;
-
-    CCharacterCreation::m_character->Init(data, nullptr);
+    CCharacterCreation::m_character = replacement;
 
     if (randomize) {
         CCharacterCreation::m_character->SetRandomSkin(COMPONENT_CONTEXT_0);
@@ -619,6 +639,7 @@ void CCharacterCreation::InitCharacterComponents(ComponentData* data, bool rando
     if (CCharacterCreation::m_charCustomizeFrame->m_model) {
         CCharacterCreation::m_character->m_data.m_model->AttachToParent(CCharacterCreation::m_charCustomizeFrame->m_model, 0, nullptr, 0);
     }
+    return true;
 }
 
 // VERIFY: 68a365e1 manual
@@ -660,7 +681,9 @@ void CCharacterCreation::SetSelectedSex(uint32_t sexID) {
             data.m_preferences.m_hairColorId = display->m_characterInfo.m_hairColorID;
             data.m_preferences.m_facialHairId = display->m_characterInfo.m_facialHairStyleID;
             data.m_preferences.m_faceId = display->m_characterInfo.m_faceID;
-            CCharacterCreation::InitCharacterComponents(&data, false);
+            if (!CCharacterCreation::InitCharacterComponents(&data, false)) {
+                return;
+            }
 
             CCharacterCreation::m_nameGen.LoadNames(CCharacterCreation::m_races.m_data[CCharacterCreation::m_raceIndex], sexID);
             CGlueLoading::StartLoad(CCharacterCreation::m_character, 1);
@@ -676,12 +699,14 @@ void CCharacterCreation::SetSelectedSex(uint32_t sexID) {
         data.SetPreferences(saved);
         data.m_preferences.m_classId = classID;
         CCharacterComponent::ValidateComponentData(&data, COMPONENT_CONTEXT_0);
-        CCharacterCreation::InitCharacterComponents(&data, false);
     } else {
         data.m_preferences.m_raceID = CCharacterCreation::m_character->m_data.m_preferences.m_raceID;
         data.m_preferences.m_sexID = sexID;
         data.m_preferences.m_classId = classID;
-        CCharacterCreation::InitCharacterComponents(&data, true);
+    }
+
+    if (!CCharacterCreation::InitCharacterComponents(&data, !saved)) {
+        return;
     }
 
     CCharacterCreation::m_nameGen.LoadNames(CCharacterCreation::m_races.m_data[CCharacterCreation::m_raceIndex], sexID);
@@ -691,11 +716,13 @@ void CCharacterCreation::SetSelectedSex(uint32_t sexID) {
 // VERIFY: 60798dcb auto
 // OFFSET: 0x004E1740
 void CCharacterCreation::SetSelectedClass(int32_t classID) {
-    if (!CCharacterCreation::IsClassAvailable(classID)) {
+    if (!CCharacterCreation::m_character) {
         return;
     }
 
-    CCharacterCreation::m_selectedClassID = classID;
+    if (!CCharacterCreation::IsClassAvailable(classID)) {
+        return;
+    }
 
     ComponentData data;
     data.m_preferences.m_raceID = CCharacterCreation::m_character->m_data.m_preferences.m_raceID;
@@ -707,7 +734,12 @@ void CCharacterCreation::SetSelectedClass(int32_t classID) {
     data.m_preferences.m_facialHairId = CCharacterCreation::m_character->m_data.m_preferences.m_facialHairId;
     data.m_preferences.m_faceId = CCharacterCreation::m_character->m_data.m_preferences.m_faceId;
     CCharacterComponent::ValidateComponentData(&data, COMPONENT_CONTEXT_0);
-    CCharacterCreation::InitCharacterComponents(&data, false);
+    const auto previousClass = CCharacterCreation::m_selectedClassID;
+    CCharacterCreation::m_selectedClassID = classID;
+    if (!CCharacterCreation::InitCharacterComponents(&data, false)) {
+        CCharacterCreation::m_selectedClassID = previousClass;
+        return;
+    }
     CCharacterCreation::Dress();
     CGlueLoading::StartLoad(CCharacterCreation::m_character, 1);
 }
@@ -715,6 +747,10 @@ void CCharacterCreation::SetSelectedClass(int32_t classID) {
 // VERIFY: ca66e480 auto
 // OFFSET: 0x004E17F0
 void CCharacterCreation::RandomizeCharCustomization() {
+    if (!CCharacterCreation::m_character) {
+        return;
+    }
+
     CCharacterCreation::m_character->SetRandomSkin(COMPONENT_CONTEXT_0);
     CCharacterCreation::m_character->SetRandomFace(COMPONENT_CONTEXT_0);
     CCharacterCreation::m_character->SetRandomHairColor(COMPONENT_CONTEXT_0);
@@ -764,16 +800,16 @@ void CCharacterCreation::ResetCharCustomizeInfo() {
         return;
     }
 
+    const auto previousIndex = CCharacterCreation::m_existingCharacterIndex;
     CCharacterCreation::m_existingCharacterIndex = -1;
-
-    if (CCharacterCreation::m_charCustomizeFrame->m_model) {
-        CCharacterCreation::m_charCustomizeFrame->m_model->DetachAllChildrenById(0);
-    }
 
     ComponentData data;
     CCharacterCreation::GetRandomRaceAndSex(&data);
+    if (!CCharacterCreation::InitCharacterComponents(&data, true)) {
+        CCharacterCreation::m_existingCharacterIndex = previousIndex;
+        return;
+    }
     CCharacterCreation::CalcClasses(data.m_preferences.m_raceID);
-    CCharacterCreation::InitCharacterComponents(&data, true);
     CCharacterCreation::SetSelectedClass(CCharacterCreation::GetRandomClassID());
     data.m_preferences.m_classId = CCharacterCreation::m_selectedClassID;
 
@@ -811,7 +847,8 @@ void CCharacterCreation::SetSelectedRace(uint32_t raceIndex) {
 
     if (!preferences) return;
     CCharacterCreation::m_character->GetPreferences(preferences);
-    CCharacterCreation::m_raceIndex = raceIndex;
+    const auto previousRace = CCharacterCreation::m_character->m_data.m_preferences.m_raceID;
+    const auto targetRace = CCharacterCreation::m_races.m_data[raceIndex];
 
     ComponentData data;
     CharacterSelectionDisplay* display = nullptr;
@@ -820,7 +857,7 @@ void CCharacterCreation::SetSelectedRace(uint32_t raceIndex) {
         display = CCharacterSelection::GetCharacterDisplay(CCharacterCreation::m_existingCharacterIndex);
     }
 
-    if (display && display->m_characterInfo.m_raceID == CCharacterCreation::m_races.m_data[CCharacterCreation::m_raceIndex] && (display->m_characterInfo.m_customizeFlags & 0x110000)) {
+    if (display && display->m_characterInfo.m_raceID == targetRace && (display->m_characterInfo.m_customizeFlags & 0x110000)) {
         data.m_preferences.m_raceID = display->m_characterInfo.m_raceID;
         data.m_preferences.m_sexID = display->m_characterInfo.m_sexID;
         data.m_preferences.m_classId = display->m_characterInfo.m_classID;
@@ -829,40 +866,39 @@ void CCharacterCreation::SetSelectedRace(uint32_t raceIndex) {
         data.m_preferences.m_hairColorId = display->m_characterInfo.m_hairColorID;
         data.m_preferences.m_facialHairId = display->m_characterInfo.m_facialHairStyleID;
         data.m_preferences.m_faceId = display->m_characterInfo.m_faceID;
-        CCharacterCreation::InitCharacterComponents(&data, false);
-        CCharacterCreation::SetSelectedSex(display->m_characterInfo.m_sexID);
+        if (!CCharacterCreation::InitCharacterComponents(&data, false)) {
+            return;
+        }
     } else {
-        CharacterPreferences* saved = *WxlCharacterPreferenceSlot(m_charPreferences,
-            m_races.m_data[m_raceIndex], m_character->m_data.m_preferences.m_sexID);
-
+        const uint32_t sexID = CCharacterCreation::m_character->m_data.m_preferences.m_sexID;
+        const CharacterPreferences* saved = *WxlCharacterPreferenceSlot(m_charPreferences, targetRace, sexID);
         if (saved) {
             data.SetPreferences(saved);
-            CCharacterCreation::CalcClasses(data.m_preferences.m_raceID);
-
-            int32_t classID = CCharacterCreation::m_selectedClassID;
-
-            if (!IsRaceClassValid(data.m_preferences.m_raceID, CCharacterCreation::m_selectedClassID)) {
-                classID = CCharacterCreation::GetRandomClassID();
-                CCharacterCreation::m_selectedClassID = classID;
-            }
-
-            data.m_preferences.m_classId = classID;
-            CCharacterComponent::ValidateComponentData(&data, COMPONENT_CONTEXT_0);
-            CCharacterCreation::InitCharacterComponents(&data, false);
         } else {
-            data.m_preferences.m_sexID = CCharacterCreation::m_character->m_data.m_preferences.m_sexID;
-            data.m_preferences.m_raceID = CCharacterCreation::m_races.m_data[CCharacterCreation::m_raceIndex];
-            CCharacterCreation::CalcClasses(data.m_preferences.m_raceID);
+            data.m_preferences.m_sexID = sexID;
+            data.m_preferences.m_raceID = targetRace;
+        }
 
-            if (!IsRaceClassValid(data.m_preferences.m_raceID, CCharacterCreation::m_selectedClassID)) {
-                CCharacterCreation::SetSelectedClass(CCharacterCreation::GetRandomClassID());
-            }
+        CCharacterCreation::CalcClasses(targetRace);
+        int32_t classID = CCharacterCreation::m_selectedClassID;
+        if (!IsRaceClassValid(targetRace, classID)) {
+            classID = CCharacterCreation::GetRandomClassID();
+        }
+        data.m_preferences.m_classId = classID;
+        if (saved) {
+            CCharacterComponent::ValidateComponentData(&data, COMPONENT_CONTEXT_0);
+        }
 
-            data.m_preferences.m_classId = CCharacterCreation::m_selectedClassID;
-            CCharacterCreation::InitCharacterComponents(&data, true);
+        const auto previousClass = CCharacterCreation::m_selectedClassID;
+        CCharacterCreation::m_selectedClassID = classID;
+        if (!CCharacterCreation::InitCharacterComponents(&data, !saved)) {
+            CCharacterCreation::m_selectedClassID = previousClass;
+            CCharacterCreation::CalcClasses(previousRace);
+            return;
         }
     }
 
+    CCharacterCreation::m_raceIndex = raceIndex;
     CCharacterCreation::m_nameGen.LoadNames(CCharacterCreation::m_races.m_data[CCharacterCreation::m_raceIndex], CCharacterCreation::m_character->m_data.m_preferences.m_sexID);
     CCharacterCreation::Dress();
     CGlueLoading::StartLoad(CCharacterCreation::m_character, 1);
@@ -877,6 +913,7 @@ void CCharacterCreation::SetToExistingCharacter(uint32_t index) {
         return;
     }
 
+    const auto previousIndex = CCharacterCreation::m_existingCharacterIndex;
     CCharacterCreation::m_existingCharacterIndex = index;
 
     ComponentData data;
@@ -888,9 +925,11 @@ void CCharacterCreation::SetToExistingCharacter(uint32_t index) {
     data.m_preferences.m_hairColorId = display->m_characterInfo.m_hairColorID;
     data.m_preferences.m_facialHairId = display->m_characterInfo.m_facialHairStyleID;
     data.m_preferences.m_faceId = display->m_characterInfo.m_faceID;
-    CCharacterCreation::InitCharacterComponents(&data, false);
+    if (!CCharacterCreation::InitCharacterComponents(&data, false)) {
+        CCharacterCreation::m_existingCharacterIndex = previousIndex;
+        return;
+    }
     CCharacterCreation::CalcClasses(data.m_preferences.m_raceID);
-    CCharacterCreation::InitCharacterComponents(&data, false);
 
     CCharacterCreation::m_selectedClassID = display->m_characterInfo.m_classID;
 
