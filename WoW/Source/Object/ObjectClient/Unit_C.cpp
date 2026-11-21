@@ -14036,15 +14036,15 @@ int32_t CGUnit_C::InitializeComponent() {
 // VERIFY: caa0a36b manual
 // OFFSET: 0x0071AAB0
 void CGUnit_C::BowModelLoaded(CM2Model* model, void* arg) {
+    if (!model->IsLoaded() || model->HasLoadFailed()) {
+        return;
+    }
+
     if (model->HasEvent('TTW$') && model->HasEvent('BTW$')) {
         model->m_fFlags |= 0x20;
         model->m_drawCallback = &CDrawBowString::UnitDrawBowStringCB;
         model->m_drawArg = arg;
         return;
-    }
-
-    if (!(model->m_fFlags & 0x1)) {
-        model->WaitForLoad(nullptr);
     }
 
     SysMsgPrintf(SYSMSG_WARNING, "Bow model '%s' equipped without proper events.  Bowstring won't draw.", model->m_shared->m_data->m_name.Data());
@@ -23607,29 +23607,28 @@ void CGUnit_C::MountTransitionSetCharacterTransform(float elapsed) {
         this->m_groundNormal.z = dz * decay + normal.z;
     }
 
-    CM2Model* mountModel = this->m_mountTransitionEffect->m_model;
-
-    if (!(mountModel->m_fFlags & 0x1)) {
-        mountModel->WaitForLoad(nullptr);
+    CEffect* effect = this->m_mountTransitionEffect;
+    CM2Model* mountModel = effect ? effect->m_model : nullptr;
+    uint32_t flags = 0;
+    if (mountModel && mountModel->WaitForLoad(nullptr) &&
+        this->m_mountTransitionEffect == effect && effect->m_model == mountModel) {
+        flags = mountModel->m_shared->m_data->m_flags;
     }
 
-    uint32_t flags = mountModel->m_shared->m_data->m_flags;
     CM2Model* model = this->GetObjectModel();
-
-    if (model) {
-        model->SetWorldTransform(this->GetPosition(), this->GetRenderFacing(), this->GetTrueScale(), this->m_groundNormal, flags & 0x3);
+    if (!model) {
+        return;
     }
 
-    C44Matrix transform = this->GetObjectModel()->m_worldTransform;
+    model->SetWorldTransform(this->GetPosition(), this->GetRenderFacing(), this->GetTrueScale(), this->m_groundNormal, flags & 0x3);
+    C44Matrix transform = model->m_worldTransform;
     C3Vector jump(0.0f, 0.0f, 0.0f);
     SpellVisualsComputeMountTransitionJumpVec(this->m_mountTransition, &jump);
     transform.d0 = transform.d0 + jump.x;
     transform.d1 = transform.d1 + jump.y;
     transform.d2 = transform.d2 + jump.z;
 
-    CM2Model* objectModel = this->GetObjectModel();
-    objectModel->m_fFlags |= 0x8000;
-    objectModel->m_worldTransform = transform;
+    model->SetWorldTransform(transform);
 
     if (this->m_mountTransitionEffect) {
         this->m_mountTransitionSpellId = this->m_mountTransitionEffect->m_spellId;

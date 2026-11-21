@@ -5521,16 +5521,10 @@ bool World::ObjectTestConvexVolume(CMapEntity* entity, const C3Vector& point) {
         return true;
     }
 
-    CM2Model* model = static_cast<CMapStaticEntity*>(static_cast<CMapBaseObj*>(entity))->m_model;
-
-    if (!model || !model->IsLoaded(0, 0)) {
+    auto* doodad = static_cast<CMapStaticEntity*>(static_cast<CMapBaseObj*>(entity));
+    CM2Model* model = doodad->m_model;
+    if (!model || !model->IsLoaded(0, 0) || !model->WaitForLoad(nullptr) || doodad->m_model != model) {
         return false;
-    }
-
-    model = static_cast<CMapStaticEntity*>(static_cast<CMapBaseObj*>(entity))->m_model;
-
-    if (!(model->m_shared->m_flags & 0x1)) {
-        model->WaitForLoad(nullptr);
     }
 
     CAaBox bounds = model->m_shared->m_data->m_collisionBounds.m_extent;

@@ -687,16 +687,58 @@ void CM2Scene::TransformHitTestVertices(const CM2Model* model, const M2SkinProfi
     }
 }
 
+static bool HitTestRange(uint32_t start, uint32_t count, uint32_t size) {
+    return start <= size && count <= size - start;
+}
+
+static bool HitTestVertexReferences(const CM2Model& model, const M2SkinProfile& skin,
+                                    const M2SkinSection& section) {
+    const M2Data& data = *model.m_shared->m_data;
+    if (!model.m_boneMatrices || !section.m_vertexCount ||
+        !HitTestRange(section.m_vertexStart, section.m_vertexCount, skin.m_vertices.m_count)) {
+        return false;
+    }
+
+    const uint32_t end = section.m_vertexStart + section.m_vertexCount;
+    for (uint32_t i = section.m_vertexStart; i < end; ++i) {
+        const uint32_t vertexIndex = skin.m_vertices[i];
+        if (vertexIndex >= data.m_vertices.m_count) {
+            return false;
+        }
+        const auto& vertex = data.m_vertices[vertexIndex];
+        if (vertex.m_indices.b[0] >= data.m_bones.m_count) {
+            return false;
+        }
+        if (section.m_boneInfluences != 1) {
+            if (!vertex.m_weights.b[0]) {
+                return false;
+            }
+            for (uint32_t influence = 1; influence < 4 && vertex.m_weights.b[influence]; ++influence) {
+                if (vertex.m_indices.b[influence] >= data.m_bones.m_count) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
 // VERIFY: d07f8475 manual
 // OFFSET: 0x0081DAF0
 M2HitRec* CM2Scene::HitTestGeometry(const CM2Model* model, uint32_t pass, const C3Vector& dir, float d, const C3Vector& start, M2HitRec* rec, float& t, M2HitRec* best) {
+    if (!model || model->HasLoadFailed() || !model->m_shared->m_skinData ||
+        !model->m_shared->m_data || !model->m_skinSections) {
+        return best;
+    }
     M2SkinProfile* skinData = model->m_shared->m_skinData;
     M2Data* data = model->m_shared->m_data;
 
     for (uint32_t i = 0; i < skinData->m_batches.m_count; i++) {
         M2Batch* batch = &skinData->m_batches[i];
 
-        if (batch->m_materialLayer || (batch->m_flags & 8)) {
+        if (batch->m_materialLayer || (batch->m_flags & 8) ||
+            batch->m_materialIndex >= data->m_materials.m_count ||
+            batch->m_skinSectionIndex >= skinData->m_skinSections.m_count) {
             continue;
         }
 
@@ -717,11 +759,21 @@ M2HitRec* CM2Scene::HitTestGeometry(const CM2Model* model, uint32_t pass, const 
         float alpha = model->m_alpha;
 
         if (batch->m_colorIndex < data->m_colors.m_count) {
+            if (!model->m_colors) {
+                continue;
+            }
             alpha *= model->m_colors[batch->m_colorIndex].m_alphaTrack.m_currentValue;
         }
 
         if (batch->m_textureCount) {
-            alpha *= model->m_textureWeights[data->m_textureWeightCombos[batch->m_textureWeightComboIndex]].m_currentValue;
+            if (!model->m_textureWeights || batch->m_textureWeightComboIndex >= data->m_textureWeightCombos.m_count) {
+                continue;
+            }
+            const uint32_t weightIndex = data->m_textureWeightCombos[batch->m_textureWeightComboIndex];
+            if (weightIndex >= data->m_textureWeights.m_count) {
+                continue;
+            }
+            alpha *= model->m_textureWeights[weightIndex].m_currentValue;
         }
 
         if (alpha <= 0.0f) {
@@ -730,7 +782,13 @@ M2HitRec* CM2Scene::HitTestGeometry(const CM2Model* model, uint32_t pass, const 
 
         M2SkinSection* section = &skinData->m_skinSections[batch->m_skinSectionIndex];
 
-        if (section->m_vertexCount > this->m_hitVertCapacity) {
+        if (section->m_indexCount < 3 ||
+            !HitTestRange(section->m_indexStart, section->m_indexCount, skinData->m_indices.m_count) ||
+            !HitTestVertexReferences(*model, *skinData, *section)) {
+            continue;
+        }
+
+        if (!this->m_hitVerts || section->m_vertexCount > this->m_hitVertCapacity) {
             delete[] this->m_hitVerts;
 
             if (!this->m_hitVertCapacity) {
@@ -742,6 +800,10 @@ M2HitRec* CM2Scene::HitTestGeometry(const CM2Model* model, uint32_t pass, const 
             }
 
             this->m_hitVerts = new (__FILE__, __LINE__) C3Vector[this->m_hitVertCapacity];
+        }
+
+        if (!this->m_hitVerts) {
+            continue;
         }
 
         if (section->m_boneInfluences == 1) {
@@ -762,9 +824,14 @@ M2HitRec* CM2Scene::HitTestGeometry(const CM2Model* model, uint32_t pass, const 
 // VERIFY: 4f08e629 manual
 // OFFSET: 0x0081DD50
 M2HitRec* CM2Scene::HitTestCollision(const CM2Model* model, uint32_t pass, const C3Vector& dir, float d, const C3Vector& start, M2HitRec* rec, float& t, M2HitRec* best) {
+    if (!model || model->HasLoadFailed() || !model->m_shared->m_data ||
+        !model->m_shared->m_data->m_collisionPositions.m_count ||
+        model->m_shared->m_data->m_collisionIndices.m_count < 3) {
+        return best;
+    }
     M2Data* data = model->m_shared->m_data;
 
-    if (data->m_collisionPositions.m_count > this->m_hitVertCapacity) {
+    if (!this->m_hitVerts || data->m_collisionPositions.m_count > this->m_hitVertCapacity) {
         delete[] this->m_hitVerts;
 
         if (!this->m_hitVertCapacity) {
@@ -776,6 +843,10 @@ M2HitRec* CM2Scene::HitTestCollision(const CM2Model* model, uint32_t pass, const
         }
 
         this->m_hitVerts = new (__FILE__, __LINE__) C3Vector[this->m_hitVertCapacity];
+    }
+
+    if (!this->m_hitVerts) {
+        return best;
     }
 
     for (uint32_t i = 0; i < data->m_collisionPositions.m_count; i++) {

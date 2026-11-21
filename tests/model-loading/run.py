@@ -104,6 +104,18 @@ def main():
         "doodad_progress": extract(
             map_source, "uint32_t CMap::ComputeDoodadLoadProgress(", "    for (CMapObjDef* mapObjDef =",
         ),
+        "query_guards": (
+            extract(model, "namespace {\nclass ModelLoadReference", "bool CM2Model::HasLoadFailed()")
+            + extract(model, "namespace {\nclass ModelQuery", "void CM2Model::SetAnimating(")
+            + extract(model, "void* CM2Model::GetCameraByIndex(", "\n}", include_stop=True)
+            + extract(model, "C3Vector CM2Model::GetAttachmentPivot(", "\n}", include_stop=True)
+        ),
+        "hit_validation": extract(
+            "Engine/Source/Model2/M2Scene.cpp", "static bool HitTestRange(", "M2HitRec* CM2Scene::HitTestGeometry(",
+        ),
+        "terrain_ray": extract(
+            map_source, "static bool ReserveTerrainRayCells(", "World::ObjectCollisionData::ObjectCollisionData()",
+        ),
         "model_allocations": extract(
             model,
             "    uint8_t* memory = static_cast<uint8_t*>(SMemAlloc(emitterBytes + emitterOffset,",
@@ -119,7 +131,8 @@ def main():
 
         for test in ("deferred_effect_test", "model_readiness_test", "model_allocation_test",
                      "model_consumer_test", "camera_target_test", "world_emitters_test",
-                     "doodad_bounds_test", "shared_bounds_preparation_test", "sequence_bounds_test"):
+                     "doodad_bounds_test", "shared_bounds_preparation_test", "sequence_bounds_test",
+                     "bulk_query_test"):
             executable = build / test
             subprocess.run(
                 [*compiler, "-std=c++20", "-UNDEBUG", "-Wall", "-Wextra", "-Werror",

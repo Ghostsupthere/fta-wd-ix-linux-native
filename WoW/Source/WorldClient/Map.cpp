@@ -1,3 +1,4 @@
+#include <limits>
 #include "Map.h"
 #include "WoW/Source/WorldClient/WorldLightingConstants.h"
 #include "WoW/Source/WorldClient/WorldConstants.h"
@@ -1008,55 +1009,66 @@ static const char* PathFileName(const char* path) {
     return name;
 }
 
+static bool ReserveTerrainRayCells(int32_t first, int32_t last, bool diagonal) {
+    const int64_t delta = static_cast<int64_t>(last) - first;
+    const uint64_t span = delta < 0 ? -delta : delta;
+    const uint64_t cells = diagonal ? 2 * (span + 1) + 2 : span + 1;
+    const uint64_t required = CMap::cCount + 2 * cells;
+    if (required > std::numeric_limits<uint32_t>::max() - 63u ||
+        required > std::numeric_limits<size_t>::max() / sizeof(uint32_t) - 63u) {
+        return false;
+    }
+    if (required > CMap::scCollideList.Count()) {
+        CMap::scCollideList.SetCount(static_cast<uint32_t>(required));
+    }
+    return true;
+}
+
 // VERIFY: 85e5829e manual
 // OFFSET: 0x007A20E0
 void CMap::VectorIntersectSX(CiRect& rect) {
-    int32_t x = rect.minX;
-
-    if (x <= rect.maxX) {
-        do {
-            CMap::scCollideList.m_data[CMap::cCount++] = x;
-            CMap::scCollideList.m_data[CMap::cCount++] = rect.minY;
-            x++;
-        } while (x <= rect.maxX);
-    } else {
-        do {
-            CMap::scCollideList.m_data[CMap::cCount++] = x;
-            CMap::scCollideList.m_data[CMap::cCount++] = rect.minY;
-            x--;
-        } while (x >= rect.maxX);
+    if (!ReserveTerrainRayCells(rect.minX, rect.maxX, false)) {
+        return;
+    }
+    const int32_t step = rect.minX <= rect.maxX ? 1 : -1;
+    for (int32_t x = rect.minX;; x += step) {
+        CMap::scCollideList.m_data[CMap::cCount++] = x;
+        CMap::scCollideList.m_data[CMap::cCount++] = rect.minY;
+        if (x == rect.maxX) {
+            break;
+        }
     }
 }
 
 // VERIFY: 8a929a73 manual
 // OFFSET: 0x007A2180
 void CMap::VectorIntersectSY(CiRect& rect) {
-    int32_t y = rect.minY;
-
-    if (y <= rect.maxY) {
-        do {
-            CMap::scCollideList.m_data[CMap::cCount++] = rect.minX;
-            CMap::scCollideList.m_data[CMap::cCount++] = y;
-            y++;
-        } while (y <= rect.maxY);
-    } else {
-        do {
-            CMap::scCollideList.m_data[CMap::cCount++] = rect.minX;
-            CMap::scCollideList.m_data[CMap::cCount++] = y;
-            y--;
-        } while (y >= rect.maxY);
+    if (!ReserveTerrainRayCells(rect.minY, rect.maxY, false)) {
+        return;
+    }
+    const int32_t step = rect.minY <= rect.maxY ? 1 : -1;
+    for (int32_t y = rect.minY;; y += step) {
+        CMap::scCollideList.m_data[CMap::cCount++] = rect.minX;
+        CMap::scCollideList.m_data[CMap::cCount++] = y;
+        if (y == rect.maxY) {
+            break;
+        }
     }
 }
 
 // VERIFY: 6d1fef26 manual
 // OFFSET: 0x007A2230
 void CMap::VectorIntersectDX(C3Vector& start, C3Vector& end, CiRect& cells) {
+    if (!ReserveTerrainRayCells(cells.minX, cells.maxX, true)) {
+        return;
+    }
+
     int32_t y = cells.minY;
     float slope = (end.y - start.y) / (end.x - start.x);
-    int32_t x = cells.minX;
+    int64_t x = cells.minX;
     float intercept = start.y - start.x * slope;
 
-    int32_t next;
+    int64_t next;
     int32_t step;
 
     if (cells.maxX <= x) {
@@ -1072,10 +1084,7 @@ void CMap::VectorIntersectDX(C3Vector& start, C3Vector& end, CiRect& cells) {
     CMap::scCollideList.m_data[CMap::cCount++] = x;
     CMap::scCollideList.m_data[CMap::cCount++] = y;
 
-    while (x != cells.maxX + step) {
-        if (CMap::cCount >= 0x7FC) {
-            return;
-        }
+    while (x != static_cast<int64_t>(cells.maxX) + step) {
 
         int32_t edgeY = CMath::fint_((slope * edge + intercept) * OO_COORD_TO_SUBCHUNK - 0.5f);
 
@@ -1102,13 +1111,17 @@ void CMap::VectorIntersectDX(C3Vector& start, C3Vector& end, CiRect& cells) {
 // VERIFY: 6264b08b manual
 // OFFSET: 0x007A23E0
 void CMap::VectorIntersectDY(C3Vector& start, C3Vector& end, CiRect& cells) {
+    if (!ReserveTerrainRayCells(cells.minY, cells.maxY, true)) {
+        return;
+    }
+
     float slope = (end.y - start.y) / (end.x - start.x);
     int32_t x = cells.minX;
-    int32_t y = cells.minY;
+    int64_t y = cells.minY;
     float intercept = start.y - start.x * slope;
     float invSlope = 1.0f / slope;
 
-    int32_t next;
+    int64_t next;
     int32_t step;
 
     if (cells.maxY <= cells.minY) {
@@ -1124,10 +1137,7 @@ void CMap::VectorIntersectDY(C3Vector& start, C3Vector& end, CiRect& cells) {
     CMap::scCollideList.m_data[CMap::cCount++] = cells.minX;
     CMap::scCollideList.m_data[CMap::cCount++] = cells.minY;
 
-    while (y != cells.maxY + step) {
-        if (CMap::cCount >= 0x7FC) {
-            return;
-        }
+    while (y != static_cast<int64_t>(cells.maxY) + step) {
 
         int32_t edgeX = CMath::fint_((edge - intercept) * invSlope * OO_COORD_TO_SUBCHUNK - 0.5f);
 
@@ -1164,6 +1174,10 @@ static void AddHitDebugModel(World::HitTestDebug* hitInfo, int32_t depth, CM2Mod
             break;
         }
 
+        if (!model->IsLoaded() || model->HasLoadFailed()) {
+            continue;
+        }
+
         World::HitTestDebug::Model* entry = &hitInfo->m_models[hitInfo->m_numModels++];
         entry->m_name = PathFileName(model->m_shared->m_fileName);
         entry->m_depth = depth;
@@ -1172,18 +1186,13 @@ static void AddHitDebugModel(World::HitTestDebug* hitInfo, int32_t depth, CM2Mod
         entry->m_numGeometryBatches = model->GetNumGeometryBatches();
         entry->m_numPrimitives = model->GetNumPrimitives();
         entry->m_numOtherBatches = model->GetNumBatches() - entry->m_numGeometryBatches;
-        entry->m_numBones = (model->m_fFlags & 1) ? model->m_shared->m_data->m_bones.m_count : 0;
-
-        if (!(model->m_fFlags & 1)) {
-            model->WaitForLoad(nullptr);
-        }
-
+        entry->m_numBones = model->m_shared->m_data->m_bones.m_count;
         entry->m_numLights = model->m_shared->m_data->m_lights.m_count;
         entry->m_numCurrentLights = model->GetCurrentLightCount();
         entry->m_attachmentId = model->m_attachmentId;
         entry->m_attachmentScale = 1.0f;
 
-        if (model->m_attachmentId != 0xFFFFFFFF && model->m_attachParent) {
+        if (model->m_attachmentId != 0xFFFFFFFF && model->m_attachParent && model->m_attachParent->IsLoaded()) {
             entry->m_attachmentScale = model->m_attachParent->GetAttachmentWorldScale(model->m_attachmentId);
         }
 
