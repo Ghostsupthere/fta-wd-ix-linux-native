@@ -37,11 +37,23 @@ struct ZoneLine {
     double selfDraws;  // draw calls made directly in this zone (not in a nested one), average per frame
 };
 
+enum class M2DrawType : uint32_t {
+    Model, Projected, Doodad, Ribbon, Particle, Callback, Count
+};
+
+enum class M2MergeResult : uint32_t {
+    Compatible, Pass, Backend, VisualHook, FixedFunction, NoNextSection, SectionFlags, Alpha,
+    Material, BodyShape, Instancing, LocalVertices, PaletteLimit, IndexBuffer, NextElementType,
+    DifferentModel, Shader, DrawState, BatchState, IndexGap, IndexRange, VertexRange, DifferentPalette, Count
+};
+
 struct Summary {
     double frameMs;      // average time between frames
     double fps;
     double drawCalls;    // average per frame
     double triangles;    // average per frame
+    double m2DrawsByType[static_cast<uint32_t>(M2DrawType::Count)];
+    double m2MergeResults[static_cast<uint32_t>(M2MergeResult::Count)];
     double m2MergedSections; // draw calls avoided by merging opaque M2 sections
     uint32_t frames;     // frames averaged
     uint32_t gpuRenderSamples;
@@ -62,6 +74,22 @@ private:
     uint64_t m_child;
     Scope* m_parent;
 };
+
+// Tags backend draws made by an M2 element. Nested element callbacks restore their caller's tag.
+struct M2DrawScope {
+    explicit M2DrawScope(M2DrawType type);
+    ~M2DrawScope();
+    M2DrawScope(const M2DrawScope&) = delete;
+    M2DrawScope& operator=(const M2DrawScope&) = delete;
+
+private:
+    M2DrawType m_previous;
+};
+
+bool M2DiagnosticsEnabled();
+const char* M2DrawTypeName(M2DrawType type);
+const char* M2MergeResultName(M2MergeResult reason);
+void CountM2MergeResult(M2MergeResult reason);
 
 // One draw call of `primitives` triangles (or primitives of any kind; the device passes what it draws).
 void CountDraw(uint32_t primitives);

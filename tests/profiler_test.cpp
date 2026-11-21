@@ -61,5 +61,32 @@ int main() {
     Profiler::SetEnabled(true);
     Profiler::Reset();
     assert(Profiler::Summarize(10, s) == 0);
+    if (Profiler::M2DiagnosticsEnabled()) {
+        using Type = Profiler::M2DrawType;
+        using Result = Profiler::M2MergeResult;
+        Profiler::EndFrame();
+        {
+            Profiler::M2DrawScope doodad(Type::Doodad);
+            Profiler::CountDraw(20);
+            {
+                Profiler::M2DrawScope particle(Type::Particle);
+                Profiler::CountDraw(4);
+            }
+            Profiler::CountDraw(24);
+        }
+        Profiler::CountDraw(10);
+        Profiler::CountM2MergeResult(Result::IndexGap);
+        Profiler::CountM2MergeResult(Result::DifferentModel);
+        Profiler::CountM2MergeResult(Result::IndexGap);
+        Profiler::EndFrame();
+        assert(Profiler::Summarize(1, s) == 1 && s.drawCalls == 4.0 && s.triangles == 58.0);
+        assert(s.m2DrawsByType[static_cast<uint32_t>(Type::Doodad)] == 2.0);
+        assert(s.m2DrawsByType[static_cast<uint32_t>(Type::Particle)] == 1.0);
+        assert(s.m2MergeResults[static_cast<uint32_t>(Result::IndexGap)] == 2.0);
+        assert(s.m2MergeResults[static_cast<uint32_t>(Result::DifferentModel)] == 1.0);
+        Profiler::EndFrame();
+        assert(Profiler::Summarize(2, s) == 2);
+        assert(s.m2DrawsByType[static_cast<uint32_t>(Type::Doodad)] == 1.0);
+    }
     return 0;
 }

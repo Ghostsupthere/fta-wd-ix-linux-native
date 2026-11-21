@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #endif
 #include "Engine/Source/Gx/CGxBuf.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
@@ -480,9 +481,37 @@ void CM2SceneRender::SetupMaterial() {
     CShaderEffect::SetEmissive(color);
 }
 
+#if defined(WOWDECOMP_LINUX)
+static Profiler::M2MergeResult OpaqueMergeGate(const CM2SceneRender& render, uint32_t count, bool sharedVertices) {
+    using Result = Profiler::M2MergeResult;
+    if (render.m_pass != M2PASS_0) return Result::Pass;
+    if (g_theGxDevicePtr->DeviceApi() != GxApi_D3d9Ex) return Result::Backend;
+    if (NativeVisualHooks::m2BatchDrawn || NativeVisualHooks::m2BatchFog) return Result::VisualHook;
+    if (!CShaderEffect::s_enableShaders) return Result::FixedFunction;
+    if (count < 2) return Result::NoNextSection;
+    if (render.m_curElement->m_flags) return Result::SectionFlags;
+    if (render.m_curElement->m_alpha != 1.0f) return Result::Alpha;
+    if (render.m_curMaterial->m_blendMode > M2BLEND_ALPHA_KEY || (render.m_curMaterial->m_flags & 0x10)) {
+        return Result::Material;
+    }
+
+    if (render.m_curModel->m_bodyShapeVertices) return Result::BodyShape;
+    const auto* shared = render.m_curShared;
+    if (shared->m_instances != 1) return Result::Instancing;
+    // Native uploads may rebase each section onto a different local vertex stream.
+    if (shared->m_cache != render.m_cache || (!(render.m_cache->m_flags & 8) && !sharedVertices)) {
+        return Result::LocalVertices;
+    }
+    if (render.m_curSkinSection->m_boneCount > kMaxBonesPerBatch) return Result::PaletteLimit;
+    const auto* buffer = shared->m_indexBuf;
+    if (!buffer || !buffer->m_hasData || !buffer->m_valid) return Result::IndexBuffer;
+    return Result::Compatible;
+}
+#endif
+
 // VERIFY: aeedaf63 manual
 // OFFSET: 0x008203B0
-uint32_t CM2SceneRender::DrawBatch(const M2Element* elements, const uint32_t* order, uint32_t count, bool mergeOpaque) {
+uint32_t CM2SceneRender::DrawBatch(const M2Element* elements, const uint32_t* order, uint32_t count, bool mergeOpaque, bool diagnose) {
     DebugLog("Batch: model=%s index=%d", this->m_curModel->m_shared->m_fileNameWithoutPath, this->m_curElement->m_index);
 
     M2Element* element = this->m_curElement;
@@ -549,26 +578,26 @@ uint32_t CM2SceneRender::DrawBatch(const M2Element* elements, const uint32_t* or
     // The unit-outline module is told about this one model's batch right after its D3D draw.
     NativeVisualHooks::currentM2Model = this->m_curModel;
 #endif
-    if (CShaderEffect::s_enableShaders) {
-        batch.m_minIndex = this->m_curSkinSection->m_vertexStart;
-        batch.m_maxIndex = this->m_curSkinSection->m_vertexCount + this->m_curSkinSection->m_vertexStart - 1;
+    uint32_t maxIndex = this->m_curSkinSection->m_vertexCount + this->m_curSkinSection->m_vertexStart - 1;
 #if defined(WOWDECOMP_LINUX)
-        const auto* indexBuffer = this->m_curShared->m_indexBuf;
-        // The native upload can rebase each section when vertices are local. Only combine shared vertices.
-        if (mergeOpaque && count > 1 && !element->m_flags && element->m_alpha == 1.0f &&
-            this->m_curMaterial->m_blendMode <= M2BLEND_ALPHA_KEY && !(this->m_curMaterial->m_flags & 0x10) &&
-            !this->m_curModel->m_bodyShapeVertices && this->m_curShared->m_instances == 1 &&
-            this->m_curShared->m_cache == this->m_cache && ((this->m_cache->m_flags & 8) || sharedVertices) &&
-            this->m_curSkinSection->m_boneCount <= kMaxBonesPerBatch &&
-            indexBuffer && indexBuffer->m_hasData && indexBuffer->m_valid) {
-            const auto run = M2OpaqueBatchRun::Gather(elements, order, count, indexBuffer->m_itemCount);
-            if (run.elements > 1) {
+    if (mergeOpaque || diagnose) {
+        auto result = OpaqueMergeGate(*this, count, sharedVertices);
+        if (result == Profiler::M2MergeResult::Compatible) {
+            const uint32_t scanCount = mergeOpaque ? count : 2;
+            const auto run = M2OpaqueBatchRun::Gather(elements, order, scanCount, this->m_curShared->m_indexBuf->m_itemCount);
+            result = run.result;
+            if (mergeOpaque && run.elements > 1) {
                 batch.m_count = run.indexCount;
-                batch.m_maxIndex = static_cast<uint16_t>(run.maxIndex);
+                maxIndex = run.maxIndex;
                 consumed = run.elements;
             }
         }
+        if (diagnose) Profiler::CountM2MergeResult(result);
+    }
 #endif
+    if (CShaderEffect::s_enableShaders) {
+        batch.m_minIndex = this->m_curSkinSection->m_vertexStart;
+        batch.m_maxIndex = static_cast<uint16_t>(maxIndex);
         g_theGxDevicePtr->Draw(&batch, 1);
     } else if (sharedVertices) {
         CGxMatrixStack& world = g_theGxDevicePtr->m_xforms[GxXform_World];
@@ -1088,6 +1117,7 @@ void CM2SceneRender::Draw(M2PASS pass, M2Element* elements, uint32_t* indices, u
 
     this->m_pass = pass;
     bool mergeOpaque = false;
+    bool diagnose = false;
 #if defined(WOWDECOMP_LINUX)
     static const bool requested = [] {
         const char* setting = std::getenv("WXL_M2_OPAQUE_BATCH_RUNS");
@@ -1097,6 +1127,7 @@ void CM2SceneRender::Draw(M2PASS pass, M2Element* elements, uint32_t* indices, u
     }();
     mergeOpaque = requested && pass == M2PASS_0 && g_theGxDevicePtr->DeviceApi() == GxApi_D3d9Ex &&
         !NativeVisualHooks::m2BatchDrawn && !NativeVisualHooks::m2BatchFog;
+    diagnose = Profiler::M2DiagnosticsEnabled() && Profiler::Enabled();
 #endif
     uint32_t mergedSections = 0;
 
@@ -1120,9 +1151,13 @@ void CM2SceneRender::Draw(M2PASS pass, M2Element* elements, uint32_t* indices, u
         this->m_data = this->m_curShared->m_data;
         this->m_cache->LinkToSharedUpdateList(this->m_curShared);
 
+#if defined(WOWDECOMP_LINUX)
+        std::optional<Profiler::M2DrawScope> drawScope;
+        if (diagnose) drawScope.emplace(static_cast<Profiler::M2DrawType>(element->m_type));
+#endif
         switch (this->m_curElement->m_type) {
             case 0: {
-                const uint32_t merged = this->DrawBatch(elements, indices + i, count - i, mergeOpaque) - 1;
+                const uint32_t merged = this->DrawBatch(elements, indices + i, count - i, mergeOpaque, diagnose) - 1;
                 mergedSections += merged;
                 i += merged;
                 break;

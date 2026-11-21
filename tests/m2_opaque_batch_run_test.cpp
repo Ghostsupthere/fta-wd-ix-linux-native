@@ -52,7 +52,7 @@ int main() {
     uint32_t draws = 0;
     for (uint32_t i = 0; i < count;) {
         const auto run = M2OpaqueBatchRun::Gather(elements.data(), order.data() + i, count - i, indexCapacity);
-        assert(run.elements == 2 && run.indexCount == 12);
+        assert(run.elements == 2 && run.indexCount == 12 && run.result == M2OpaqueBatchRun::Result::Compatible);
         assert(run.maxIndex == sections[i + 1].m_vertexStart + sections[i + 1].m_vertexCount - 1u);
         for (uint32_t j = 0; j < run.indexCount; ++j) candidate.push_back(sections[i].m_indexStart + j);
         i += run.elements;
@@ -62,41 +62,43 @@ int main() {
     std::printf("Opaque paired fixture: %u -> %u submissions, %zu triangles in unchanged order\n",
                 count, draws, candidate.size() / 3);
 
-    auto rejects = [&] {
-        return M2OpaqueBatchRun::Gather(elements.data(), order.data(), count, indexCapacity).elements == 1;
+    using Result = M2OpaqueBatchRun::Result;
+    auto rejects = [&](Result expected) {
+        const auto run = M2OpaqueBatchRun::Gather(elements.data(), order.data(), count, indexCapacity);
+        return run.elements == 1 && run.result == expected;
     };
     const auto originalElement = elements[1];
     elements[1].m_flags = 4;
-    assert(rejects());
+    assert(rejects(Result::SectionFlags));
     elements[1] = originalElement;
     elements[1].m_model = &elements;
-    assert(rejects());
+    assert(rejects(Result::DifferentModel));
     elements[1] = originalElement;
     elements[1].m_alpha = 0.75f;
-    assert(rejects());
+    assert(rejects(Result::Alpha));
     elements[1] = originalElement;
     elements[1].m_shadowValue = 1;
-    assert(rejects());
+    assert(rejects(Result::DrawState));
     elements[1] = originalElement;
     elements[1].m_vertexPermute = 1;
-    assert(rejects());
+    assert(rejects(Result::Shader));
     elements[1] = originalElement;
     batches[1].m_textureComboIndex = 13;
-    assert(rejects());
+    assert(rejects(Result::BatchState));
     batches[1].m_textureComboIndex = 0;
 
     auto originalSection = sections[1];
     ++sections[1].m_indexStart;
-    assert(rejects());
+    assert(rejects(Result::IndexGap));
     sections[1] = originalSection;
     sections[1].m_vertexCount = 0;
-    assert(rejects());
+    assert(rejects(Result::VertexRange));
     sections[1] = originalSection;
     ++sections[1].m_boneComboIndex;
-    assert(rejects());
+    assert(rejects(Result::DifferentPalette));
     sections[1] = originalSection;
     sections[1].m_indexCount = 5;
-    assert(rejects());
+    assert(rejects(Result::IndexRange));
     sections[1] = originalSection;
     assert(M2OpaqueBatchRun::Gather(elements.data(), order.data(), count, sections[1].m_indexStart).elements == 1);
 
@@ -105,5 +107,5 @@ int main() {
 
     sections[0].m_indexCount = 65535;
     sections[1].m_indexStart = sections[0].m_indexStart + sections[0].m_indexCount;
-    assert(rejects());
+    assert(rejects(Result::IndexRange));
 }
