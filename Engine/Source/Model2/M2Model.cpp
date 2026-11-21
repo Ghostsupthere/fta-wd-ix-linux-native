@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <optional>
 #include <xmmintrin.h>
 #if defined(_MSC_VER)
 #include <malloc.h>
@@ -188,6 +189,35 @@ bool CM2Model::WaitForLoad(const char* reason) {
     return this->IsLoaded() && this->m_shared->m_data && this->m_shared->m_skinData;
 }
 
+namespace {
+class ModelQuery {
+public:
+    explicit ModelQuery(CM2Model& model, bool wait = true) {
+        if (model.HasLoadFailed()) {
+            return;
+        }
+        if (model.IsLoaded()) {
+            m_ready = true;
+            return;
+        }
+
+        if (!wait) {
+            return;
+        }
+
+        // Keep the query's model alive if synchronous completion drops its owner's reference.
+        m_hold.emplace(model);
+        m_ready = model.WaitForLoad(nullptr);
+    }
+
+    explicit operator bool() const { return m_ready; }
+
+private:
+    std::optional<ModelLoadReference> m_hold;
+    bool m_ready = false;
+};
+}
+
 // VERIFY: 240e75c9 auto
 // OFFSET: 0x00823F10
 void CM2Model::SetAnimating(int32_t animating) {
@@ -311,8 +341,13 @@ void CM2Model::SetLightEnabled(uint32_t index, uint32_t enabled) {
 // VERIFY: 15a8f3dc auto
 // OFFSET: 0x00824170
 void* CM2Model::GetCameraByIndex(uint32_t index) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return nullptr;
+    }
+
+    if (!this->m_cameras || index >= this->m_shared->m_data->m_cameras.m_count) {
+        return nullptr;
     }
 
     return this->m_cameras[index].m_camera;
@@ -382,8 +417,9 @@ int32_t CM2Model::HasLiveParticles() {
 // VERIFY: b133747e auto
 // OFFSET: 0x00824320
 uint32_t CM2Model::GetInstanceCountMax() {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     return this->m_shared->m_maxInstances;
@@ -392,8 +428,9 @@ uint32_t CM2Model::GetInstanceCountMax() {
 // VERIFY: 1593de47 auto
 // OFFSET: 0x00824380
 uint32_t CM2Model::GetCurrentLightCount() {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     CM2Lighting* lighting = this->m_currentLighting;
@@ -682,8 +719,9 @@ uint32_t CM2Model::IsLoaded(int32_t wait, int32_t recursive) {
 // VERIFY: 1574132e auto
 // OFFSET: 0x00824FC0
 int32_t CM2Model::IsDrawable(int32_t wait, int32_t recursive) {
-    if (!(this->m_fFlags & 1) && wait) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this, wait);
+    if (!query) {
+        return 0;
     }
 
     if (!(this->m_fFlags & 2)) {
@@ -1167,8 +1205,9 @@ int32_t CM2Model::HasSequence(const M2Data* data, uint32_t id) {
 // VERIFY: 73b3e0d6 auto
 // OFFSET: 0x00825EE0
 int32_t CM2Model::HasSequence(uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     return this->HasSequence(this->m_shared->m_data, id);
@@ -1182,8 +1221,9 @@ uint32_t CM2Model::ResolveSequenceFallback(uint32_t id) {
     // carry ids far above it, and HasSequence/FindSequenceIndex hash on the id, never indexing a client table. So an
     // id the model itself carries is returned as is; only the fallback walk needs the table, and it is bounded by a
     // step budget instead of an id-indexed visited[] array, so any id range is safe and a cyclic m_fallback cannot hang.
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0xFFFFFFFF;
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -1224,8 +1264,9 @@ uint32_t CM2Model::ResolveSequenceFallback(uint32_t id) {
 int32_t CM2Model::IsSequenceLoaded(uint32_t id) {
     // NOT IN BINARY. The original returned 0 for every id >= 506, the AnimationData table size, not a property of the
     // model. Sequence lookup is id-agnostic (see ResolveSequenceFallback), so extended ids resolve like any other.
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     return this->ResolveSequenceFallback(id) != 0xFFFFFFFF;
@@ -1280,8 +1321,9 @@ uint16_t CM2Model::FindSequenceIndex(const M2Data* data, uint32_t id, int32_t va
 // VERIFY: 5546bff4 manual
 // OFFSET: 0x008261B0
 uint32_t CM2Model::FindSequenceVariationCount(const M2Data* data, uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     uint32_t hashCount = data->m_sequenceIdxHashById.m_count;
@@ -1329,8 +1371,9 @@ uint32_t CM2Model::FindSequenceVariationCount(const M2Data* data, uint32_t id) {
 // VERIFY: 339ad9b4 auto
 // OFFSET: 0x008262F0
 uint32_t CM2Model::GetSequenceVariationCount(uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     return this->FindSequenceVariationCount(this->m_shared->m_data, id);
@@ -1339,6 +1382,12 @@ uint32_t CM2Model::GetSequenceVariationCount(uint32_t id) {
 // VERIFY: 0ce274db manual
 // OFFSET: 0x00826350
 M2SequenceFallback* CM2Model::SequenceFallbackById(M2SequenceFallback* result, uint32_t id) {
+    if (this->HasLoadFailed() || !this->m_shared->m_data || !this->m_shared->m_data->m_sequences.m_count) {
+        result->m_id = 0xFFFFFFFF;
+        result->m_mode = 0;
+        return result;
+    }
+
     M2Data* data = this->m_shared->m_data;
     uint32_t defaultId;
 
@@ -1404,8 +1453,9 @@ M2SequenceFallback* CM2Model::SequenceFallbackById(M2SequenceFallback* result, u
 // VERIFY: ba1ac68b auto
 // OFFSET: 0x008264B0
 int32_t CM2Model::HasBone(uint32_t boneId) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -1416,8 +1466,9 @@ int32_t CM2Model::HasBone(uint32_t boneId) {
 // VERIFY: addba282 manual
 // OFFSET: 0x00826530
 C3Vector CM2Model::GetBonePivot(uint32_t boneId) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return {};
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -1477,8 +1528,10 @@ void CM2Model::SetBoneFlags(uint32_t boneId, uint32_t flags, uint32_t mask) {
 // VERIFY: 5b14b345 manual
 // OFFSET: 0x008266B0
 int32_t CM2Model::GetBoneSequenceInfo(uint32_t boneId, M2BoneSequenceInfo& info) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        info = {};
+        return 0;
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -1519,8 +1572,9 @@ int32_t CM2Model::GetBoneSequenceInfo(uint32_t boneId, M2BoneSequenceInfo& info)
 // VERIFY: 271ac2da manual
 // OFFSET: 0x008267E0
 uint32_t CM2Model::GetBoneSequenceId(uint32_t boneId) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -1548,8 +1602,9 @@ uint32_t CM2Model::GetBoneSequenceAnimId(uint32_t boneId, uint32_t* variation) {
         *variation = 0;
     }
 
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0xFFFFFFFF;
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -1583,8 +1638,9 @@ uint32_t CM2Model::GetBoneSequenceAnimId(uint32_t boneId, uint32_t* variation) {
 // VERIFY: a5462ec6 manual
 // OFFSET: 0x00826930
 float CM2Model::GetBoneSequenceSpeed(uint32_t boneId) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 1.0f;
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -1633,8 +1689,9 @@ int32_t CM2Model::OnSequenceInterrupted(uint32_t boneId, uint16_t boneIndex) {
 // VERIFY: a5ebd842 manual
 // OFFSET: 0x00826A60
 int32_t CM2Model::BoneHasParent(uint32_t boneId) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -2136,8 +2193,9 @@ void CM2Model::SetBoneProceduralTransformByIndex(uint32_t index, const C44Matrix
 // VERIFY: 9445f766 auto
 // OFFSET: 0x008273D0
 int32_t CM2Model::HasAttachment(uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -2152,12 +2210,17 @@ int32_t CM2Model::HasAttachment(uint32_t id) {
 // VERIFY: f01becc2 manual
 // OFFSET: 0x00827460
 C3Vector CM2Model::GetAttachmentPivot(uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return {};
     }
 
     M2Data* data = this->m_shared->m_data;
     uint32_t index = id < data->m_attachmentIndicesById.m_count ? data->m_attachmentIndicesById[id] : 0xFFFFFFFF;
+
+    if (index >= data->m_attachments.m_count) {
+        return {};
+    }
 
     return data->m_attachments[index].m_position;
 }
@@ -2228,8 +2291,9 @@ void CM2Model::DetachAllChildrenById(uint32_t id) {
 // VERIFY: ad2a989b manual
 // OFFSET: 0x008275F0
 int32_t CM2Model::HasEvent(uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -2246,6 +2310,16 @@ int32_t CM2Model::HasEvent(uint32_t id) {
 // VERIFY: 9984810c manual
 // OFFSET: 0x00827670
 int32_t CM2Model::FindEvent(uint32_t id, C3Vector** position, uint16_t* bone) {
+    if (this->HasLoadFailed() || !this->m_shared->m_data) {
+        if (position) {
+            *position = nullptr;
+        }
+        if (bone) {
+            *bone = 0xFFFF;
+        }
+        return 0;
+    }
+
     M2Data* data = this->m_shared->m_data;
 
     for (uint32_t i = 0; i < data->m_events.m_count; i++) {
@@ -2262,8 +2336,9 @@ int32_t CM2Model::FindEvent(uint32_t id, C3Vector** position, uint16_t* bone) {
 // VERIFY: 3c23ff24 manual
 // OFFSET: 0x008276F0
 C3Vector CM2Model::GetEventPivot(uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return {};
     }
 
     C3Vector* position;
@@ -2279,8 +2354,9 @@ C3Vector CM2Model::GetEventPivot(uint32_t id) {
 // VERIFY: 64018054 manual
 // OFFSET: 0x00827780
 uint32_t CM2Model::GetEventSequenceTime(uint32_t sequenceId, uint32_t eventId) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -2331,8 +2407,9 @@ uint32_t CM2Model::GetEventSequenceTime(uint32_t sequenceId, uint32_t eventId) {
 // VERIFY: db72d94c manual
 // OFFSET: 0x008278E0
 int32_t CM2Model::HasCamera(uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -2342,8 +2419,9 @@ int32_t CM2Model::HasCamera(uint32_t id) {
 // VERIFY: 37987c84 manual
 // OFFSET: 0x00827960
 CCamera* CM2Model::GetCameraById(uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return nullptr;
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -2354,7 +2432,7 @@ CCamera* CM2Model::GetCameraById(uint32_t id) {
 
     uint16_t index = data->m_cameraIndicesById[id];
 
-    if (index == 0xFFFF) {
+    if (!this->m_cameras || index == 0xFFFF || index >= data->m_cameras.m_count) {
         return nullptr;
     }
 
@@ -2393,8 +2471,9 @@ void CM2Model::SetEmittersEnabled(int32_t enabled) {
 // VERIFY: 962d124c manual
 // OFFSET: 0x00827A90
 uint32_t CM2Model::GetNumGeometryBatches() {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     M2ModelOptGeo* optGeo = this->m_optGeo;
@@ -2442,8 +2521,9 @@ uint32_t CM2Model::GetNumGeometryBatches() {
 // VERIFY: 71314806 manual
 // OFFSET: 0x00827E30
 uint32_t CM2Model::GetNumCombinableDoodadBatches() {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     M2ModelOptGeo* optGeo = this->m_optGeo;
@@ -2495,8 +2575,9 @@ uint32_t CM2Model::GetNumCombinableDoodadBatches() {
 // VERIFY: d7b7ec48 manual
 // OFFSET: 0x00827F70
 uint32_t CM2Model::GetNumPrimitives() {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     M2ModelOptGeo* optGeo = this->m_optGeo;
@@ -3172,8 +3253,9 @@ static const C44Matrix& GetModelBoneMatrixSafe(CM2Model* model, M2Data* data, ui
 // VERIFY: 15cdfc90 manual
 // OFFSET: 0x00829AA0
 void CM2Model::RenderModelBatchesForProjectedTexture() {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return;
     }
 
     CM2Shared* shared = this->m_shared;
@@ -4635,8 +4717,11 @@ void CM2Model::OptimizeVisibleGeometry() {
 // VERIFY: aa052318 manual
 // OFFSET: 0x0082CED0
 void CM2Model::GetSequenceInfo(uint32_t id, uint32_t variation, M2SequenceInfo& info) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        info = {};
+        info.m_animId = 0xFFFFFFFF;
+        return;
     }
 
     M2SequenceFallback fallback;
@@ -4688,8 +4773,9 @@ void CM2Model::GetSequenceInfo(uint32_t id, uint32_t variation, M2SequenceInfo& 
 // VERIFY: 349f9473 manual
 // OFFSET: 0x0082D1A0
 uint32_t CM2Model::GetNumBatches() {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 0;
     }
 
     uint32_t batches = this->GetNumGeometryBatches();
@@ -6387,8 +6473,9 @@ uint32_t CM2Model::ProcessEventCallbacks(uint32_t boneIndex, uint32_t sequenceIn
 // VERIFY: 4c99f6ab manual
 // OFFSET: 0x00831330
 C3Vector CM2Model::GetAttachmentPosition(uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return {};
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -6407,8 +6494,9 @@ C3Vector CM2Model::GetAttachmentPosition(uint32_t id) {
 // VERIFY: 726b46b5 manual
 // OFFSET: 0x00831410
 C44Matrix CM2Model::GetAttachmentWorldTransform(uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return C44Matrix();
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -6438,8 +6526,9 @@ C44Matrix CM2Model::GetAttachmentWorldTransform(uint32_t id) {
 // VERIFY: fbe80c3c auto
 // OFFSET: 0x00831550
 float CM2Model::GetAttachmentWorldScale(uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return 1.0f;
     }
 
     M2Data* data = this->m_shared->m_data;
@@ -6558,8 +6647,9 @@ void CM2Model::AttachToParent(CM2Model* parent, uint32_t id, const C3Vector* pos
 // VERIFY: c5304a4f auto
 // OFFSET: 0x008317E0
 C3Vector CM2Model::GetEventPosition(uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return {};
     }
 
     C3Vector* position;
@@ -6576,8 +6666,9 @@ C3Vector CM2Model::GetEventPosition(uint32_t id) {
 // VERIFY: 462f2ec0 manual
 // OFFSET: 0x008318A0
 C44Matrix CM2Model::GetEventWorldTransform(uint32_t id) {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelQuery query(*this);
+    if (!query) {
+        return C44Matrix();
     }
 
     C3Vector* position;

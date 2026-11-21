@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #ifdef NDEBUG
 #error Assertions must be enabled
 #endif
