@@ -484,7 +484,7 @@ offHand:
 
     if (this->m_component) {
         this->m_component->RemoveItem(slot);
-        this->m_component->AddItem(slot, stats->m_displayId, visual);
+        this->m_component->AddItem(slot, stats->m_displayId, visual, itemId > 0 ? static_cast<uint32_t>(itemId) : 0);
     }
 }
 

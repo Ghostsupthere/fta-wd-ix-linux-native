@@ -178,6 +178,7 @@ class CCharacterComponent {
     WxlEquipmentOwnerWatch m_wxlEquipmentOwner;
     std::vector<std::unique_ptr<WxlTexturePending>> m_wxlTextures;
     int32_t m_wxlItemVisual[NUM_ITEM_SLOTS];
+    uint32_t m_fitItemId[NUM_ITEM_SLOTS];
     void RefreshWxlEquipment();
     void CancelWxlWaist();
     void QueueWxlWaist(const ItemDisplayInfoRec* displayRec, int32_t itemVisual);
@@ -192,9 +193,9 @@ class CCharacterComponent {
     void AddCape();
     void AddHelm(int32_t itemVisual);
     void ApplyHelmetGeosetVisibility(const ItemDisplayInfoRec* displayRec);
-    void AddItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* displayRec, int32_t itemVisual);
-    void AddItem(ITEM_SLOT itemSlot, int32_t displayID, int32_t itemVisual);
-    void AddItemBySlot(INVENTORY_SLOTS invSlot, int32_t displayID, int32_t itemVisual);
+    void AddItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* displayRec, int32_t itemVisual, uint32_t itemId = 0);
+    void AddItem(ITEM_SLOT itemSlot, int32_t displayID, int32_t itemVisual, uint32_t itemId = 0);
+    void AddItemBySlot(INVENTORY_SLOTS invSlot, int32_t displayID, int32_t itemVisual, uint32_t itemId = 0);
     void AddItemByType(INVENTORY_TYPES invType, int32_t displayID);
     void AddQuiver(int32_t itemVisual);
     void AddShoulders(int32_t itemVisual);

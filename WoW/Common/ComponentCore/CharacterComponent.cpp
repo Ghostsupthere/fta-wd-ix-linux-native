@@ -1,3 +1,8 @@
+#if defined(WOWDECOMP_LINUX)
+#include "EquipmentFit.h"
+#include <filesystem>
+#include <fstream>
+#endif
 #include <cstddef>
 #include <algorithm>
 #include <cstdint>
@@ -400,9 +405,16 @@ static SCritSect s_finishedListCritSect;
 // STATIC: 0x00B6BA20
 static SCritSect s_mipBitsCritSect;
 
+#if defined(WOWDECOMP_LINUX)
+static const EquipmentFit::Configuration& ArmorFitConfiguration();
+#endif
+
 // VERIFY: e87c3da6 auto
 // OFFSET: 0x00401FF0
 bool CCharacterComponent::Initialize() {
+#if defined(WOWDECOMP_LINUX)
+    (void)ArmorFitConfiguration();
+#endif
     CCharacterComponent::g_componentTextureLevelVar = CVar::Register("componentTextureLevel", "Number of mip levels used for character component textures", 0x1, "8", &ComponentVarHandler, 0, false, nullptr, false);
     CCharacterComponent::g_componentThreadVar = CVar::Register("componentThread", "Multi thread character component processing", 0x1, "1", &ComponentVarHandler, 0, false, nullptr, false);
     CCharacterComponent::g_componentCompressVar = CVar::Register("componentCompress", "Character component texture compression", 0x1, "1", &ComponentVarHandler, 0, false, nullptr, false);
@@ -3979,6 +3991,7 @@ inline ITEM_SLOT CCharacterComponent::GetItemSlotForInvSlot(INVENTORY_SLOTS invS
 void CCharacterComponent::RemoveItem(ITEM_SLOT itemSlot) {
 #if defined(WOWDECOMP_LINUX)
     this->m_wxlItemVisual[itemSlot] = 0;
+    this->m_fitItemId[itemSlot] = 0;
     if (itemSlot == ITEMSLOT_BELT) this->CancelWxlWaist();
 #endif
     if (!this->m_itemDisplayID[itemSlot]) {
@@ -4484,6 +4497,7 @@ CCharacterComponent::CCharacterComponent() {
 #if defined(WOWDECOMP_LINUX)
     this->m_wxlWaistPending = nullptr;
     std::fill_n(this->m_wxlItemVisual, NUM_ITEM_SLOTS, 0);
+    std::fill_n(this->m_fitItemId, NUM_ITEM_SLOTS, 0);
 #endif
     memset(this->m_baseVariation, 0, sizeof(this->m_baseVariation));
     this->m_flags |= 0x7;
@@ -5954,6 +5968,95 @@ bool CCharacterComponent::Init(ComponentData* data, const char* debug) {
     return true;
 }
 
+#if defined(WOWDECOMP_LINUX)
+static const EquipmentFit::Configuration& ArmorFitConfiguration() {
+    static const EquipmentFit::Configuration configuration = [] {
+        char executable[4096];
+        const auto length = GetExecutablePathUTF8(executable, sizeof(executable));
+        if (!length || length >= sizeof(executable) - 1) {
+            return EquipmentFit::Configuration{};
+        }
+
+        const auto directory = std::filesystem::path(executable).parent_path();
+        std::ifstream file(directory / "EquipmentScale.ini", std::ios::binary | std::ios::ate);
+        if (!file) {
+            return EquipmentFit::Configuration{};
+        }
+
+        const auto lengthOnDisk = file.tellg();
+        if (lengthOnDisk < 0 || lengthOnDisk > 1024 * 1024) {
+            WxlNativeDiagnostic("equipment fit: unreadable configuration or file exceeds 1 MiB");
+            return EquipmentFit::Configuration{};
+        }
+        std::string content(static_cast<std::size_t>(lengthOnDisk), '\0');
+        file.seekg(0);
+        if (!file.read(content.data(), static_cast<std::streamsize>(content.size()))) {
+            WxlNativeDiagnostic("equipment fit: configuration read failed");
+            return EquipmentFit::Configuration{};
+        }
+
+        auto parsed = EquipmentFit::Parse(content);
+        if (!parsed.valid) {
+            WxlNativeDiagnostic("equipment fit: configuration line %zu: %s", parsed.line, parsed.error.c_str());
+            return EquipmentFit::Configuration{};
+        }
+        return std::move(parsed.configuration);
+    }();
+    return configuration;
+}
+
+static void ApplyArmorFit(CCharacterComponent& component, EquipmentFit::Slot slot, uint32_t itemId, uint32_t displayId) {
+    CM2Model* parent = component.m_data.m_model;
+    if (!parent || !parent->m_shared) {
+        return;
+    }
+
+    EquipmentFit::Context context;
+    context.slot = slot;
+    context.item = itemId;
+    context.display = displayId;
+    context.modern = EquipmentFit::IsModern(slot, itemId, displayId);
+    context.race = component.m_data.m_preferences.m_raceID;
+    context.sex = component.m_data.m_preferences.m_sexID;
+    const auto* race = g_chrRacesDB.GetRecord(context.race);
+
+    if (const auto body = EquipmentFit::ParseBodyName(parent->m_shared->m_fileName); body.valid) {
+        context.raceName = body.race;
+        context.sex = body.sex;
+        if (!race || !race->m_clientFileString || !EquipmentFit::TokenEqual(body.race, race->m_clientFileString)) {
+            race = nullptr;
+            for (int32_t i = 0; i < g_chrRacesDB.m_numRecords; ++i) {
+                const auto* entry = &g_chrRacesDB.m_records[i];
+                if (entry->m_id > 0 && entry->m_clientFileString && EquipmentFit::TokenEqual(body.race, entry->m_clientFileString) &&
+                    (!race || entry->m_id < race->m_id)) {
+                    race = entry;
+                }
+            }
+            context.race = race ? race->m_id : 0;
+        }
+    }
+    if (race) {
+        if (race->m_clientPrefix) context.racePrefix = race->m_clientPrefix;
+        if (race->m_clientFileString) context.raceName = race->m_clientFileString;
+    }
+
+    const float scale = ArmorFitConfiguration().Resolve(context, EquipmentFit::DefaultScale(context));
+    for (CM2Model* child = parent->m_attachList; child; child = child->m_attachNext) {
+        const auto attachment = child->m_attachmentId;
+        const bool matches = slot == EquipmentFit::Slot::Helm
+            ? attachment == ATTACH_HELM
+            : attachment == ATTACH_SHOULDER_RIGHT || attachment == ATTACH_SHOULDER_LEFT;
+        if (!matches || (scale == 1.0f && !(child->m_fFlags & 0x8000))) {
+            continue;
+        }
+        C44Matrix transform;
+        transform.Identity();
+        transform.Scale(scale);
+        child->SetWorldTransform(transform);
+    }
+}
+#endif
+
 // VERIFY: 474cb696 manual
 // OFFSET: 0x004F2640
 bool CCharacterComponent::TryAddCollectionItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* displayRec) {
@@ -6200,7 +6303,7 @@ void CCharacterComponent::RefreshWxlEquipment() {
         const ITEM_SLOT slot = static_cast<ITEM_SLOT>(index);
         ItemDisplayInfoRec display;
         if (!this->m_itemDisplayID[index] || !g_itemDisplayInfoDB.GetRecord(this->m_itemDisplayID[index], &display)) continue;
-        this->AddItem(slot, &display, this->m_wxlItemVisual[index]);
+        this->AddItem(slot, &display, this->m_wxlItemVisual[index], this->m_fitItemId[index]);
         ++replayed;
     }
     WxlNativeDiagnostic("equipment: replayed %u equipped slots for race=%u sex=%u", replayed, owner.race, owner.sex);
@@ -6291,9 +6394,12 @@ void CCharacterComponent::UpdateWxlWaist() {
 }
 #endif
 
-void CCharacterComponent::AddItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* displayRec, int32_t itemVisual) {
+void CCharacterComponent::AddItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* displayRec, int32_t itemVisual, uint32_t itemId) {
+    bool appearanceChanged = this->m_itemDisplayID[itemSlot] != displayRec->m_id;
 #if defined(WOWDECOMP_LINUX)
+    appearanceChanged |= this->m_wxlItemVisual[itemSlot] != itemVisual;
     this->m_wxlItemVisual[itemSlot] = itemVisual;
+    this->m_fitItemId[itemSlot] = itemId;
 #endif
     this->m_flags |= 0x4;
     this->m_itemDisplayID[itemSlot] = displayRec->m_id;
@@ -6310,14 +6416,16 @@ void CCharacterComponent::AddItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* 
                 this->ApplyHelmetGeosetVisibility(displayRec);
                 break;
             }
-            if (!this->IsHelmModelCorrect()) {
+            if (appearanceChanged || !this->IsHelmModelCorrect()) {
                 if (this->m_itemDisplayID[ITEMSLOT_HEAD]) {
                     CCharacterComponent::RemoveLinkpt(this->m_data.m_model, ATTACH_HELM);
                 }
 
                 this->AddHelm(itemVisual);
             }
-
+#if defined(WOWDECOMP_LINUX)
+            ApplyArmorFit(*this, EquipmentFit::Slot::Helm, itemId, displayRec->m_id);
+#endif
             break;
 
         case ITEMSLOT_SHOULDER:
@@ -6326,7 +6434,7 @@ void CCharacterComponent::AddItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* 
                 CCharacterComponent::RemoveLinkpt(this->m_data.m_model, static_cast<GEOCOMPONENTLINKS>(5));
                 break;
             }
-            if (!this->AreShoulderModelsCorrect()) {
+            if (appearanceChanged || !this->AreShoulderModelsCorrect()) {
                 if (this->m_itemDisplayID[ITEMSLOT_SHOULDER]) {
                     CCharacterComponent::RemoveLinkpt(this->m_data.m_model, static_cast<GEOCOMPONENTLINKS>(6));
                     CCharacterComponent::RemoveLinkpt(this->m_data.m_model, static_cast<GEOCOMPONENTLINKS>(5));
@@ -6334,7 +6442,9 @@ void CCharacterComponent::AddItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* 
 
                 this->AddShoulders(itemVisual);
             }
-
+#if defined(WOWDECOMP_LINUX)
+            ApplyArmorFit(*this, EquipmentFit::Slot::Shoulders, itemId, displayRec->m_id);
+#endif
             break;
 
         case ITEMSLOT_CAPE:
@@ -6373,7 +6483,7 @@ void CCharacterComponent::AddItem(ITEM_SLOT itemSlot, const ItemDisplayInfoRec* 
 
 // VERIFY: 1692162c auto
 // OFFSET: 0x004F2830
-void CCharacterComponent::AddItem(ITEM_SLOT itemSlot, int32_t displayID, int32_t itemVisual) {
+void CCharacterComponent::AddItem(ITEM_SLOT itemSlot, int32_t displayID, int32_t itemVisual, uint32_t itemId) {
     if (displayID <= 0) {
         return;
     }
@@ -6381,20 +6491,20 @@ void CCharacterComponent::AddItem(ITEM_SLOT itemSlot, int32_t displayID, int32_t
     ItemDisplayInfoRec rec;
 
     if (g_itemDisplayInfoDB.GetRecord(displayID, &rec)) {
-        this->AddItem(itemSlot, &rec, itemVisual);
+        this->AddItem(itemSlot, &rec, itemVisual, itemId);
     }
 }
 
 // VERIFY: 433a7621 manual
 // OFFSET: 0x004F2880
-void CCharacterComponent::AddItemBySlot(INVENTORY_SLOTS invSlot, int32_t displayID, int32_t itemVisual) {
+void CCharacterComponent::AddItemBySlot(INVENTORY_SLOTS invSlot, int32_t displayID, int32_t itemVisual, uint32_t itemId) {
     switch (invSlot) {
         case INVSLOT_HEAD:
-            this->AddItem(ITEMSLOT_HEAD, displayID, itemVisual);
+            this->AddItem(ITEMSLOT_HEAD, displayID, itemVisual, itemId);
             break;
 
         case INVSLOT_SHOULDER:
-            this->AddItem(ITEMSLOT_SHOULDER, displayID, itemVisual);
+            this->AddItem(ITEMSLOT_SHOULDER, displayID, itemVisual, itemId);
             break;
 
         case INVSLOT_BODY:

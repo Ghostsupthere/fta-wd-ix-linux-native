@@ -10375,7 +10375,8 @@ void CGPlayer_C::EquipVisibleItem(const VisibleItem_C* item, int32_t slot) {
         return;
     }
 
-    this->m_characterComponent->AddItemBySlot(static_cast<INVENTORY_SLOTS>(slot), const_cast<VisibleItem_C*>(item)->GetDisplayID(), 0);
+    this->m_characterComponent->AddItemBySlot(static_cast<INVENTORY_SLOTS>(slot),
+        const_cast<VisibleItem_C*>(item)->GetDisplayID(), 0, item->m_itemId > 0 ? static_cast<uint32_t>(item->m_itemId) : 0);
 }
 
 // VERIFY: 0dbd89fa manual
