@@ -5,6 +5,7 @@
 #include <malloc.h>
 #include <new>
 #include <typeinfo>
+#include "Engine/Source/Model2/M2HeapSort.h"
 #include "Engine/Source/Model2/M2Shared.h"
 #if defined(WOWDECOMP_LINUX)
 #include "Engine/Source/Model2/WxlBoneBudget.h"
@@ -2082,60 +2083,9 @@ void CM2Shared::Release() {
 // VERIFY: e4a58b26 manual
 // OFFSET: 0x0083DCF0
 void M2HeapSort(int32_t (*compare)(uint32_t, uint32_t, const void*), uint32_t* array, uint32_t count, const void* param) {
-    if (count <= 1) {
-        return;
-    }
-
-    for (uint32_t i = count >> 1; i;) {
-        i--;
-
-        uint32_t value = array[i];
-        uint32_t parent = i;
-
-        for (uint32_t child = 2 * i + 1; child < count; child = 2 * child + 1) {
-            uint32_t childValue = array[child];
-
-            if (child + 1 < count && compare(array[child + 1], array[child], param) > 0) {
-                child++;
-                childValue = array[child];
-            }
-
-            if (compare(childValue, value, param) <= 0) {
-                break;
-            }
-
-            array[parent] = array[child];
-            parent = child;
-        }
-
-        array[parent] = value;
-    }
-
-    for (uint32_t i = count - 1; i; i--) {
-        uint32_t value = array[i];
-        array[i] = array[0];
-
-        uint32_t parent = 0;
-
-        for (uint32_t child = 1; child < i; child = 2 * child + 1) {
-            uint32_t childValue = array[child];
-
-            if (child + 1 < i && compare(array[child + 1], array[child], param) > 0) {
-                child++;
-                childValue = array[child];
-            }
-
-            if (compare(childValue, value, param) <= 0) {
-                break;
-            }
-
-            array[parent] = array[child];
-            parent = child;
-        }
-
-        array[parent] = value;
-    }
+    M2HeapSortWith(array, count, [compare, param](uint32_t a, uint32_t b) { return compare(a, b, param); });
 }
+
 #if defined(WOWDECOMP_LINUX)
 namespace {
 bool ReadModernM2Sidecar(const char* path, std::vector<uint8_t>& output) {

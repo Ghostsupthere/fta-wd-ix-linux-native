@@ -23,7 +23,7 @@ constexpr uint32_t kKeptFrames = 240;
 constexpr const char* kNames[Count] = {
     "World render", "World scene", "Terrain", "WMO draw", "Weather",
     "M2 animate", "M2 draw", "Present", "Paint", "Client idle",
-    "World update", "UI idle", "UI update", "UI render"
+    "World update", "UI idle", "UI update", "UI render", "M2 transparent sort"
 };
 
 struct FrameRecord {
@@ -82,7 +82,9 @@ void LogSummary() {
                  s.fps, s.frameMs, s.drawCalls, s.triangles, s.frames);
     for (uint32_t i = 0; i < Count; ++i)
     {
-        std::fprintf(stderr, " %s %.2f/%.2f ms", s.zones[i].name, s.zones[i].selfMs, s.zones[i].totalMs);
+        const int precision = i == M2TransparentSort ? 3 : 2;
+        std::fprintf(stderr, " %s %.*f/%.*f ms", s.zones[i].name,
+            precision, s.zones[i].selfMs, precision, s.zones[i].totalMs);
         if (s.zones[i].selfDraws >= 0.5) std::fprintf(stderr, " (%.0f draws)", s.zones[i].selfDraws);
     }
     std::fprintf(stderr, "\n");

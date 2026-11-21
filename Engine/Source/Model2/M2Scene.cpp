@@ -32,6 +32,10 @@
 #include "Engine/Source/Model2/M2ParticleBuild.h"
 #include "Engine/Source/Model2/M2ParticleJobs.h"
 #include "Engine/Source/Model2/M2OpaqueSort.h"
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/Model2/M2TransparentSort.h"
+#include <cstdlib>
+#endif
 #include "Engine/Source/Tempest/C33Matrix.h"
 #include "Engine/Source/Tempest/C3Ray.h"
 #include "Engine/Source/Tempest/NTempest.h"
@@ -2405,8 +2409,29 @@ int32_t CM2Scene::Animate(const C3Vector& cameraPos) {
 #else
     M2HeapSort(&CM2Scene::SortOpaque, this->m_passElements[0].m_data, this->m_passElements[0].m_count, this);
 #endif
-    M2HeapSort(&CM2Scene::SortTransparent, this->m_passElements[1].m_data, this->m_passElements[1].m_count, this);
-    M2HeapSort(&CM2Scene::SortTransparent, this->m_passElements[2].m_data, this->m_passElements[2].m_count, this);
+    {
+        Profiler::Scope sortProfile(Profiler::M2TransparentSort);
+#if defined(WOWDECOMP_LINUX)
+        static const bool useDepthKeys = [] {
+            const char* setting = std::getenv("WXL_M2_TRANSPARENT_KEYS");
+            return setting && std::strcmp(setting, "1") == 0;
+        }();
+#endif
+        for (uint32_t pass = 1; pass <= 2; ++pass) {
+            auto& order = this->m_passElements[pass];
+#if defined(WOWDECOMP_LINUX)
+            if (useDepthKeys) {
+                static thread_local std::vector<M2TransparentSort::Key> keys;
+                if (M2TransparentSort::TrySort(
+                        order.m_data, order.m_count, this->m_elements.m_data, this->m_elements.m_count, keys,
+                        [this](uint32_t a, uint32_t b) { return CM2Scene::SortTransparent(a, b, this); })) {
+                    continue;
+                }
+            }
+#endif
+            M2HeapSort(&CM2Scene::SortTransparent, order.m_data, order.m_count, this);
+        }
+    }
 
     if ((this->m_cache->m_flags & 0x80) && additiveCount > 1) {
         this->SortAdditiveParticleElements(1);

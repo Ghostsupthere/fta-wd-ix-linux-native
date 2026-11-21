@@ -25,6 +25,7 @@ enum Id : uint32_t {
     UiIdle,           // CGGameUI::Idle: the UI's own per-frame work
     UiUpdate,         // CSimpleTop::OnLayerUpdate: layout and every frame's OnUpdate script (add-ons)
     UiRender,         // CSimpleTop::OnLayerRender: drawing every visible frame, texture and font string
+    M2TransparentSort, // both transparent passes, including key preparation
     Count
 };
 
