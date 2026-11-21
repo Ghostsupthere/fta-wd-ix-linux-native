@@ -882,33 +882,47 @@ void CM2Model::ReplaceParticleColor(uint32_t id, CImVector color0, CImVector col
     }
 }
 
+static M2Bounds CachedModelBounds(const CM2Model& model) {
+    const CAaBox box = model.m_shared ? model.m_shared->m_boundingBox : CAaBox{};
+    const C3Vector half = (box.t - box.b) * 0.5f;
+    return {box, sqrtf(half.SquaredMag())};
+}
+
+static CAaSphere SphereFromModelBounds(const M2Bounds& bounds) {
+    CAaSphere sphere;
+    sphere.c = bounds.m_extent.Center();
+    sphere.r = bounds.m_radius;
+    return sphere;
+}
+
 // VERIFY: bf0dc568 manual
 // OFFSET: 0x008254F0
 CAaBox CM2Model::GetMaxBoundingBoxPlusAttachments() {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelLoadReference holdModel(*this);
+    if (this->HasLoadFailed() || (!this->IsLoaded() && !this->WaitForLoad(nullptr))) {
+        return CachedModelBounds(*this).m_extent;
     }
 
-    CAaBox box = this->m_shared->m_data->m_bounds.m_extent;
+    const CAaBox extent = this->m_shared->m_data->m_bounds.m_extent;
+    CAaBox box = extent;
 
-    for (CM2Model* model = this->m_attachList; model; model = model->m_attachNext) {
-        CAaBox child = model->GetMaxBoundingBoxPlusAttachments();
+    for (CM2Model* model = this->m_attachList; model;) {
+        const ModelLoadReference holdChild(*model);
+        const CAaBox child = model->GetMaxBoundingBoxPlusAttachments();
+
+        // A load callback can detach the child and reset its next link.
+        if (model->m_attachParent != this) {
+            model = this->m_attachList;
+            continue;
+        }
+        model = model->m_attachNext;
 
         if (child.t.x < child.b.x && child.b.y > child.t.y && child.t.z < child.b.z) {
             continue;
         }
 
-        const CAaBox& extent = this->m_shared->m_data->m_bounds.m_extent;
-        float sizeX = child.t.x - child.b.x;
-        float sizeY = child.t.y - child.b.y;
-        float sizeZ = child.t.z - child.b.z;
-        CAaBox grown;
-        grown.b.x = extent.b.x - sizeX;
-        grown.b.y = extent.b.y - sizeY;
-        grown.b.z = extent.b.z - sizeZ;
-        grown.t.x = sizeX + extent.t.x;
-        grown.t.y = sizeY + extent.t.y;
-        grown.t.z = sizeZ + extent.t.z;
+        const C3Vector size = child.t - child.b;
+        CAaBox grown(extent.b - size, extent.t + size);
         box |= grown;
     }
 
@@ -918,21 +932,23 @@ CAaBox CM2Model::GetMaxBoundingBoxPlusAttachments() {
 // VERIFY: fbee199d manual
 // OFFSET: 0x00825660
 CAaSphere CM2Model::GetMaxBoundingSpherePlusAttachments() {
-    if (!(this->m_fFlags & 1)) {
-        this->WaitForLoad(nullptr);
+    const ModelLoadReference holdModel(*this);
+    if (this->HasLoadFailed() || (!this->IsLoaded() && !this->WaitForLoad(nullptr))) {
+        return SphereFromModelBounds(CachedModelBounds(*this));
     }
 
-    const M2Bounds& bounds = this->m_shared->m_data->m_bounds;
-    CAaSphere sphere;
-    sphere.c.x = (bounds.m_extent.b.x + bounds.m_extent.t.x) * 0.5f;
-    sphere.c.y = (bounds.m_extent.t.y + bounds.m_extent.b.y) * 0.5f;
-    sphere.c.z = 0.5f * (bounds.m_extent.t.z + bounds.m_extent.b.z);
-    sphere.r = bounds.m_radius;
-
+    CAaSphere sphere = SphereFromModelBounds(this->m_shared->m_data->m_bounds);
     float radius = 0.0f;
 
-    for (CM2Model* model = this->m_attachList; model; model = model->m_attachNext) {
-        CAaSphere child = model->GetMaxBoundingSpherePlusAttachments();
+    for (CM2Model* model = this->m_attachList; model;) {
+        const ModelLoadReference holdChild(*model);
+        const CAaSphere child = model->GetMaxBoundingSpherePlusAttachments();
+
+        if (model->m_attachParent != this) {
+            model = this->m_attachList;
+            continue;
+        }
+        model = model->m_attachNext;
 
         if (child.r > radius) {
             radius = child.r;
@@ -940,7 +956,6 @@ CAaSphere CM2Model::GetMaxBoundingSpherePlusAttachments() {
     }
 
     sphere.r = radius + sphere.r;
-
     return sphere;
 }
 
@@ -8260,12 +8275,6 @@ void CM2Lighting::Reset() {
     this->m_vector48 = C3Vector(0.0f, 0.0f, 0.0f);
 }
 
-static M2Bounds CachedModelBounds(const CM2Model& model) {
-    const CAaBox box = model.m_shared ? model.m_shared->m_boundingBox : CAaBox{};
-    const C3Vector half = (box.t - box.b) * 0.5f;
-    return {box, sqrtf(half.SquaredMag())};
-}
-
 static M2Bounds ReadModelBounds(CM2Model& model) {
     if (model.HasLoadFailed()) {
         return CachedModelBounds(model);
@@ -8289,12 +8298,7 @@ CAaBox CM2Model::GetBoundingBox() {
 // VERIFY: 542067ba manual
 // OFFSET: 0x004F5E80
 CAaSphere CM2Model::GetBoundingSphere() {
-    const M2Bounds bounds = ReadModelBounds(*this);
-    CAaSphere sphere;
-    sphere.c = bounds.m_extent.Center();
-    sphere.r = bounds.m_radius;
-
-    return sphere;
+    return SphereFromModelBounds(ReadModelBounds(*this));
 }
 
 // VERIFY: f3350a9a auto

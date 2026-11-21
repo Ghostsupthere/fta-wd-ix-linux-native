@@ -986,7 +986,7 @@ float CGUnit_C::GetModelScale(const CreatureDisplayInfoRec* displayInfo, const C
 // VERIFY: 3f33188f manual
 // OFFSET: 0x007370D0
 void CGUnit_C::UpdateWorldObject(int32_t a2) {
-    if (this->m_worldObject) {
+    if (auto* worldObject = this->m_worldObject) {
         C44Matrix matrix;
         CM2Model* model = this->GetObjectModel();
 
@@ -1004,12 +1004,10 @@ void CGUnit_C::UpdateWorldObject(int32_t a2) {
         C3Vector vec(0.0f, 0.0f, this->m_movementData.m_collisionHeight * 0.5f);
 
         if (model && model->IsLoaded(0, 0)) {
-            if (model->IsLoaded(0, 1)) {
-                box = model->GetMaxBoundingBoxPlusAttachments();
-                sphere = model->GetMaxBoundingSpherePlusAttachments();
-            } else {
-                box = model->GetBoundingBox();
-                sphere = model->GetBoundingSphere();
+            const bool useAttachments = model->IsLoaded(0, 1);
+            box = useAttachments ? model->GetMaxBoundingBoxPlusAttachments() : model->GetBoundingBox();
+            if (this->GetObjectModel() == model) {
+                sphere = useAttachments ? model->GetMaxBoundingSpherePlusAttachments() : model->GetBoundingSphere();
             }
 
             if (this->m_vehicle && this->m_vehicle->m_vehicleRec) {
@@ -1025,7 +1023,9 @@ void CGUnit_C::UpdateWorldObject(int32_t a2) {
             }
         }
 
-        CMap::ObjectUpdate(this->m_worldObject, matrix, box, sphere, vec, a2, this->m_torsoKeyBone);
+        if (this->m_worldObject == worldObject && this->GetObjectModel() == model) {
+            CMap::ObjectUpdate(worldObject, matrix, box, sphere, vec, a2, this->m_torsoKeyBone);
+        }
     }
 
     if (this->m_vehicle && this->m_vehicle->m_vehicleRec) {

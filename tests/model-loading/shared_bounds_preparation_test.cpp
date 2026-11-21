@@ -1,7 +1,9 @@
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 
 #ifdef NDEBUG
 #error Assertions must be enabled
@@ -10,12 +12,17 @@
 struct C3Vector {
     float x = 0.0f, y = 0.0f, z = 0.0f;
     float SquaredMag() const { return x * x + y * y + z * z; }
+    C3Vector operator+(C3Vector v) const { return {x + v.x, y + v.y, z + v.z}; }
     C3Vector operator-(C3Vector v) const { return {x - v.x, y - v.y, z - v.z}; }
     C3Vector operator*(float scale) const { return {x * scale, y * scale, z * scale}; }
 };
 
 struct CAaBox {
     C3Vector b, t;
+    void operator|=(const CAaBox& box) {
+        b = {std::min(b.x, box.b.x), std::min(b.y, box.b.y), std::min(b.z, box.b.z)};
+        t = {std::max(t.x, box.t.x), std::max(t.y, box.t.y), std::max(t.z, box.t.z)};
+    }
     C3Vector Center() const { return {(b.x + t.x) * 0.5f, (b.y + t.y) * 0.5f, (b.z + t.z) * 0.5f}; }
 };
 
@@ -26,6 +33,10 @@ struct SharedModel { CAaBox m_boundingBox; ModelData* m_data; uint32_t m_flags =
 
 struct CM2Model {
     SharedModel* m_shared = nullptr;
+    CM2Model* m_attachList = nullptr;
+    CM2Model* m_attachParent = nullptr;
+    CM2Model* m_attachNext = nullptr;
+    std::function<void()> onWait;
     int m_refCount = 1;
     bool failed = false;
     bool loaded = false;
@@ -45,6 +56,10 @@ struct CM2Model {
         if (dropOwnerDuringWait) {
             Release();
         }
+        if (onWait) {
+            onWait();
+        }
+        loaded = waitSucceeds;
         return waitSucceeds;
     }
     void LinkToAsyncHead(int) { assert(!HasLoadFailed()); ++priorities; }
@@ -56,6 +71,8 @@ struct CM2Model {
     }
     CAaBox GetBoundingBox();
     CAaSphere GetBoundingSphere();
+    CAaBox GetMaxBoundingBoxPlusAttachments();
+    CAaSphere GetMaxBoundingSpherePlusAttachments();
 };
 
 #include "shared_model_bounds.inc"
@@ -132,7 +149,55 @@ struct CMap {
     return remaining;
 }
 
+static void TestAttachmentBounds() {
+    ModelData data{{{{-2, -2, -2}, {2, 4, 2}}, 10}};
+    SharedModel shared{{{1, 2, 3}, {5, 8, 3}}, &data, 3};
+    CM2Model parent;
+    parent.m_shared = &shared;
+    parent.loaded = true;
+    CM2Model child;
+    child.m_shared = &shared;
+    child.failed = true;
+    child.m_attachParent = &parent;
+    parent.m_attachList = &child;
+
+    assert(parent.GetMaxBoundingBoxPlusAttachments().t.y == 10);
+    const CAaSphere withCachedChild = parent.GetMaxBoundingSpherePlusAttachments();
+    assert(withCachedChild.c.y == 1 && std::fabs(withCachedChild.r - (10.0f + std::sqrt(13.0f))) < 0.001f);
+    assert(child.waits == 0 && child.m_refCount == 1 && parent.m_refCount == 1);
+
+    parent.failed = true;
+    assert(parent.GetMaxBoundingBoxPlusAttachments().t.y == 8);
+    assert(parent.GetMaxBoundingSpherePlusAttachments().c.y == 5 && parent.waits == 0);
+    parent.failed = false;
+
+    CM2Model detaching;
+    detaching.m_shared = &shared;
+    detaching.waitSucceeds = true;
+    auto attachThenDetachOnWait = [&] {
+        detaching.loaded = false;
+        detaching.m_refCount = 1;
+        detaching.m_attachNext = &child;
+        detaching.m_attachParent = &parent;
+        parent.m_attachList = &detaching;
+        detaching.onWait = [&] {
+            parent.m_attachList = &child;
+            detaching.m_attachParent = nullptr;
+            detaching.m_attachNext = nullptr;
+            detaching.Release();
+        };
+    };
+
+    attachThenDetachOnWait();
+    assert(parent.GetMaxBoundingBoxPlusAttachments().t.x == 6);
+    assert(detaching.waits == 1 && detaching.m_refCount == 0);
+    attachThenDetachOnWait();
+    assert(parent.GetMaxBoundingSpherePlusAttachments().r == withCachedChild.r);
+    assert(detaching.waits == 2 && detaching.m_refCount == 0);
+}
+
 int main() {
+    TestAttachmentBounds();
     ModelData data{{{{-2, -2, -2}, {2, 4, 2}}, 10}};
     SharedModel shared{{{1, 2, 3}, {5, 8, 3}}, &data, 1};
     CM2Model model;

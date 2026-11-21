@@ -91,7 +91,8 @@ def main():
         ),
         "shared_model_bounds": (
             extract(model, "namespace {\nclass ModelLoadReference", "bool CM2Model::HasLoadFailed()")
-            + extract(model, "static M2Bounds CachedModelBounds(", "C44Matrix CM2Model::GetAnimatedWorldTransform()")
+            + extract(model, "static M2Bounds CachedModelBounds(", "CAaBox CM2Model::GetCurrentBoundingBox()")
+            + extract(model, "static M2Bounds ReadModelBounds(", "C44Matrix CM2Model::GetAnimatedWorldTransform()")
         ),
         "doodad_preparation": extract(
             map_source, "void CMap::PrepareMapDoodadDefs()", "\n}", include_stop=True,
