@@ -1,6 +1,8 @@
 #include "LFGInfo.h"
+#include "WoW/Source/Ui/LFGPacketBounds.h"
 #include "WoW/Source/DB/DBClient/DBClient.h"
 #include "WoW/Source/DB/Rec/LfgDungeonsRec.h"
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include "Engine/Source/Storm/H/storm.h"
@@ -564,6 +566,18 @@ bool LFGInfo::Equals(const LFGInfo& other) const {
     return true;
 }
 
+// Limits a packet count to what the rest of the packet can hold and says so on stderr when it had to (see LFGPacketBounds.h).
+static uint32_t BoundedPacketCount(const CDataStore* msg, uint32_t count, uint32_t entryBytes, const char* where) {
+    const uint32_t bounded = LFGPacketBounds::ClampCount(count, msg->m_size, msg->m_read, entryBytes);
+
+    if (bounded != count) {
+        std::fprintf(stderr, "[LFG] %s: packet claims %u entries but only %u bytes remain (size %u, read %u); using %u\n",
+            where, count, LFGPacketBounds::RemainingBytes(msg->m_size, msg->m_read), msg->m_size, msg->m_read, bounded);
+    }
+
+    return bounded;
+}
+
 // INLINED
 LFGDungeonEntry::LFGDungeonEntry() {
     this->m_slot = 0;
@@ -681,7 +695,7 @@ static const LFGJoinResultError s_joinResultErrors[17] = {
 // VERIFY: 5418061a manual
 // OFFSET: 0x0055B080
 void CGLookingForGroup::ParsePartyInfo(CDataStore* msg) {
-    uint8_t count;
+    uint8_t count = 0;
     msg->Get(count);
 
     for (uint32_t i = 0; i < count; i++) {
@@ -828,7 +842,7 @@ int32_t LFGPacketHandler(void* param, NETMESSAGE msgId, uint32_t time, CDataStor
             msg->Get(proposal.m_proposalId);
             msg->Get(proposal.m_completedMask);
             msg->GetInt8(proposal.m_silent);
-            uint8_t memberCount;
+            uint8_t memberCount = 0;
             msg->Get(memberCount);
             uint8_t declinedSelf = 0;
             uint8_t declinedParty = 0;
@@ -882,7 +896,7 @@ int32_t LFGPacketHandler(void* param, NETMESSAGE msgId, uint32_t time, CDataStor
             msg->Get(reinterpret_cast<uint32_t&>(CGLookingForGroup::m_roleCheckState));
             uint32_t beginning;
             msg->GetInt8(beginning);
-            uint8_t slotCount;
+            uint8_t slotCount = 0;
             msg->Get(slotCount);
             CGLookingForGroup::m_roleCheckSlots.SetCount(slotCount);
 
@@ -890,7 +904,7 @@ int32_t LFGPacketHandler(void* param, NETMESSAGE msgId, uint32_t time, CDataStor
                 msg->Get(CGLookingForGroup::m_roleCheckSlots.m_data[i]);
             }
 
-            uint8_t memberCount;
+            uint8_t memberCount = 0;
             msg->Get(memberCount);
             CGLookingForGroup::m_roleCheckMembers.SetCount(memberCount);
             uint32_t localIndex = 0;
@@ -1237,7 +1251,7 @@ int32_t LFGPacketHandler(void* param, NETMESSAGE msgId, uint32_t time, CDataStor
             lockInfo.m_valid = 0;
             lockInfo.m_guid = WOWGUID();
             lockInfo.ClearDungeons();
-            uint8_t dungeonCount;
+            uint8_t dungeonCount = 0;
             msg->Get(dungeonCount);
             DebugLog("LFGMessage: MSG_LFG_PLAYER_INFO");
 
@@ -1252,7 +1266,7 @@ int32_t LFGPacketHandler(void* param, NETMESSAGE msgId, uint32_t time, CDataStor
                 msg->Get(reinterpret_cast<uint32_t&>(dungeon->m_baseXP));
                 msg->Get(reinterpret_cast<uint32_t&>(dungeon->m_variableMoney));
                 msg->Get(reinterpret_cast<uint32_t&>(dungeon->m_variableXP));
-                uint8_t itemCount;
+                uint8_t itemCount = 0;
                 msg->Get(itemCount);
 
                 for (uint32_t j = 0; j < itemCount; j++) {
@@ -1364,8 +1378,9 @@ void CGLookingForGroup::ShutdownGame() {
 // VERIFY: 3776dc9d auto
 // OFFSET: 0x00559B10
 void CGLookingForGroup::ParseBlackList(CDataStore* msg, LFGLockInfo* lockInfo) {
-    uint32_t count;
+    uint32_t count = 0;
     msg->Get(count);
+    count = BoundedPacketCount(msg, count, 2 * sizeof(uint32_t), "lock list");
 
     for (uint32_t i = 0; i < count; i++) {
         uint32_t slot;
@@ -1672,8 +1687,9 @@ int32_t Packet_SMSG_LFG_SEARCH_RESULTS(void* param, NETMESSAGE msgId, uint32_t t
     msg->Get(incremental);
 
     if (incremental) {
-        uint32_t count;
+        uint32_t count = 0;
         msg->Get(count);
+        count = BoundedPacketCount(msg, count, sizeof(uint64_t), "incremental removal list");
 
         for (uint32_t i = 0; i < count; i++) {
             uint64_t guid;
@@ -1699,8 +1715,9 @@ int32_t Packet_SMSG_LFG_SEARCH_RESULTS(void* param, NETMESSAGE msgId, uint32_t t
     }
 
     list->m_lfgID = lfgID;
-    uint32_t count;
+    uint32_t count = 0;
     msg->Get(count);
+    count = BoundedPacketCount(msg, count, sizeof(uint64_t), "party list");
     msg->Get(list->m_totalParties);
 
     for (uint32_t i = 0; i < count; i++) {
@@ -1723,7 +1740,9 @@ int32_t Packet_SMSG_LFG_SEARCH_RESULTS(void* param, NETMESSAGE msgId, uint32_t t
         }
     }
 
+    count = 0;
     msg->Get(count);
+    count = BoundedPacketCount(msg, count, sizeof(uint64_t), "player list");
     msg->Get(list->m_totalPlayers);
 
     for (uint32_t i = 0; i < count; i++) {
