@@ -23,7 +23,8 @@ constexpr uint32_t kKeptFrames = 240;
 constexpr const char* kNames[Count] = {
     "World render", "World scene", "Terrain", "WMO draw", "Weather",
     "M2 animate", "M2 draw", "Present", "Paint", "Client idle",
-    "World update", "UI idle", "UI update", "UI render", "M2 transparent sort"
+    "World update", "UI idle", "UI update", "UI render", "M2 transparent sort",
+    "UI layout", "UI frame updates", "UI OnUpdate scripts", "UI batch build", "UI textures", "UI text", "UI callbacks"
 };
 
 constexpr uint32_t kM2DrawTypes = static_cast<uint32_t>(M2DrawType::Count);
@@ -91,7 +92,8 @@ void LogSummary() {
     if (!Summarize(120, s)) return;
     std::fprintf(stderr, "WarcraftXL profiler: %.1f fps, frame %.2f ms, %.0f draws, %.0f tris over %u frames |",
                  s.fps, s.frameMs, s.drawCalls, s.triangles, s.frames);
-    for (uint32_t i = 0; i < Count; ++i)
+    const uint32_t zoneCount = UiDetailEnabled() ? Count : UiLayout;
+    for (uint32_t i = 0; i < zoneCount; ++i)
     {
         const int precision = i == M2TransparentSort ? 3 : 2;
         std::fprintf(stderr, " %s %.*f/%.*f ms", s.zones[i].name,
@@ -232,6 +234,22 @@ Scope::~Scope() {
     ++g_open.calls[m_zone];
     g_current = m_parent;
     if (m_parent) m_parent->m_child += elapsed;
+}
+
+bool UiDetailEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_PROFILE_UI_DETAIL");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+
+Id UiDetailZone(Id detail, Id parent) {
+    if (!UiDetailEnabled() || !Enabled() || !OnOwnerThread()) return Count;
+    for (const auto* scope = g_current; scope; scope = scope->m_parent) {
+        if (scope->Zone() == static_cast<int32_t>(parent)) return detail;
+    }
+    return Count;
 }
 
 bool M2DiagnosticsEnabled() {

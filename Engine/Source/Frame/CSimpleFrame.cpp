@@ -6,6 +6,7 @@
 #include "Engine/Source/Base/ConvertUTF.h"
 #include "Engine/Source/Base/Coordinate.h"
 #include "Engine/Source/Base/Status.h"
+#include "Engine/Source/Base/Profiler.h"
 #include "Engine/Source/Event/CCharEvent.h"
 #include "Engine/Source/Event/CKeyEvent.h"
 #include "Engine/Source/Event/CMouseEvent.h"
@@ -1435,6 +1436,7 @@ void CSimpleFrame::RemoveFrameRegion(CSimpleRegion* region, uint32_t drawLayer) 
 // OFFSET: 0x00490770
 void CSimpleFrame::OnLayerUpdate(float elapsedSec) {
     if (this->m_onUpdate.m_luaRef) {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::UiOnUpdateScripts, Profiler::UiUpdate));
         lua_State* L = FrameScript_GetContext();
         lua_pushnumber(L, elapsedSec);
         this->RunScript(this->m_onUpdate, 1, nullptr);

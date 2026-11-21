@@ -877,17 +877,26 @@ void CSimpleTop::OnLayerUpdate(float elapsedSec) {
         frame->AllowAttributeChanges(0);
     }
 
-    CLayoutFrame::ResizePending();
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::UiLayout, Profiler::UiUpdate));
+        CLayoutFrame::ResizePending();
+    }
 
-    for (int32_t strata = 0; strata < FRAME_STRATA_TOOLTIP + 1; strata++) {
-        CFrameStrata* frameStrata = this->m_strata[strata];
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::UiFrameUpdates, Profiler::UiUpdate));
+        for (int32_t strata = 0; strata < FRAME_STRATA_TOOLTIP + 1; strata++) {
+            CFrameStrata* frameStrata = this->m_strata[strata];
 
-        for (uint32_t level = 0; level < frameStrata->m_topLevel; level++) {
-            frameStrata->m_levels[level]->OnLayerUpdate(elapsedSec);
+            for (uint32_t level = 0; level < frameStrata->m_topLevel; level++) {
+                frameStrata->m_levels[level]->OnLayerUpdate(elapsedSec);
+            }
         }
     }
 
-    CLayoutFrame::ResizePending();
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::UiLayout, Profiler::UiUpdate));
+        CLayoutFrame::ResizePending();
+    }
 
     if (this->m_checkFocus) {
         this->m_checkFocus = 0;
@@ -902,7 +911,10 @@ void CSimpleTop::OnLayerRender() {
     CameraSetupScreenProjection(this->m_rect, offset, 0.0f, 0);
 
     for (int32_t strata = 0; strata < FRAME_STRATA_TOOLTIP + 1; strata++) {
-        this->m_strata[strata]->BuildBatches(this->m_mouseCapture == nullptr);
+        {
+            Profiler::Scope profile(Profiler::UiDetailZone(Profiler::UiBatchBuild, Profiler::UiRender));
+            this->m_strata[strata]->BuildBatches(this->m_mouseCapture == nullptr);
+        }
         this->m_strata[strata]->RenderBatches();
     }
 }

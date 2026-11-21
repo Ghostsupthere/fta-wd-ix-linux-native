@@ -26,6 +26,13 @@ enum Id : uint32_t {
     UiUpdate,         // CSimpleTop::OnLayerUpdate: layout and every frame's OnUpdate script (add-ons)
     UiRender,         // CSimpleTop::OnLayerRender: drawing every visible frame, texture and font string
     M2TransparentSort, // both transparent passes, including key preparation
+    UiLayout,
+    UiFrameUpdates,
+    UiOnUpdateScripts,
+    UiBatchBuild,
+    UiTextures,
+    UiText,
+    UiCallbacks,
     Count
 };
 
@@ -61,6 +68,7 @@ struct Scope {
     int32_t Zone() const { return m_zone; }
 
 private:
+    friend Id UiDetailZone(Id detail, Id parent);
     int32_t m_zone;  // -1: inactive
     uint64_t m_start;
     uint64_t m_child;
@@ -79,6 +87,8 @@ private:
 };
 
 bool M2DiagnosticsEnabled();
+bool UiDetailEnabled();
+Id UiDetailZone(Id detail, Id parent);
 const char* M2DrawTypeName(M2DrawType type);
 
 // One draw call of `primitives` triangles (or primitives of any kind; the device passes what it draws).

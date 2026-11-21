@@ -7,6 +7,7 @@
 #include "Engine/Source/Base/ConvertUTF.h"
 #include "Engine/Source/FrameScript/FrameScript.h"
 #include "Engine/Source/Base/Coordinate.h"
+#include "Engine/Source/Base/Profiler.h"
 #include "Engine/Source/Base/Handle.h"
 #include "Engine/Source/Frame/CSimpleTexture.h"
 #include "Engine/Source/Frame/CSimpleTop.h"
@@ -656,6 +657,7 @@ void CSimpleRender::DrawBatch(CRenderBatch* batch) {
     uint32_t meshCount = batch->m_texturelist.Count();
 
     if (meshCount) {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::UiTextures, Profiler::UiRender));
         CGxTex* textureID = reinterpret_cast<CGxTex*>(-1);
         int32_t alphaMode = GxBlends_Last;
         CGxShader* shader = nullptr;
@@ -803,11 +805,17 @@ void CSimpleRender::DrawBatch(CRenderBatch* batch) {
     }
 
     if (batch->m_stringbatch) {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::UiText, Profiler::UiRender));
         GxuFontRenderBatch(batch->m_stringbatch);
     }
 
-    for (RENDERCALLBACKNODE* node = batch->m_callbacks.Head(); !TSList<RENDERCALLBACKNODE, TSGetLink<RENDERCALLBACKNODE> >::IsEnd(node); node = node->RawNext()) {
-        node->m_callback(node->m_param);
+    using CallbackList = TSList<RENDERCALLBACKNODE, TSGetLink<RENDERCALLBACKNODE>>;
+    auto* node = batch->m_callbacks.Head();
+    if (!CallbackList::IsEnd(node)) {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::UiCallbacks, Profiler::UiRender));
+        for (; !CallbackList::IsEnd(node); node = node->RawNext()) {
+            node->m_callback(node->m_param);
+        }
     }
 }
 

@@ -40,8 +40,9 @@ int GetZones(lua_State* L) {
         }
         lua_setfield(L, -2, "m2DrawsByType");
     }
-    lua_createtable(L, Profiler::Count, 0);
-    for (uint32_t i = 0; i < Profiler::Count; ++i) {
+    const uint32_t zoneCount = Profiler::UiDetailEnabled() ? Profiler::Count : Profiler::UiLayout;
+    lua_createtable(L, zoneCount, 0);
+    for (uint32_t i = 0; i < zoneCount; ++i) {
         lua_createtable(L, 0, 4);
         lua_pushstring(L, summary.zones[i].name);
         lua_setfield(L, -2, "name");

@@ -81,5 +81,26 @@ int main() {
         assert(Profiler::Summarize(2, s) == 2);
         assert(s.m2DrawsByType[static_cast<uint32_t>(Type::Doodad)] == 1.0);
     }
+    Profiler::Reset();
+    assert(Profiler::UiDetailZone(Profiler::UiTextures, Profiler::UiRender) == Profiler::Count);
+    Profiler::EndFrame();
+    {
+        Profiler::Scope render(Profiler::UiRender);
+        Profiler::Scope callbacks(Profiler::UiDetailZone(Profiler::UiCallbacks, Profiler::UiRender));
+        Profiler::Scope textures(Profiler::UiDetailZone(Profiler::UiTextures, Profiler::UiRender));
+        assert(Profiler::UiDetailZone(Profiler::UiLayout, Profiler::UiUpdate) == Profiler::Count);
+        Profiler::CountDraw(2);
+    }
+    Profiler::EndFrame();
+    assert(Profiler::Summarize(1, s) == 1 && s.zones[Profiler::UiRender].calls == 1.0);
+    if (Profiler::UiDetailEnabled()) {
+        assert(s.zones[Profiler::UiCallbacks].calls == 1.0);
+        assert(s.zones[Profiler::UiTextures].selfDraws == 1.0);
+        assert(s.zones[Profiler::UiRender].selfDraws == 0.0);
+    } else {
+        assert(s.zones[Profiler::UiCallbacks].calls == 0.0);
+        assert(s.zones[Profiler::UiTextures].selfDraws == 0.0);
+        assert(s.zones[Profiler::UiRender].selfDraws == 1.0);
+    }
     return 0;
 }
