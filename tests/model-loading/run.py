@@ -32,6 +32,7 @@ def main():
     shared = "Engine/Source/Model2/M2Shared.cpp"
     effect = "WoW/Source/Object/ObjectClient/Effect_C.cpp"
     async_file = "Engine/Source/Services/AsyncFile.cpp"
+    map_source = "WoW/Source/WorldClient/Map.cpp"
 
     # Copy the production code into the test translation units. The fixtures
     # supply only stand-ins for dependencies and the code past the tested gates.
@@ -88,6 +89,16 @@ def main():
         "collision_facets_gate": extract(
             model, "void CM2Model::GetCollisionFacets(", "    M2Data* data =",
         ),
+        "shared_model_bounds": (
+            extract(model, "namespace {\nclass ModelLoadReference", "bool CM2Model::HasLoadFailed()")
+            + extract(model, "static M2Bounds CachedModelBounds(", "C44Matrix CM2Model::GetAnimatedWorldTransform()")
+        ),
+        "doodad_preparation": extract(
+            map_source, "void CMap::PrepareMapDoodadDefs()", "\n}", include_stop=True,
+        ),
+        "doodad_progress": extract(
+            map_source, "uint32_t CMap::ComputeDoodadLoadProgress(", "    for (CMapObjDef* mapObjDef =",
+        ),
         "model_allocations": extract(
             model,
             "    uint8_t* memory = static_cast<uint8_t*>(SMemAlloc(emitterBytes + emitterOffset,",
@@ -103,7 +114,7 @@ def main():
 
         for test in ("deferred_effect_test", "model_readiness_test", "model_allocation_test",
                      "model_consumer_test", "camera_target_test", "world_emitters_test",
-                     "doodad_bounds_test"):
+                     "doodad_bounds_test", "shared_bounds_preparation_test"):
             executable = build / test
             subprocess.run(
                 [*compiler, "-std=c++20", "-UNDEBUG", "-Wall", "-Wextra", "-Werror",

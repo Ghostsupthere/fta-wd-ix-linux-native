@@ -8260,26 +8260,38 @@ void CM2Lighting::Reset() {
     this->m_vector48 = C3Vector(0.0f, 0.0f, 0.0f);
 }
 
+static M2Bounds CachedModelBounds(const CM2Model& model) {
+    const CAaBox box = model.m_shared ? model.m_shared->m_boundingBox : CAaBox{};
+    const C3Vector half = (box.t - box.b) * 0.5f;
+    return {box, sqrtf(half.SquaredMag())};
+}
+
+static M2Bounds ReadModelBounds(CM2Model& model) {
+    if (model.HasLoadFailed()) {
+        return CachedModelBounds(model);
+    }
+
+    if ((model.m_shared->m_flags & 1) && model.m_shared->m_data) {
+        return model.m_shared->m_data->m_bounds;
+    }
+
+    // A completion callback can drop the owner's reference before the bounds are copied.
+    const ModelLoadReference holdModel(model);
+    return model.WaitForLoad(nullptr) ? model.m_shared->m_data->m_bounds : CachedModelBounds(model);
+}
+
 // VERIFY: 56d2a807 auto
 // OFFSET: 0x004F5E20
 CAaBox CM2Model::GetBoundingBox() {
-    if (!(this->m_shared->m_flags & 1)) {
-        this->WaitForLoad(nullptr);
-    }
-
-    return this->m_shared->m_data->m_bounds.m_extent;
+    return ReadModelBounds(*this).m_extent;
 }
 
 // VERIFY: 542067ba manual
 // OFFSET: 0x004F5E80
 CAaSphere CM2Model::GetBoundingSphere() {
-    if (!(this->m_shared->m_flags & 1)) {
-        this->WaitForLoad(nullptr);
-    }
-
-    const M2Bounds& bounds = this->m_shared->m_data->m_bounds;
+    const M2Bounds bounds = ReadModelBounds(*this);
     CAaSphere sphere;
-    sphere.c = C3Vector((bounds.m_extent.b.x + bounds.m_extent.t.x) * 0.5f, (bounds.m_extent.b.y + bounds.m_extent.t.y) * 0.5f, (bounds.m_extent.b.z + bounds.m_extent.t.z) * 0.5f);
+    sphere.c = bounds.m_extent.Center();
     sphere.r = bounds.m_radius;
 
     return sphere;

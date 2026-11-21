@@ -1858,7 +1858,9 @@ uint32_t CMap::ComputeMapObjLoadProgress(CMapChunk* chunk, float* progress, uint
             for (CMapBaseObjLink* doodadLink = defGroup->m_doodadDefLinkList.Head(); doodadLink; doodadLink = defGroup->m_doodadDefLinkList.Next(doodadLink)) {
                 CMapDoodadDef* doodadDef = static_cast<CMapDoodadDef*>(doodadLink->m_owner);
 
-                if ((!doodadDef->m_model || !(doodadDef->m_flags & MAPOBJ_FLAG_PREPARED)) && !(doodadDef->m_staticFlags & 0x10000)) {
+                CM2Model* model = doodadDef->m_model;
+                if (model && !model->HasLoadFailed() && !(doodadDef->m_flags & MAPOBJ_FLAG_PREPARED) &&
+                    !(doodadDef->m_staticFlags & 0x10000)) {
                     doodadDef->m_staticFlags |= 0x10000;
 
                     if (!pending) {
@@ -1973,18 +1975,36 @@ void CMap::PrepareMapDoodadDefs() {
         CM2Model* model = doodadDef->m_model;
         CMapDoodadDef* next = CMap::doodadDefList.Next(doodadDef);
 
-        if (!model || model->IsLoaded(0, 0)) {
-            if (!(doodadDef->m_staticFlags & 0x10)) {
+        if (!model || model->HasLoadFailed() || model->IsLoaded(0, 0)) {
+            const bool updateBounds = !(doodadDef->m_staticFlags & 0x10);
+            if (updateBounds) {
                 doodadDef->UpdateBounds();
+            }
 
+            CM2Model* current = doodadDef->m_model;
+            const bool failed = current && current->HasLoadFailed();
+            const bool retry = updateBounds && current && !failed && (current != model || !current->IsLoaded());
+            if (failed || retry) {
+                doodadDef->m_flags = static_cast<MapObjFlag>(
+                    (doodadDef->m_flags | MAPOBJ_FLAG_UNPLACED) & ~MAPOBJ_FLAG_PREPARED);
+                if (retry) {
+                    doodadDef = next;
+                    continue;
+                }
+            }
+
+            if (updateBounds) {
                 if (!(doodadDef->m_flags & MAPOBJ_FLAG_INTERIOR) && CMap::QueryShadow(&doodadDef->m_position)) {
                     doodadDef->m_diffuseLightScale = 0.5f;
                 }
 
                 doodadDef->ExtendChunkBounds();
-                doodadDef->m_flags = static_cast<MapObjFlag>(doodadDef->m_flags | MAPOBJ_FLAG_PREPARED | MAPOBJ_FLAG_UNPLACED);
+                if (!failed) {
+                    doodadDef->m_flags = static_cast<MapObjFlag>(doodadDef->m_flags | MAPOBJ_FLAG_PREPARED | MAPOBJ_FLAG_UNPLACED);
+                }
             }
 
+            doodadDef->m_staticFlags &= ~0x10000u;
             doodadDef->m_doodadDefLink.Unlink();
         } else if (streaming && (doodadDef->m_staticFlags & 0x10000)) {
             doodadDef->m_model->LinkToAsyncHead(1);
@@ -2160,14 +2180,16 @@ uint32_t CMap::ComputeDoodadLoadProgress(CMapChunk* chunk, float* progress, uint
     for (CMapBaseObjLink* link = list->Head(); link; link = list->Next(link)) {
         CMapDoodadDef* doodadDef = static_cast<CMapDoodadDef*>(link->m_owner);
 
-        if ((doodadDef->m_model && (doodadDef->m_flags & MAPOBJ_FLAG_PREPARED)) || (doodadDef->m_staticFlags & 0x10000)) {
+        CM2Model* model = doodadDef->m_model;
+        if (!model || model->HasLoadFailed() || (doodadDef->m_flags & MAPOBJ_FLAG_PREPARED) ||
+            (doodadDef->m_staticFlags & 0x10000)) {
             continue;
         }
 
         if (total) {
             int64_t loaded = 0;
             int64_t size = 0;
-            doodadDef->m_model->ComputeLoadProgress(loaded, size);
+            model->ComputeLoadProgress(loaded, size);
             *progress += static_cast<float>(loaded) / static_cast<float>(size) * scale;
         }
 
@@ -6403,9 +6425,14 @@ void CMap::UpdateDoodadDefBounds(CMapDoodadDef* doodadDef) {
     doodadDef->m_flags = static_cast<MapObjFlag>(doodadDef->m_flags | MAPOBJ_FLAG_UNPLACED);
 
     if (model) {
-        if (model->IsLoaded(0, 0)) {
+        if (model->HasLoadFailed() || model->IsLoaded(0, 0)) {
             doodadDef->UpdateBounds();
-            doodadDef->m_flags = static_cast<MapObjFlag>(doodadDef->m_flags | MAPOBJ_FLAG_PREPARED);
+            CM2Model* current = doodadDef->m_model;
+            if (!current || (current == model && !current->HasLoadFailed() && current->IsLoaded())) {
+                doodadDef->m_flags = static_cast<MapObjFlag>(doodadDef->m_flags | MAPOBJ_FLAG_PREPARED);
+            } else {
+                doodadDef->m_flags = static_cast<MapObjFlag>(doodadDef->m_flags & ~MAPOBJ_FLAG_PREPARED);
+            }
         } else {
             doodadDef->m_bbox = doodadDef->m_model->m_shared->m_boundingBox;
             doodadDef->m_bbox.b.x = doodadDef->m_position.x + doodadDef->m_bbox.b.x;
