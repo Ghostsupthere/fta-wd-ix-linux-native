@@ -42,6 +42,7 @@ struct Summary {
     double fps;
     double drawCalls;    // average per frame
     double triangles;    // average per frame
+    double m2MergedSections; // draw calls avoided by merging opaque M2 sections
     uint32_t frames;     // frames averaged
     uint32_t gpuRenderSamples;
     double gpuRenderMs;  // GPU timestamp span averaged over sampled frames
@@ -64,6 +65,7 @@ private:
 
 // One draw call of `primitives` triangles (or primitives of any kind; the device passes what it draws).
 void CountDraw(uint32_t primitives);
+void CountM2MergedSections(uint32_t sectionCount);
 
 // Marks the end of a frame (call once per presented frame).
 void EndFrame();

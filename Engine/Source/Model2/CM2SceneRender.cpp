@@ -6,6 +6,11 @@
 #endif
 #if defined(WOWDECOMP_LINUX)
 #include "Engine/Source/Model2/WxlBoneBudget.h"
+#include "Engine/Source/Model2/M2OpaqueBatchRun.h"
+#include "Engine/Source/Base/Profiler.h"
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #endif
 #include "Engine/Source/Gx/CGxBuf.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
@@ -477,7 +482,7 @@ void CM2SceneRender::SetupMaterial() {
 
 // VERIFY: aeedaf63 manual
 // OFFSET: 0x008203B0
-void CM2SceneRender::DrawBatch() {
+uint32_t CM2SceneRender::DrawBatch(const M2Element* elements, const uint32_t* order, uint32_t count, bool mergeOpaque) {
     DebugLog("Batch: model=%s index=%d", this->m_curModel->m_shared->m_fileNameWithoutPath, this->m_curElement->m_index);
 
     M2Element* element = this->m_curElement;
@@ -534,6 +539,7 @@ void CM2SceneRender::DrawBatch() {
     this->SetBatchVertices(sharedVertices);
     CShaderEffect::SetShaders(this->m_curElement->m_vertexPermute, this->m_curElement->m_pixelPermute);
 
+    uint32_t consumed = 1;
     CGxBatch batch;
     batch.m_primType = GxPrim_Triangles;
     batch.m_start = this->m_curSkinSection->m_indexStart;
@@ -546,6 +552,23 @@ void CM2SceneRender::DrawBatch() {
     if (CShaderEffect::s_enableShaders) {
         batch.m_minIndex = this->m_curSkinSection->m_vertexStart;
         batch.m_maxIndex = this->m_curSkinSection->m_vertexCount + this->m_curSkinSection->m_vertexStart - 1;
+#if defined(WOWDECOMP_LINUX)
+        const auto* indexBuffer = this->m_curShared->m_indexBuf;
+        // The native upload can rebase each section when vertices are local. Only combine shared vertices.
+        if (mergeOpaque && count > 1 && !element->m_flags && element->m_alpha == 1.0f &&
+            this->m_curMaterial->m_blendMode <= M2BLEND_ALPHA_KEY && !(this->m_curMaterial->m_flags & 0x10) &&
+            !this->m_curModel->m_bodyShapeVertices && this->m_curShared->m_instances == 1 &&
+            this->m_curShared->m_cache == this->m_cache && ((this->m_cache->m_flags & 8) || sharedVertices) &&
+            this->m_curSkinSection->m_boneCount <= kMaxBonesPerBatch &&
+            indexBuffer && indexBuffer->m_hasData && indexBuffer->m_valid) {
+            const auto run = M2OpaqueBatchRun::Gather(elements, order, count, indexBuffer->m_itemCount);
+            if (run.elements > 1) {
+                batch.m_count = run.indexCount;
+                batch.m_maxIndex = static_cast<uint16_t>(run.maxIndex);
+                consumed = run.elements;
+            }
+        }
+#endif
         g_theGxDevicePtr->Draw(&batch, 1);
     } else if (sharedVertices) {
         CGxMatrixStack& world = g_theGxDevicePtr->m_xforms[GxXform_World];
@@ -569,6 +592,7 @@ void CM2SceneRender::DrawBatch() {
 #if defined(WOWDECOMP_LINUX)
     NativeVisualHooks::currentM2Model = nullptr;
 #endif
+    return consumed;
 }
 
 // VERIFY: eebe62d2 manual
@@ -1063,6 +1087,18 @@ void CM2SceneRender::Draw(M2PASS pass, M2Element* elements, uint32_t* indices, u
     }
 
     this->m_pass = pass;
+    bool mergeOpaque = false;
+#if defined(WOWDECOMP_LINUX)
+    static const bool requested = [] {
+        const char* setting = std::getenv("WXL_M2_OPAQUE_BATCH_RUNS");
+        const bool enabled = setting && std::strcmp(setting, "1") == 0;
+        if (setting) std::fprintf(stderr, "WXL_M2_OPAQUE_BATCH_RUNS=%u\n", enabled ? 1u : 0u);
+        return enabled;
+    }();
+    mergeOpaque = requested && pass == M2PASS_0 && g_theGxDevicePtr->DeviceApi() == GxApi_D3d9Ex &&
+        !NativeVisualHooks::m2BatchDrawn && !NativeVisualHooks::m2BatchFog;
+#endif
+    uint32_t mergedSections = 0;
 
     for (uint32_t i = 0; i < count; i++) {
         M2Element* element = &elements[indices[i]];
@@ -1085,9 +1121,12 @@ void CM2SceneRender::Draw(M2PASS pass, M2Element* elements, uint32_t* indices, u
         this->m_cache->LinkToSharedUpdateList(this->m_curShared);
 
         switch (this->m_curElement->m_type) {
-            case 0:
-                this->DrawBatch();
+            case 0: {
+                const uint32_t merged = this->DrawBatch(elements, indices + i, count - i, mergeOpaque) - 1;
+                mergedSections += merged;
+                i += merged;
                 break;
+            }
             case 1:
                 this->DrawBatchProj();
                 break;
@@ -1119,6 +1158,10 @@ void CM2SceneRender::Draw(M2PASS pass, M2Element* elements, uint32_t* indices, u
         this->m_prevSkinSection = this->m_curSkinSection;
         this->m_prevMaterial = this->m_curMaterial;
     }
+
+#if defined(WOWDECOMP_LINUX)
+    if (mergedSections) Profiler::CountM2MergedSections(mergedSections);
+#endif
 
     for (uint32_t xf = GxXform_Tex0; xf <= GxXform_World; xf++) {
         CGxMatrixStack& stack = g_theGxDevicePtr->m_xforms[xf];

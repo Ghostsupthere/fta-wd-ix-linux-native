@@ -60,7 +60,7 @@ class CM2SceneRender {
     CM2SceneRender(CM2Scene* scene);
     void BeginFixed(const C3Vector& position);
     void Draw(M2PASS pass, M2Element* elements, uint32_t* indices, uint32_t count);
-    void DrawBatch();
+    uint32_t DrawBatch(const M2Element* elements, const uint32_t* order, uint32_t count, bool mergeOpaque);
     uint32_t DrawBatchedParticle(uint32_t index, M2Element* elements, uint32_t* indices, uint32_t count);
     void DrawBatchDoodad(M2Element* elements, uint32_t* indices);
     void DrawBatchProj();

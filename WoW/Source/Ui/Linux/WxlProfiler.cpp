@@ -25,12 +25,13 @@ int GetZones(lua_State* L) {
         lua_pushnil(L);
         return 1;
     }
-    lua_createtable(L, 0, 8);
+    lua_createtable(L, 0, 9);
     SetNumber(L, "frames", summary.frames);
     SetNumber(L, "frameMs", summary.frameMs);
     SetNumber(L, "fps", summary.fps);
     SetNumber(L, "drawCalls", summary.drawCalls);
     SetNumber(L, "triangles", summary.triangles);
+    SetNumber(L, "m2MergedSections", summary.m2MergedSections);
     SetNumber(L, "gpuRenderSamples", summary.gpuRenderSamples);
     if (summary.gpuRenderSamples) SetNumber(L, "gpuRenderMs", summary.gpuRenderMs);
     lua_createtable(L, Profiler::Count, 0);

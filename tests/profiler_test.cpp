@@ -27,6 +27,7 @@ int main() {
         }
         Profiler::CountDraw(100);
         Profiler::CountDraw(50);
+        Profiler::CountM2MergedSections(2);
         Profiler::EndFrame();
     }
     assert(Profiler::Summarize(100, s) == 5);
@@ -38,7 +39,7 @@ int main() {
     assert(std::fabs(inner.selfMs - inner.totalMs) < 0.01);            // no nested zones inside
     assert(outer.totalMs >= outer.selfMs + inner.totalMs - 0.1);      // total includes the child
     assert(outer.selfMs >= 3.5 && outer.selfMs < 8.0);                 // the 4 ms outside the children
-    assert(s.drawCalls == 2.0 && s.triangles == 150.0);
+    assert(s.drawCalls == 2.0 && s.triangles == 150.0 && s.m2MergedSections == 2.0);
     assert(s.frameMs >= 11.5 && s.fps > 0.0 && s.fps < 90.0);
     assert(s.zones[Profiler::Terrain].calls == 0.0);
 
