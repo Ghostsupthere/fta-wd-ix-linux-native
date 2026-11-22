@@ -1,7 +1,9 @@
-if WXLNativeAtmospherePanel or not InterfaceOptions_AddCategory then return end
+-- Lives in the Video options window, as a sub-page under Effects.
+if WXLNativeAtmospherePanel or not (VideoOptionsFrame and OptionsFrame_AddCategory) then return end
 
-local panel = CreateFrame("Frame", "WXLNativeAtmospherePanel", InterfaceOptionsFramePanelContainer)
+local panel = CreateFrame("Frame", "WXLNativeAtmospherePanel", VideoOptionsFramePanelContainer)
 panel.name = "Atmosphere & Water"
+panel.parent = (VideoOptionsEffectsPanel and VideoOptionsEffectsPanel.name) or EFFECTS_LABEL
 panel:Hide()
 
 local scroll = CreateFrame("ScrollFrame", "WXLNativeAtmosphereScroll", panel, "UIPanelScrollFrameTemplate")
@@ -194,7 +196,15 @@ panel.cancel = function()
 end
 
 Remember()
-InterfaceOptions_AddCategory(panel)
+OptionsFrame_AddCategory(VideoOptionsFrame, panel)
+-- Show the sub-page under Effects without making the player expand the list first.
+if VideoOptionsEffectsPanel and VideoOptionsEffectsPanel.name == panel.parent then
+    VideoOptionsEffectsPanel.collapsed = false
+    panel.hidden = false
+    if VideoOptionsFrame.categoryFrame and VideoOptionsFrame.categoryFrame.update then
+        VideoOptionsFrame.categoryFrame:update()
+    end
+end
 local elapsedStatus = 0
 panel:SetScript("OnUpdate", function(_, elapsed)
     elapsedStatus = elapsedStatus + elapsed
