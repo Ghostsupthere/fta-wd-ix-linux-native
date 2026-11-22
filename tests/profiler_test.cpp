@@ -102,7 +102,8 @@ int main() {
         assert(s.zones[Profiler::UiTextures].selfDraws == 0.0);
         assert(s.zones[Profiler::UiRender].selfDraws == 1.0);
     }
-    if (Profiler::UiDetailEnabled()) {
+    {
+        const double detailCalls = Profiler::UiDetailEnabled() ? 1.0 : 0.0;
         Profiler::Reset();
         Profiler::EndFrame();
         {
@@ -111,8 +112,20 @@ int main() {
             {
                 Profiler::Scope world(Profiler::UiDetailZone(Profiler::UiCallbackWorld, Profiler::UiCallbacks));
                 Profiler::CountDraw(3);
-                Profiler::Scope worldRender(Profiler::WorldRender);
-                Profiler::CountDraw(100);
+                {
+                    Profiler::Scope update(Profiler::UiDetailZone(Profiler::WorldFrameUpdate, Profiler::UiCallbackWorld));
+                }
+                {
+                    Profiler::Scope names(Profiler::UiDetailZone(Profiler::PlayerNameUpdate, Profiler::UiCallbackWorld));
+                }
+                {
+                    Profiler::Scope worldRender(Profiler::WorldRender);
+                    Profiler::CountDraw(100);
+                }
+                {
+                    Profiler::Scope text(Profiler::UiDetailZone(Profiler::WorldTextRender, Profiler::UiCallbackWorld));
+                    Profiler::CountDraw(8);
+                }
             }
             {
                 Profiler::Scope scroll(Profiler::UiDetailZone(Profiler::UiCallbackScroll, Profiler::UiCallbacks));
@@ -123,13 +136,19 @@ int main() {
             }
         }
         Profiler::EndFrame();
-        assert(Profiler::Summarize(1, s) == 1 && s.zones[Profiler::UiCallbacks].calls == 1.0);
+        assert(Profiler::Summarize(1, s) == 1 && s.zones[Profiler::UiCallbacks].calls == detailCalls);
         assert(s.zones[Profiler::UiCallbacks].selfDraws == 0.0);
-        assert(s.zones[Profiler::UiCallbackWorld].calls == 1.0 && s.zones[Profiler::UiCallbackWorld].selfDraws == 1.0);
+        assert(s.zones[Profiler::UiCallbackWorld].calls == detailCalls);
+        assert(s.zones[Profiler::UiCallbackWorld].selfDraws == detailCalls);
+        assert(s.zones[Profiler::WorldFrameUpdate].calls == detailCalls);
+        assert(s.zones[Profiler::PlayerNameUpdate].calls == detailCalls);
+        assert(s.zones[Profiler::WorldTextRender].calls == detailCalls);
+        assert(s.zones[Profiler::WorldTextRender].selfDraws == detailCalls);
+        assert(s.zones[Profiler::UiRender].selfDraws == (detailCalls ? 0.0 : 4.0));
         assert(s.zones[Profiler::WorldRender].selfDraws == 1.0);
-        assert(s.zones[Profiler::UiCallbackScroll].selfDraws == 1.0);
-        assert(s.zones[Profiler::UiCallbackUnitModel].selfDraws == 1.0);
-        assert(s.drawCalls == 4.0 && s.triangles == 109.0);
+        assert(s.zones[Profiler::UiCallbackScroll].selfDraws == detailCalls);
+        assert(s.zones[Profiler::UiCallbackUnitModel].selfDraws == detailCalls);
+        assert(s.drawCalls == 5.0 && s.triangles == 117.0);
     }
     return 0;
 }

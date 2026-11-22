@@ -42,6 +42,9 @@ enum Id : uint32_t {
     UiCallbackMovie,
     UiCallbackModelFfx,
     UiCallbackOther,
+    WorldFrameUpdate, // CGWorldFrame::OnWorldUpdate, inside the world frame callback
+    PlayerNameUpdate,
+    WorldTextRender,
     Count
 };
 

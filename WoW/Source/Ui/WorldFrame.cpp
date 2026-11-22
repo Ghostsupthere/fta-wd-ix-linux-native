@@ -2179,10 +2179,19 @@ void CGWorldFrame::RenderWorld(void* param) {
     projection = g_theGxDevicePtr->m_projection;
     GxXformView(view);
 
-    worldFrame->OnWorldUpdate();
-    PlayerNameUpdateWorldText();
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldFrameUpdate, Profiler::UiCallbackWorld));
+        worldFrame->OnWorldUpdate();
+    }
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::PlayerNameUpdate, Profiler::UiCallbackWorld));
+        PlayerNameUpdateWorldText();
+    }
     worldFrame->OnWorldRender();
-    WorldTextRenderBatch();
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldTextRender, Profiler::UiCallbackWorld));
+        WorldTextRenderBatch();
+    }
 
     g_theGxDevicePtr->XformSetProjection(projection);
     g_theGxDevicePtr->XformSetView(view);
