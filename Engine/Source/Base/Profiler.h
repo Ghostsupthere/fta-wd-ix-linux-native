@@ -57,6 +57,19 @@ enum Id : uint32_t {
     WorldUpdateScene,
     WorldUpdateMapPreparation,
     WorldUpdateSmoothFacing,
+    MapPrepareWmoResources,
+    MapPrepareAreas,
+    MapPrepareAreaQueues,
+    MapPrepareAreaTraversal,
+    MapPrepareBarriers,
+    MapPrepareWmoInstances,
+    MapPrepareDoodads,
+    MapPrepareEntities,
+    MapPreparePreload,
+    CameraUpdateVehicles,
+    CameraUpdateTarget,
+    CameraUpdateCollision,
+    CameraUpdateLiquid,
     Count
 };
 

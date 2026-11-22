@@ -1,5 +1,6 @@
 #include <limits>
 #include "Map.h"
+#include "Engine/Source/Base/Profiler.h"
 #include "WoW/Source/WorldClient/WorldLightingConstants.h"
 #include "WoW/Source/WorldClient/WorldConstants.h"
 #include "Engine/Source/ShaderEffect/ShadowCache.h"
@@ -1963,6 +1964,8 @@ void CMap::ProcessRenderChunkUpdateList() {
 // VERIFY: a5870e86 manual
 // OFFSET: 0x007B5590
 void CMap::PrepareEntitys(int32_t addToScene) {
+    Profiler::Scope profile(Profiler::UiDetailZone(Profiler::MapPrepareEntities, Profiler::WorldUpdateMapPreparation));
+
     if (!addToScene) {
         return;
     }
@@ -1977,6 +1980,7 @@ void CMap::PrepareEntitys(int32_t addToScene) {
 // VERIFY: c3245130 manual
 // OFFSET: 0x007B5630
 void CMap::PrepareMapDoodadDefs() {
+    Profiler::Scope profile(Profiler::UiDetailZone(Profiler::MapPrepareDoodads, Profiler::WorldUpdateMapPreparation));
     int32_t streaming = SFile::IsStreamingMode();
     CMapDoodadDef* doodadDef = CMap::doodadDefList.Head();
 
@@ -2027,6 +2031,7 @@ void CMap::PrepareMapDoodadDefs() {
 // VERIFY: d6c4755a manual
 // OFFSET: 0x007B5950
 void CMap::PreUpdateAreas(bool addToScene) {
+    Profiler::Scope profile(Profiler::UiDetailZone(Profiler::MapPrepareAreas, Profiler::WorldUpdateMapPreparation));
     int32_t maxY = CWorld::gbChunkRect.maxY >> 4;
     int32_t minX = CWorld::gbChunkRect.minX >> 4;
     int32_t minY = CWorld::gbChunkRect.minY >> 4;
@@ -2034,10 +2039,13 @@ void CMap::PreUpdateAreas(bool addToScene) {
     int32_t entryCount = 0;
     CMapAreaEntry* entries = static_cast<CMapAreaEntry*>(alloca(1024 * sizeof(CMapAreaEntry)));
 
-    CMap::ClearChunkSortList();
-    CMap::ProcessChunkLiquidUpdateList();
-    CMap::ProcessRenderChunkUpdateList();
-    CMap::ProcessDetailDoodadUpdateList();
+    {
+        Profiler::Scope queues(Profiler::UiDetailZone(Profiler::MapPrepareAreaQueues, Profiler::MapPrepareAreas));
+        CMap::ClearChunkSortList();
+        CMap::ProcessChunkLiquidUpdateList();
+        CMap::ProcessRenderChunkUpdateList();
+        CMap::ProcessDetailDoodadUpdateList();
+    }
 
     int32_t waitForLoad = !(CMap::s_isStreamingMode || CMap::bPreload);
     CMapBaseObjLink* link = CMap::s_unk_ADFBEC.Head();
@@ -2110,6 +2118,7 @@ void CMap::PreUpdateAreas(bool addToScene) {
             rect.minY = area->m_tileChunkIndex.y;
             rect.maxX = area->m_tileChunkIndex.x + 15;
             rect.maxY = area->m_tileChunkIndex.y + 15;
+            Profiler::Scope traversal(Profiler::UiDetailZone(Profiler::MapPrepareAreaTraversal, Profiler::MapPrepareAreas));
             CMap::UpdateArea(addToScene, area, &rect, 0);
         }
     }
@@ -2129,6 +2138,7 @@ void CMap::PreUpdateAreas(bool addToScene) {
     }
 
     if (addToScene) {
+        Profiler::Scope barriers(Profiler::UiDetailZone(Profiler::MapPrepareBarriers, Profiler::MapPrepareAreas));
         CMap::UpdateBarriers();
     }
 }
@@ -2233,6 +2243,7 @@ uint32_t CMap::ComputeDoodadLoadProgress(CMapChunk* chunk, float* progress, uint
 // VERIFY: 61aca6d6 manual
 // OFFSET: 0x007B6110
 void CMap::PrepareMapObjDefs(bool addToScene) {
+    Profiler::Scope profile(Profiler::UiDetailZone(Profiler::MapPrepareWmoInstances, Profiler::WorldUpdateMapPreparation));
     int32_t waitLoad = 1;
 
     if (CMap::s_isStreamingMode || CMap::bPreload) {
@@ -2350,6 +2361,8 @@ void CMap::PrepareUpdate(bool addToScene) {
     if (!CMap::bPreload) {
         return;
     }
+
+    Profiler::Scope preload(Profiler::UiDetailZone(Profiler::MapPreparePreload, Profiler::WorldUpdateMapPreparation));
 
     if (!CMap::s_isStreamingMode) {
         AsyncFileReadWaitAll();

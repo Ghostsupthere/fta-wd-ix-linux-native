@@ -2075,7 +2075,10 @@ void CGWorldFrame::OnWorldUpdate() {
 
     {
         Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdateCamera, Profiler::WorldFrameUpdate));
-        CVehiclePassenger_C::UpdateAll(FrameTime::s_curTimeMs);
+        {
+            Profiler::Scope vehicles(Profiler::UiDetailZone(Profiler::CameraUpdateVehicles, Profiler::WorldUpdateCamera));
+            CVehiclePassenger_C::UpdateAll(FrameTime::s_curTimeMs);
+        }
         CGCamera::UpdateCallback(nullptr, this->m_camera);
     }
 

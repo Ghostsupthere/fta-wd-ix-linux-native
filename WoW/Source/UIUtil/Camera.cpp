@@ -1,5 +1,6 @@
 #include "Camera.h"
 #include "Engine/Source/Base/Coordinate.h"
+#include "Engine/Source/Base/Profiler.h"
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -2353,6 +2354,7 @@ void CGCamera::ZoomToDistance(float distance, uint32_t time, float duration, int
 // VERIFY: ac24e033 manual
 // OFFSET: 0x00606F90
 void CGCamera::CalcTargetCamera(CGObject_C* target, uint32_t time) {
+    Profiler::Scope profile(Profiler::UiDetailZone(Profiler::CameraUpdateTarget, Profiler::WorldUpdateCamera));
     if (!target) {
         SErrSetLastError(87);
         return;
@@ -3563,6 +3565,7 @@ void CGCamera::SmoothFreeLook(CGInputControl* input, int32_t idle) {
 // VERIFY: 3503b548 manual
 // OFFSET: 0x006061D0
 C3Vector CGCamera::BumpCameraPositionFromLiquid(const C3Vector& target, float distance, const C3Vector& position) {
+    Profiler::Scope profile(Profiler::UiDetailZone(Profiler::CameraUpdateLiquid, Profiler::CameraUpdateTarget));
     C3Vector result = position;
 
     if (!(0.0f < distance)) {
@@ -3648,6 +3651,7 @@ void CGCamera::UpdateUncontrolledState(int32_t uncontrolled) {
 // VERIFY: 13ff6f44 manual
 // OFFSET: 0x00605D60
 uint32_t CGCamera::CollideCameraWithWorld(const C3Vector& target, float& distance, float& height, const C3Vector& offset, float liquid, float& extent) {
+    Profiler::Scope profile(Profiler::UiDetailZone(Profiler::CameraUpdateCollision, Profiler::CameraUpdateTarget));
     extent = 1.0f;
     uint32_t result = 0;
     distance = this->m_distance < this->m_smoothDistance.m_target ? this->m_smoothDistance.m_target : this->m_distance;

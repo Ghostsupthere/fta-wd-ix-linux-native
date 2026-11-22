@@ -134,6 +134,13 @@ struct CMapChunk { CAaBox m_bbox; ProgressList m_doodadDefLinkList; };
 struct World { static inline C3Vector s_currentWorldPos{}; };
 namespace SFile { int IsStreamingMode() { return 1; } }
 
+// The extracted preparation function runs outside a profiled world update.
+namespace Profiler {
+enum Id { MapPrepareDoodads, WorldUpdateMapPreparation, Count };
+Id UiDetailZone(Id, Id) { return Count; }
+struct Scope { explicit Scope(Id) {} };
+}
+
 struct CMap {
     static inline PreparationList doodadDefList;
     static inline ProgressList s_unk_ADFBF8;

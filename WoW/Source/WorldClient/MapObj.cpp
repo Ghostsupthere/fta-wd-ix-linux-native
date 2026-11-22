@@ -1,4 +1,5 @@
 #include "MapObj.h"
+#include "Engine/Source/Base/Profiler.h"
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Source/WorldClient/Linux/WxlWmoMaterials.h"
 #endif
@@ -1669,6 +1670,7 @@ void CMapObj::InteriorRender(CMapObjGroup* group, uint32_t index) {
 // VERIFY: 9b1bf024 manual
 // OFFSET: 0x007AD020
 void CMapObj::PrepareUpdate() {
+    Profiler::Scope profile(Profiler::UiDetailZone(Profiler::MapPrepareWmoResources, Profiler::WorldUpdateMapPreparation));
     s_portalStamp++;
     CWorldScene::s_curMapObjDef = nullptr;
     s_stampedMapObjDef = nullptr;

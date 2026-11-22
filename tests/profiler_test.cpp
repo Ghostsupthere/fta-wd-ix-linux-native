@@ -114,11 +114,26 @@ int main() {
                 Profiler::CountDraw(3);
                 {
                     Profiler::Scope update(Profiler::UiDetailZone(Profiler::WorldFrameUpdate, Profiler::UiCallbackWorld));
+                    {
+                        Profiler::Scope camera(Profiler::UiDetailZone(Profiler::WorldUpdateCamera, Profiler::WorldFrameUpdate));
+                        assert(Profiler::UiDetailZone(Profiler::CameraUpdateCollision, Profiler::CameraUpdateTarget)
+                            == Profiler::Count);
+                        Profiler::Scope target(Profiler::UiDetailZone(Profiler::CameraUpdateTarget, Profiler::WorldUpdateCamera));
+                        Profiler::Scope collision(Profiler::UiDetailZone(Profiler::CameraUpdateCollision, Profiler::CameraUpdateTarget));
+                        Profiler::CountDraw(5);
+                    }
                     assert(Profiler::UiDetailZone(Profiler::WorldUpdateMapPreparation, Profiler::WorldUpdateMap)
                         == Profiler::Count);
                     Profiler::Scope map(Profiler::UiDetailZone(Profiler::WorldUpdateMap, Profiler::WorldFrameUpdate));
                     {
                         Profiler::Scope prepare(Profiler::UiDetailZone(Profiler::WorldUpdateMapPreparation, Profiler::WorldUpdateMap));
+                        assert(Profiler::UiDetailZone(Profiler::MapPrepareAreaTraversal, Profiler::MapPrepareAreas)
+                            == Profiler::Count);
+                        {
+                            Profiler::Scope areas(Profiler::UiDetailZone(Profiler::MapPrepareAreas, Profiler::WorldUpdateMapPreparation));
+                            Profiler::Scope traversal(Profiler::UiDetailZone(Profiler::MapPrepareAreaTraversal, Profiler::MapPrepareAreas));
+                            Profiler::CountDraw(6);
+                        }
                         Profiler::CountDraw(7);
                     }
                     Profiler::CountDraw(9);
@@ -155,14 +170,22 @@ int main() {
         assert(s.zones[Profiler::WorldUpdateMapPreparation].calls == detailCalls);
         assert(s.zones[Profiler::WorldUpdateMapPreparation].selfDraws == detailCalls);
         assert(s.zones[Profiler::WorldUpdateMap].totalMs >= s.zones[Profiler::WorldUpdateMapPreparation].totalMs);
+        assert(s.zones[Profiler::MapPrepareAreas].calls == detailCalls);
+        assert(s.zones[Profiler::MapPrepareAreaTraversal].calls == detailCalls);
+        assert(s.zones[Profiler::MapPrepareAreaTraversal].selfDraws == detailCalls);
+        assert(s.zones[Profiler::MapPrepareAreas].totalMs >= s.zones[Profiler::MapPrepareAreaTraversal].totalMs);
+        assert(s.zones[Profiler::CameraUpdateTarget].calls == detailCalls);
+        assert(s.zones[Profiler::CameraUpdateCollision].calls == detailCalls);
+        assert(s.zones[Profiler::CameraUpdateCollision].selfDraws == detailCalls);
+        assert(s.zones[Profiler::CameraUpdateTarget].totalMs >= s.zones[Profiler::CameraUpdateCollision].totalMs);
         assert(s.zones[Profiler::PlayerNameUpdate].calls == detailCalls);
         assert(s.zones[Profiler::WorldTextRender].calls == detailCalls);
         assert(s.zones[Profiler::WorldTextRender].selfDraws == detailCalls);
-        assert(s.zones[Profiler::UiRender].selfDraws == (detailCalls ? 0.0 : 6.0));
+        assert(s.zones[Profiler::UiRender].selfDraws == (detailCalls ? 0.0 : 8.0));
         assert(s.zones[Profiler::WorldRender].selfDraws == 1.0);
         assert(s.zones[Profiler::UiCallbackScroll].selfDraws == detailCalls);
         assert(s.zones[Profiler::UiCallbackUnitModel].selfDraws == detailCalls);
-        assert(s.drawCalls == 7.0 && s.triangles == 133.0);
+        assert(s.drawCalls == 9.0 && s.triangles == 144.0);
     }
     return 0;
 }
