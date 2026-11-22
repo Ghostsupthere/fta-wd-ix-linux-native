@@ -211,6 +211,10 @@ void CMapArea::PurgeChunks(CiRect* chunkRect) {
 // VERIFY: 4696cf2f manual
 // OFFSET: 0x007D6B30
 CMapChunk* CMapArea::PrepareChunk(int32_t chunkX, int32_t chunkY) {
+    if (!this->m_chunkInfo) {
+        return nullptr;
+    }
+
     int32_t index = chunkX + 16 * chunkY;
 
     bool firstUse = true;
@@ -241,6 +245,10 @@ CMapChunk* CMapArea::PrepareChunk(int32_t chunkX, int32_t chunkY) {
 // VERIFY: b5606f47 manual
 // OFFSET: 0x007D6BF0
 void CMapArea::Update(int32_t addToScene, CiRect* chunkRect) {
+    if (!this->m_chunkInfo) {
+        return;
+    }
+
     for (int32_t chunkY = chunkRect->minY; chunkY <= chunkRect->maxY; chunkY++) {
         int32_t localY = chunkY & 0xF;
 
