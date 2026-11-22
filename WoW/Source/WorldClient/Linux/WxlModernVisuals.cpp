@@ -78,6 +78,7 @@ wxl::atmosphere::PlayerLantern frameLantern;
 wxl::atmosphere::CorpseLightList corpseLights;
 double corpseScanAt = -1;
 int corpseMap = -1;
+float surfaceWetness = 0;
 wxl::atmosphere::NightGlowHandoff nightGlow;
 bool worldDepthReady = false;
 int regionalFogArea = -1;
@@ -429,6 +430,7 @@ static wxl::atmosphere::AreaPath ReadRegionPath(int map) {
 
 const wxl::atmosphere::PlayerLantern& WxlFrameLantern() { return frameLantern; }
 const wxl::atmosphere::CorpseLightList& WxlFrameCorpseLights() { return corpseLights; }
+float WxlSurfaceWetness() { return surfaceWetness; }
 
 static void UpdateCorpseLights(bool enabled) {
     const auto* eye = World::GetCamPos();
@@ -494,6 +496,7 @@ bool WxlBeginVisualWorld(bool underwater,const float* target) {
     Configure();worldActive=false;replacingFog=false;cameraCaptured=false;++frameNumber;
     DisarmTransparentFog();
     worldDepthReady = false;
+    surfaceWetness = 0;
     frameLantern = {};
     if (optionsChanged) {
         selectedConfig = wxl::atmosphere::ApplyOptions(baseline, options);
@@ -522,6 +525,11 @@ bool WxlBeginVisualWorld(bool underwater,const float* target) {
             kind, weather ? weather->m_intensity : 0.0f, NowMs() * 0.001);
     } else {
         regionalFog.Reset();
+    }
+    if (options.v[env::kAtmosphereOverride] && options.v[env::kWetSurfaces] && player->IsOutdoors()) {
+        const auto* weather = World::s_weather;
+        if (weather && weather->m_rain && std::isfinite(weather->m_intensity))
+            surfaceWetness = std::clamp(weather->m_intensity, 0.0f, 1.0f);
     }
     frameLantern = CapturePlayerLantern(*player);
     originalFog=info->m_fogInterior;

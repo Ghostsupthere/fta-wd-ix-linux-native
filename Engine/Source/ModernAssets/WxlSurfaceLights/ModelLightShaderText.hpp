@@ -618,7 +618,40 @@ namespace wxl::surfacelights::modelshader
         // earlier offsets stay valid.
         if (!(pos[0].at < colour[0].at && sun[0].at < colour[0].at)) { why = "anchors out of order"; return false; }
         const bool wmo = g_family.compare(0, 6, "MapObj") == 0;
-        src.insert(colour[0].at, LampBlock(colour[0].reg, wmo ? IndoorSkip() : std::string()));
+        const std::string surface = LampBlock(colour[0].reg, wmo ? IndoorSkip() : std::string());
+#if defined(WXL_WEATHER_MATERIALS)
+        if (!wmo && !std::regex_search(src, std::regex(R"(\bc249\b)")))
+        {
+            // Keep the original alpha write. Only the RGB result is adjusted in rain.
+            static const std::regex output(R"(^\s*(mad_sat|add_sat) (o\d+)(?:\.xyz)?, ([^\r\n]+))");
+            std::smatch match;
+            const std::string line = src.substr(colour[0].at, src.find('\n', colour[0].at) - colour[0].at);
+            if (std::regex_search(line, match, output))
+            {
+                const auto end = src.find('\n', colour[0].at);
+                const std::string wet =
+                    "\n    mov r30.w, c1.w"
+                    "\n    if_gt c249.x, r30.w"
+                    "\n      sge r29.w, c1.w, c1.w"
+                    "\n      " + match[1].str() + " r31.xyz, " + match[3].str() +
+                    "\n      dp3 r30.w, r29, r29"
+                    "\n      max r30.w, r30.w, c249.w"
+                    "\n      rsq r30.w, r30.w"
+                    "\n      dp3 r31.w, r30, -r29"
+                    "\n      mul_sat r31.w, r31.w, r30.w"
+                    "\n      add r31.w, r29.w, -r31.w"
+                    "\n      mul r31.w, r31.w, r31.w"
+                    "\n      mul r31.w, r31.w, c249.z"
+                    "\n      mul r31.w, r31.w, c249.x"
+                    "\n      mul r30.w, c249.x, c249.y"
+                    "\n      add r30.w, r29.w, -r30.w"
+                    "\n      mad_sat " + match[2].str() + ".xyz, r31, r30.w, r31.w"
+                    "\n    endif";
+                src.insert(end == std::string::npos ? src.size() : end, wet);
+            }
+        }
+#endif
+        src.insert(colour[0].at, surface);
         const std::string savePos = "    mov r29.xyz, " + pos[0].reg + "\n", saveNormal = "    mov r30.xyz, " + sun[0].reg + "\n";
         if (sun[0].at > pos[0].at) { src.insert(sun[0].at, saveNormal); src.insert(pos[0].at, savePos); }
         else                       { src.insert(pos[0].at, savePos); src.insert(sun[0].at, saveNormal); }

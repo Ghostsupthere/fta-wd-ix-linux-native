@@ -47,7 +47,8 @@ namespace env = wxl::grass::environment;
 
 namespace {
 // ---- shader replacement --------------------------------------------------------------------------
-sl::LightShaderPack pack;
+sl::LightShaderPack pack, weatherPack;
+bool weatherPackLoaded = false;
 bool packTried = false, packLoaded = false, profileOn = false;
 // The WMO layered-material module finds its shaders by hashing the engine's CURRENT bytecode, so a
 // light-patched WMO vertex shader only keeps its layered materials if the layered pack carries a variant
@@ -79,6 +80,9 @@ void EnsurePack() {
         std::fprintf(stderr, "WarcraftXL: surface lights pack unavailable (%s); stock lighting. Run tools/build-light-shader-pack.py\n", why.c_str());
         return;
     }
+    weatherPackLoaded = weatherPack.Load((ClientDirectory() / "Utils/WarcraftXL/visuals/light_weather.pack").string(), why);
+    if (weatherPackLoaded)
+        std::fprintf(stderr, "WarcraftXL: supplemental weather material shader pack active\n");
     if (wmoPackPresent)
         for (const sl::LightPackEntry& e : pack.Entries())
             if (e.group == sl::kGroupWmo && e.kind == 0) {
@@ -101,6 +105,9 @@ bool Replace(const uint8_t* code, size_t size, const uint32_t** out, size_t* out
     if (kind > 1) return false;
     const sl::LightPackEntry* entry = pack.Find(kind, code, size);
     if (!entry || (entry->group == sl::kGroupWmo && !wmoLights)) return false;
+    if (weatherPackLoaded && entry->group != sl::kGroupWmo)
+        if (const auto* weather = weatherPack.Find(kind, code, size))
+            entry = weather;
     ++replaced[entry->group];
     *out = entry->bytecode.data();
     *outBytes = entry->bytecode.size() * 4;
@@ -805,6 +812,13 @@ void WxlSurfaceLightsBeforeTerrain() {
     for (float v : view) viewOk = viewOk && std::isfinite(v);
     viewOk = viewOk && Finite3(camera);
 
+    if (weatherPackLoaded) {
+        const float wet[] = {viewOk ? WxlSurfaceWetness() : 0.0f, 0.22f, 0.22f, 0.085f};
+        const float eye[] = {camera[0], camera[1], camera[2], 0};
+        d->SetPixelShaderConstantF(215, wet, 1);
+        d->SetPixelShaderConstantF(216, eye, 1);
+        d->SetVertexShaderConstantF(249, wet, 1);
+    }
     const bool lightsOn = viewOk && settings.enabled && Scene();
     if (lightsOn) UpdateLights(std::min(dt, 0.25f), camera);
     else if (grid.cells) { ClearLights(); }
@@ -822,6 +836,13 @@ void WxlSurfaceLightsBeforeTerrain() {
 }
 
 void WxlSurfaceLightsFrame() {
+    if (weatherPackLoaded) {
+        if (auto* gx = Backend(); gx && gx->m_d3dDevice) {
+            const float dry[4] = {};
+            gx->m_d3dDevice->SetPixelShaderConstantF(215, dry, 1);
+            gx->m_d3dDevice->SetVertexShaderConstantF(249, dry, 1);
+        }
+    }
     if (!texture || !device) return;
     CGxDeviceD3d9Ex* gx = Backend();
     IDirect3DDevice9* d = gx ? gx->m_d3dDevice : nullptr;

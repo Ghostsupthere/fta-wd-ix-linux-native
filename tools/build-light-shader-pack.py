@@ -8,7 +8,7 @@ d3dcompiler under an isolated offline Wine prefix. The pack is derived from game
 generated locally and never committed. The native client never loads Wine or the compiler; without
 the pack, or with WXL_SURFACE_LIGHTS unset, nothing about its shaders changes.
 
-    tools/build-light-shader-pack.py [--client DIR] [--out FILE]
+    tools/build-light-shader-pack.py [--client DIR] [--out FILE] [--weather-only]
 """
 import argparse, hashlib, importlib.util, json, os, shutil, subprocess, sys
 from pathlib import Path
@@ -27,9 +27,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--client', type=Path, default=ROOT.parent.parent / 'From_The_Ashes_Client')
     parser.add_argument('--storm', default=os.environ.get('STORMLIB'), help='path to the StormLib shared library (or set STORMLIB)')
-    parser.add_argument('--out', type=Path, default=ROOT / 'bin/Linux/Utils/WarcraftXL/visuals/light_shaders.pack')
+    parser.add_argument('--out', type=Path)
+    parser.add_argument('--weather-only', action='store_true', help='build the optional terrain and M2 weather variants')
     parser.add_argument('--compiler-dll', type=Path, default=ROOT / '.deps/visual-shader-tools/d3dcompiler_47.dll')
     args = parser.parse_args()
+    if args.out is None:
+        pack = 'light_weather.pack' if args.weather_only else 'light_shaders.pack'
+        args.out = ROOT / 'bin/Linux/Utils/WarcraftXL/visuals' / pack
     if not args.storm: raise SystemExit('Give --storm /path/to/libstorm.so or set STORMLIB (the StormLib shared library)')
     expected = json.loads(wmopack.MANIFEST.read_text())['compiler_sha256']
     if not args.compiler_dll.is_file() or hashlib.sha256(args.compiler_dll.read_bytes()).hexdigest() != expected:
@@ -42,6 +46,8 @@ def main():
     jobs = [('tv', 'Vertex\\vs_3_0', 'vs', TERRAIN_VERTEX), ('tp', 'Pixel\\ps_3_0', 'ps', TERRAIN_PIXEL),
             ('m2', 'Vertex\\vs_3_0', 'vs', M2_VERTEX), ('wmo', 'Vertex\\vs_3_0', 'vs', WMO_VERTEX)]
     for group, profile, ext, names in jobs:
+        if args.weather_only and group == 'wmo':
+            continue
         for name in names:
             blob = mpq.read(f'Shaders\\{profile}\\{name}.bls')
             if blob is None:
@@ -52,7 +58,8 @@ def main():
     print('extracted', counts)
     compiler = work / 'd3dcompiler_47.dll'; shutil.copy2(args.compiler_dll, compiler)
     exe = work / 'light_pack.exe'
-    subprocess.run(['x86_64-w64-mingw32-g++', '-std=c++20', '-O2', '-static', '-I', str(ROOT),
+    defines = ['-DWXL_WEATHER_MATERIALS=1'] if args.weather_only else []
+    subprocess.run(['x86_64-w64-mingw32-g++', '-std=c++20', '-O2', '-static', '-I', str(ROOT), *defines,
                     str(ROOT / 'tools/wxl_wmo_shader_pack.cpp'), str(ROOT / 'Engine/Source/ModernAssets/WxlWmo/WmoShaderPack.cpp'),
                     '-o', str(exe)], check=True)
     env = dict(os.environ, WINEPREFIX=str(work / 'wine'), WINEDEBUG='-all', WINEDLLOVERRIDES='d3dcompiler_47=n;mscoree,mshtml=')

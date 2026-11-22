@@ -306,7 +306,39 @@ namespace wxl::surfacelights::terrainshader
         // Point lights modify the surface colour before the native fog blend.
         std::string lightDefs;
         const std::string lightBlock = PixelBlock(r, lightDefs);
+#if defined(WXL_WEATHER_MATERIALS)
+        if (std::regex_search(src, std::regex(R"(\bc21[56]\b)")))
+        { why = "weather material registers in use"; return false; }
+        // c215 = wetness, diffuse loss, shimmer weight, world patch frequency.
+        // c216.xyz = camera position. Keep the original colour and fog path dry.
+        const std::string wetBlock =
+            "\n    mov r25.w, c202.y"
+            "\n    if_gt c215.x, r25.w"
+            "\n      add r25.xyz, c216, -v9"
+            "\n      dp3 r25.w, r25, r25"
+            "\n      max r25.w, r25.w, c211.y"
+            "\n      rsq r25.w, r25.w"
+            "\n      mul r25.xyz, r25, r25.w"
+            "\n      dp3_sat r25.w, r25, r24"
+            "\n      add r25.w, c202.x, -r25.w"
+            "\n      mul r25.w, r25.w, r25.w"
+            "\n      mul r26.xy, v9, c215.w"
+            "\n      frc r26.xy, r26"
+            "\n      mul r26.w, r26.x, r26.y"
+            "\n      add r26.z, r24.z, -c211.x"
+            "\n      mul_sat r26.z, r26.z, c213.x"
+            "\n      mul r26.w, r26.w, r26.z"
+            "\n      mul r26.w, r26.w, r25.w"
+            "\n      mul r26.w, r26.w, c215.z"
+            "\n      mul r26.w, r26.w, c215.x"
+            "\n      mul r25.x, c215.x, c215.y"
+            "\n      add r25.x, c202.x, -r25.x"
+            "\n      mad_sat " + r + ".xyz, " + r + ", r25.x, r26.w"
+            "\n    endif";
+        src.insert(static_cast<size_t>(m.position(0)), lightBlock + wetBlock);
+#else
         src.insert(static_cast<size_t>(m.position(0)), lightBlock);
+#endif
         src.insert(src.find('\n') + 1, "    def c202, 1, 0, 0.5, 0\n" + lightDefs + "    dcl_texcoord7 v9.xyz\n");
         return true;
     }
