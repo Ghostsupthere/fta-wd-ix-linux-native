@@ -153,6 +153,9 @@ Check("Player lantern in fog", "atmosphere.lantern", 2, 559, "atmosphere.fog", "
 Slider("Native light strength", "atmosphere.lightStrength", 1, 612, 0, 2, .05, "atmosphere.nativeLights")
 Slider("Lantern strength", "atmosphere.lanternStrength", 2, 612, 0, 2, .05, "atmosphere.lantern")
 
+Check("Lootable corpse lights", "atmosphere.corpseLights", 1, 0, nil,
+    "Adds a faint light near a few nearby lootable corpses.")
+
 Section("Water", 671)
 Check("Modern water", "water.modern", 1, 695)
 Slider("Water quality", "water.quality", 2, 711, 1, 3, 1, "water.modern", "%.0f")

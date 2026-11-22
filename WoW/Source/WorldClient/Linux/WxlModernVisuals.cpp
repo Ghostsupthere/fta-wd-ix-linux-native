@@ -47,6 +47,9 @@
 #include "WoW/Source/ObjectMgrClient/ObjectMgrClient.h"
 #include "WoW/Source/Object/ObjectClient/Unit_C.h"
 #include "WoW/Source/Object/ObjectClient/Player_C.h"
+#include "WoW/Source/Object/ObjectClient/Corpse_C.h"
+#include "Engine/Source/Os/TimeManager.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/corpse_light_list.h"
 #include "WoW/Source/Ui/GameUI.h"
 #include "WoW/Source/WorldClient/MapWeather.h"
 #include "WoW/Source/WorldClient/Map.h"
@@ -72,6 +75,9 @@ namespace env = wxl::grass::environment;
 env::Values options;
 wxl::atmosphere::RegionalFog regionalFog;
 wxl::atmosphere::PlayerLantern frameLantern;
+wxl::atmosphere::CorpseLightList corpseLights;
+double corpseScanAt = -1;
+int corpseMap = -1;
 wxl::atmosphere::NightGlowHandoff nightGlow;
 bool worldDepthReady = false;
 int regionalFogArea = -1;
@@ -385,6 +391,8 @@ void RestoreWaterDepthWrite() {
 }
 void WxlReleaseModernVisuals() {
     nightGlow.Reset();
+    corpseLights.count = 0;
+    corpseScanAt = -1;
     frameLantern = {};
     WxlWmoRelease();
     WxlGrassInstancingRelease();
@@ -420,6 +428,45 @@ static wxl::atmosphere::AreaPath ReadRegionPath(int map) {
 }
 
 const wxl::atmosphere::PlayerLantern& WxlFrameLantern() { return frameLantern; }
+const wxl::atmosphere::CorpseLightList& WxlFrameCorpseLights() { return corpseLights; }
+
+static void UpdateCorpseLights(bool enabled) {
+    const auto* eye = World::GetCamPos();
+    if (!enabled || !eye) {
+        corpseLights.count = 0;
+        corpseScanAt = -1;
+        return;
+    }
+    const int map = World::QueryMapId();
+    const double now = NowMs();
+    if (map == corpseMap && now < corpseScanAt)
+        return;
+    corpseMap = map;
+    corpseScanAt = now + 250;
+    corpseLights.count = 0;
+    struct Scan { float eye[3]; uint32_t time; unsigned visited; } scan{{eye->x, eye->y, eye->z}, OsGetAsyncTimeMs(), 0};
+    ClntObjMgrEnumVisibleObjects([](WOWGUID guid, void* context) -> int32_t {
+        auto& scan = *static_cast<Scan*>(context);
+        if (++scan.visited > 1024)
+            return 0;
+        auto* object = ClntObjMgrObjectPtr(guid, TYPE_OBJECT, __FILE__, __LINE__);
+        if (!object || !object->m_worldObject)
+            return 1;
+        const auto type = object->m_obj->m_type;
+        const bool lootable = (type & TYPE_CORPSE) ? static_cast<CGCorpse_C*>(object)->CanBeLooted() != 0
+                          : (type & TYPE_UNIT) && static_cast<CGUnit_C*>(object)->CanBeLooted(scan.time);
+        if (lootable) {
+            const auto position = object->m_worldObject->m_position;
+            const float world[] = {position.x, position.y, position.z};
+            corpseLights.Add(guid.m_guid, world, scan.eye);
+        }
+        return 1;
+    }, &scan);
+    static unsigned scans = 0;
+    if (++scans % 20 == 1)
+        VF_LOG_INFO("corpse lights: %u/%zu candidates, %u visible objects, scan %.4f ms",
+                    corpseLights.count, corpseLights.lights.size(), std::min(scan.visited, 1024u), NowMs() - now);
+}
 
 static wxl::atmosphere::PlayerLantern CapturePlayerLantern(CGPlayer_C& player) {
     const float strength = float(options.v[env::kLanternStrength]);
@@ -457,6 +504,8 @@ bool WxlBeginVisualWorld(bool underwater,const float* target) {
     targetValid=target!=nullptr;contactsCaptured=false;
     for(unsigned i=0;targetValid&&i<3;++i){cameraTarget[i]=target[i];if(!std::isfinite(target[i]))targetValid=false;}
     auto* player = ClntObjMgrGetActivePlayerObj();
+    UpdateCorpseLights(config.enable && config.hooks && player && !underwater &&
+                       options.v[env::kAtmosphereOverride] && options.v[env::kCorpseLights]);
     if(!config.enable||!config.hooks||underwater||!player){
         visualStatus = underwater ? "Stock underwater rendering" : "World effects inactive";
         return false;

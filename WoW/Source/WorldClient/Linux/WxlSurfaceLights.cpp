@@ -4,6 +4,7 @@
 #include "WxlSurfaceLights.h"
 #include "WxlModernVisuals.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/player_lantern.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/corpse_light_list.h"
 #include "WxlVisualEnvironment.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
 #include "Engine/Source/Gx/CGxDeviceD3d9Ex/CGxDeviceD3d9Ex.h"
@@ -546,6 +547,18 @@ void UpdateLights(float dt, const float eye[3]) {
             light.supplemental = true;
             cands.push_back(light);
         }
+    }
+    const auto& corpses = WxlFrameCorpseLights();
+    for (unsigned i = 0; i < corpses.count && cands.size() < sl::kMaxPool; ++i)
+    {
+        sl::Candidate light;
+        std::memcpy(light.pos, corpses.lights[i].position, sizeof(light.pos));
+        light.color[0] = 0.38f; light.color[1] = 0.26f; light.color[2] = 0.08f;
+        light.radius = 4.0f * 16.0f / settings.radius;
+        light.flickerMode = sl::kFlickerOff;
+        light.moving = true;
+        light.supplemental = true;
+        cands.push_back(light);
     }
     indoorTestsThisFrame = 0;
     pool = sl::ChooseActive(cands, settings, eye, lightTime, [](const float* p) { return IsIndoor(p); });
