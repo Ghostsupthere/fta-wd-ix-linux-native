@@ -5,6 +5,7 @@
 #include "WxlModernVisuals.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/player_lantern.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/corpse_light_list.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/spell_light_list.h"
 #include "WxlVisualEnvironment.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
 #include "Engine/Source/Gx/CGxDeviceD3d9Ex/CGxDeviceD3d9Ex.h"
@@ -562,6 +563,18 @@ void UpdateLights(float dt, const float eye[3]) {
         std::memcpy(light.pos, corpses.lights[i].position, sizeof(light.pos));
         light.color[0] = 0.38f; light.color[1] = 0.26f; light.color[2] = 0.08f;
         light.radius = 4.0f * 16.0f / settings.radius;
+        light.flickerMode = sl::kFlickerOff;
+        light.moving = true;
+        light.supplemental = true;
+        cands.push_back(light);
+    }
+    const auto& spells = WxlFrameSpellLights();
+    for (unsigned i = 0; i < spells.count && cands.size() < sl::kMaxPool; ++i)
+    {
+        sl::Candidate light;
+        std::memcpy(light.pos, spells.lights[i].position, sizeof(light.pos));
+        std::memcpy(light.color, spells.lights[i].colour, sizeof(light.color));
+        light.radius = 5.0f * 16.0f / settings.radius;
         light.flickerMode = sl::kFlickerOff;
         light.moving = true;
         light.supplemental = true;

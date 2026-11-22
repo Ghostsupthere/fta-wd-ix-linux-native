@@ -3,6 +3,10 @@
 
 #include "Engine/Source/ModernAssets/WxlVisuals/fog_wind.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/night_glow.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/cloud_shade.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/corpse_light_list.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/spell_light_list.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/water_rain.h"
 
 #include <cassert>
 
@@ -75,4 +79,33 @@ int main()
     assert(std::abs(halo.Advance(0.22, false) - 0.2f) < 0.0001f);
     halo.Reset();
     assert(halo.Advance(1.0, true) == 0.0f);
+
+    float eye[3] = {};
+    wxl::atmosphere::CorpseLightList corpses;
+    for (unsigned i = 7; i > 0; --i) {
+        const float position[] = {static_cast<float>(i), 0, 0};
+        corpses.Add(i, position, eye);
+    }
+    const float farAway[] = {100, 0, 0};
+    corpses.Add(100, farAway, eye);
+    assert(corpses.count == 4 && corpses.lights[0].id == 1 && corpses.lights[3].id == 4);
+    assert(corpses.lights[0].position[2] == 0.28f);
+
+    wxl::atmosphere::SpellLightList spells;
+    const float gold[] = {10, 5, 0};
+    const float first[] = {4, 0, 0}, second[] = {2, 0, 0}, nearest[] = {0, 0, 0};
+    assert(!spells.Add(farAway, gold, eye, 1));
+    assert(spells.Add(first, gold, eye, 1) && spells.Add(first, gold, eye, 1) && spells.count == 1);
+    assert(spells.Add(second, gold, eye, 1) && spells.Add(nearest, gold, eye, 1) && spells.count == 2);
+    assert(spells.lights[1].distanceSquared == 4 && spells.lights[0].colour[1] == 0.275f);
+
+    const float cloud[] = {0.24f, 0, 0, 0.5f};
+    assert(wxl::atmosphere::CloudShade(cloud, 0, 1) == 1.0f);
+    assert(wxl::atmosphere::CloudShade(cloud, 1, 1) == wxl::atmosphere::CloudShade(cloud, -1, -1));
+    assert(std::abs(wxl::atmosphere::CloudShade(cloud, 1, 1) - 0.76f) < 0.0001f);
+
+    WaterRippleDisturbance drop;
+    assert(!WaterRainImpact(eye, 32, 0.5, 0, 0, drop));
+    assert(WaterRainImpact(eye, 32, 0.5, 1, 0, drop));
+    assert(std::abs(drop.to[0]) < 16 && std::abs(drop.to[1]) < 16 && drop.amplitude > 0);
 }

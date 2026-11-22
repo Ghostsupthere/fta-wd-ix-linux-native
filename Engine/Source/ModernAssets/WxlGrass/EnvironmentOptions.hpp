@@ -79,6 +79,7 @@ namespace wxl::grass::environment
         {"water.rainRings", 0, 1, 0, true},
         {"atmosphere.wetSurfaces", 0, 1, 0, true},
         {"atmosphere.cloudShadows", 0, 1, 0, true},
+        {"atmosphere.spellLights", 0, 1, 0, true},
     };
     constexpr size_t kCount = sizeof(kOptions) / sizeof(kOptions[0]);
 
@@ -100,6 +101,7 @@ namespace wxl::grass::environment
         kRainRings,
         kWetSurfaces,
         kCloudShadows,
+        kSpellLights,
     };
 
     struct Values

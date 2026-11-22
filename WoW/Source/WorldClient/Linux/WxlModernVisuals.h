@@ -5,11 +5,12 @@ namespace Liquid {class CMaterialSettings;}
 bool WxlBeginVisualWorld(bool underwater,const float* target=nullptr);
 void WxlCaptureVisualCamera();
 #if defined(WOWDECOMP_LINUX)
-namespace wxl::atmosphere { struct PlayerLantern; struct CorpseLightList; }
+namespace wxl::atmosphere { struct PlayerLantern; struct CorpseLightList; struct SpellLightList; }
 const wxl::atmosphere::PlayerLantern& WxlFrameLantern();
 const wxl::atmosphere::CorpseLightList& WxlFrameCorpseLights();
 float WxlSurfaceWetness();
 const float* WxlSurfaceCloud();
+const wxl::atmosphere::SpellLightList& WxlFrameSpellLights();
 #endif
 void WxlFinishVisualWorld();
 // Draws the glare and the fog once the liquid pass is done, then fits the stock fog

@@ -51,6 +51,8 @@
 #include "Engine/Source/Os/TimeManager.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/corpse_light_list.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/cloud_shade.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/spell_light_list.h"
+#include "WoW/Source/Object/ObjectClient/Effect_C.h"
 #include "WoW/Source/Ui/GameUI.h"
 #include "WoW/Source/WorldClient/MapWeather.h"
 #include "WoW/Source/WorldClient/Map.h"
@@ -81,6 +83,9 @@ double corpseScanAt = -1;
 int corpseMap = -1;
 float surfaceWetness = 0;
 float surfaceCloud[4] = {};
+wxl::atmosphere::SpellLightList spellLights;
+double spellScanAt = -1;
+int spellMap = -1;
 wxl::atmosphere::NightGlowHandoff nightGlow;
 bool worldDepthReady = false;
 int regionalFogArea = -1;
@@ -403,6 +408,8 @@ void WxlReleaseModernVisuals() {
     nightGlow.Reset();
     corpseLights.count = 0;
     corpseScanAt = -1;
+    spellScanAt = -1;
+    spellLights.count = 0;
     frameLantern = {};
     WxlWmoRelease();
     WxlGrassInstancingRelease();
@@ -441,6 +448,62 @@ const wxl::atmosphere::PlayerLantern& WxlFrameLantern() { return frameLantern; }
 const wxl::atmosphere::CorpseLightList& WxlFrameCorpseLights() { return corpseLights; }
 float WxlSurfaceWetness() { return surfaceWetness; }
 const float* WxlSurfaceCloud() { return surfaceCloud; }
+const wxl::atmosphere::SpellLightList& WxlFrameSpellLights() { return spellLights; }
+
+static void UpdateSpellLights(bool enabled) {
+    const auto* eye = World::GetCamPos();
+    if (!enabled || !eye) {
+        spellLights.count = 0;
+        spellScanAt = -1;
+        return;
+    }
+    const double now = NowMs();
+    const int map = World::QueryMapId();
+    if (map == spellMap && now < spellScanAt)
+        return;
+    spellMap = map;
+    spellScanAt = now + 100;
+    spellLights.count = 0;
+    struct Scan { float eye[3]; unsigned objects = 0, effects = 0; } scan{{eye->x, eye->y, eye->z}};
+    ClntObjMgrEnumVisibleObjects([](WOWGUID guid, void* data) -> int32_t {
+        auto& scan = *static_cast<Scan*>(data);
+        if (++scan.objects > 512)
+            return 0;
+        auto* object = ClntObjMgrObjectPtr(guid, TYPE_OBJECT, __FILE__, __LINE__);
+        if (!object || !object->m_worldObject)
+            return 1;
+        unsigned links = 0;
+        for (const auto* effect = object->m_effectList; effect && links++ < 8; effect = effect->m_next) {
+            if (++scan.effects > 64)
+                return 0;
+            const auto* model = effect->m_model;
+            if (!effect->m_spellId || !(effect->m_alpha > 0.1f) || !model || !(model->m_fFlags & 1) || !model->m_shared)
+                continue;
+            const auto* asset = model->m_shared->m_data;
+            if (!asset || asset->m_lights.m_count)
+                continue;
+            const auto position = effect->m_mapEntity ? effect->m_mapEntity->m_position : object->m_worldObject->m_position;
+            const float world[] = {position.x, position.y, position.z + (effect->m_mapEntity ? 0.25f : 1.0f)};
+            for (unsigned i = 0; i < std::min(asset->m_particles.m_count, 4u); ++i) {
+                const auto& emitter = asset->m_particles[i];
+                if ((emitter.m_blendMode != M2PARTICLEBLEND_ADD &&
+                     emitter.m_blendMode != M2PARTICLEBLEND_NO_ALPHA_ADD &&
+                     emitter.m_blendMode != M2PARTICLEBLEND_BLEND_ADD) || !emitter.m_colorTrack.m_values.m_count)
+                    continue;
+                const auto& tint = emitter.m_colorTrack.m_values[0];
+                const float colour[] = {tint.x, tint.y, tint.z};
+                if (spellLights.Add(world, colour, scan.eye, effect->m_alpha))
+                    break;
+            }
+        }
+        return 1;
+    }, &scan);
+    static unsigned scans = 0;
+    if (++scans % 50 == 1)
+        VF_LOG_INFO("spell light prototype: %u/%zu sources, %u objects, %u effects, scan %.4f ms",
+                    spellLights.count, spellLights.lights.size(), std::min(scan.objects, 512u),
+                    std::min(scan.effects, 64u), NowMs() - now);
+}
 
 static void UpdateCorpseLights(bool enabled) {
     const auto* eye = World::GetCamPos();
@@ -518,8 +581,10 @@ bool WxlBeginVisualWorld(bool underwater,const float* target) {
     targetValid=target!=nullptr;contactsCaptured=false;
     for(unsigned i=0;targetValid&&i<3;++i){cameraTarget[i]=target[i];if(!std::isfinite(target[i]))targetValid=false;}
     auto* player = ClntObjMgrGetActivePlayerObj();
-    UpdateCorpseLights(config.enable && config.hooks && player && !underwater &&
-                       options.v[env::kAtmosphereOverride] && options.v[env::kCorpseLights]);
+    const bool previewLights = config.enable && config.hooks && player && !underwater &&
+                               options.v[env::kAtmosphereOverride];
+    UpdateCorpseLights(previewLights && options.v[env::kCorpseLights]);
+    UpdateSpellLights(previewLights && options.v[env::kSpellLights]);
     if(!config.enable||!config.hooks||underwater||!player){
         visualStatus = underwater ? "Stock underwater rendering" : "World effects inactive";
         return false;

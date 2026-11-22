@@ -162,6 +162,9 @@ Check("Rain-wet surfaces", "atmosphere.wetSurfaces", 1, 0, nil,
 Check("Cloud shadows", "atmosphere.cloudShadows", 1, 0, nil,
     "Moves soft cloud shade across outdoor terrain and dims nearby fog light.")
 
+Check("Spell effect lights (experimental)", "atmosphere.spellLights", 1, 0, nil,
+    "Adds up to two small lights from nearby additive spell particles.")
+
 Section("Water", 671)
 Check("Modern water", "water.modern", 1, 695)
 Slider("Water quality", "water.quality", 2, 711, 1, 3, 1, "water.modern", "%.0f")
