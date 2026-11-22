@@ -86,6 +86,17 @@ int main(int argc,char** argv) {
             light.color[0]=6;light.color[1]=2;light.color[2]=0.5f;light.attenuation[0]=1;light.attenuation[1]=0.1f;light.attenuation[2]=0.05f;
             Require(engine::SelectLocalPointLight(frame.localLights,light,frame.camPos,{true,1.0f}),"point-light selection");
             WaterRenderer water;Renderer atmosphere;
+            Check(dev->BeginScene(), "night lighting scene");
+            Check(dev->SetViewport(&frame.viewport), "night lighting viewport");
+            Check(dev->Clear(0, nullptr, D3DCLEAR_TARGET, 0xff406080, 1.0f, 0), "night lighting clear");
+            const auto beforeNight = Pixels(dev, width, height);
+            Require(atmosphere.RenderNightLighting(dev, depth, 0.5f, 0.0f), "night lighting draws");
+            const auto afterNight = Pixels(dev, width, height);
+            Require(afterNight[width * (height / 2) + width / 2] < beforeNight[width * (height / 2) + width / 2],
+                    "night lighting darkens scene");
+            Require(atmosphere.RenderNightLighting(dev, depth, 0.0f, 0.0f), "neutral night lighting draws");
+            Require(Pixels(dev, width, height) == afterNight, "neutral night lighting preserves pixels");
+            Check(dev->EndScene(), "end night lighting scene");
             for(int quality=1;quality<=3;++quality) {
                 config.quality=config.waterQuality=quality;config.temporal=0;
                 Check(dev->BeginScene(),"begin");
