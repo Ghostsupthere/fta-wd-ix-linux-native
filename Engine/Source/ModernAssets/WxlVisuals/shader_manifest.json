@@ -14,7 +14,10 @@
     "vf_integrate.hlsli": "2fb951726a3b98e2a9bff18c92ae56555ad5a3f31116e532b63f0e08f05df9cd",
     "vf_local_lights.hlsli": "dae48b6175fa4d37510ad0d777b3e1767b89fa2b7f0a7a5ef0f35be1ca5647e9",
     "vf_march.hlsl": "0870874736861def5532c535d1e8efd777e3ae55e28201e336f489abf4ad2d00",
-    "vf_night_lighting.hlsl": "85b914abce9f02950e3a3944b8d64abce693660b19cd3b106337caf8ebf7a0b1",
+    "vf_night_darkening.hlsli": "3f0d40b2259cde904777f0c1f0adf58a6edd844960611dab5e3cf1cdbcb1e0a9",
+    "vf_night_glow_blur.hlsl": "f7c582c65b0ff210cb40583337d7ba6e1254aacdde3343e8388487bfc458231a",
+    "vf_night_glow_mask.hlsl": "b466f745f9923b261f57e5b76592757b3501cbf15b13b27eb84edb3ea33ac233",
+    "vf_night_lighting.hlsl": "a5e77cb62282daf8e4f110e0198c978dedbe1ec6b538170d7148c533694bb3ca",
     "vf_probe.hlsl": "c6318c3d9458afd97ed4644989cafb757df7e57e5507db003a41f264cf5e16b3",
     "vf_ray_blur.hlsl": "64acb157de13fa4fb816d5e5041ec56a4bf357a0e83beb6bdab3fb0a7216a18d",
     "vf_ray_composite.hlsl": "4e736509729cd1b2b317ce01f50c5288cdc17e0f5c2bf6ed359ea333d26718b4",
@@ -583,8 +586,22 @@
       "source": "vf_night_lighting.hlsl",
       "profile": "ps_3_0",
       "defines": [],
-      "bytecode_sha256": "058c5427474e3a8f44a57349d0d094405d69df8973e517ac46d3e9c9ff465c57",
-      "bytecode_bytes": 1084
+      "bytecode_sha256": "86367a4eff788fc68dd6186379346c67ed565c1f3a93f90ec4aaf9735476492d",
+      "bytecode_bytes": 964
+    },
+    "ps_night_glow_mask": {
+      "source": "vf_night_glow_mask.hlsl",
+      "profile": "ps_3_0",
+      "defines": [],
+      "bytecode_bytes": 2556,
+      "bytecode_sha256": "9abbb98a2a1553e4b5e250513cf8ab23c2ae5f0407a63049a9647ff82efdad49"
+    },
+    "ps_night_glow_blur": {
+      "source": "vf_night_glow_blur.hlsl",
+      "profile": "ps_3_0",
+      "defines": [],
+      "bytecode_bytes": 632,
+      "bytecode_sha256": "082172978e688909490aa97e20cee91bab20739764bdedde9d595944615db028"
     }
   }
 }

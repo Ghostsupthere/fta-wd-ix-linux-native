@@ -2,6 +2,7 @@
 #include "Engine/Source/ModernAssets/WxlVisuals/atmosphere_regions.h"
 
 #include "Engine/Source/ModernAssets/WxlVisuals/fog_wind.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/night_glow.h"
 
 #include <cassert>
 
@@ -64,4 +65,14 @@ int main()
     assert(wind.Advance(12.0, 0.0f, 100.0) == 67.0f);
     assert(wind.Advance(30.0, 5.0f, 100.0) == 67.0f);
     assert(wind.Advance(37.0, 5.0f, 100.0) == 2.0f);
+
+    wxl::atmosphere::NightGlowHandoff halo;
+    assert(halo.Advance(0.0, false) == 1.0f);
+    assert(halo.Advance(0.0, true) == 1.0f);
+    assert(std::abs(halo.Advance(0.08, true) - 0.5f) < 0.0001f);
+    assert(halo.Advance(0.17, true) == 0.0f);
+    assert(halo.Advance(0.17, false) == 0.0f);
+    assert(std::abs(halo.Advance(0.22, false) - 0.2f) < 0.0001f);
+    halo.Reset();
+    assert(halo.Advance(1.0, true) == 0.0f);
 }

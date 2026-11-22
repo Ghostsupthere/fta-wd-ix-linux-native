@@ -41,6 +41,7 @@
 #include "WoW/Source/Ui/WorldFrame.h"
 #include "WoW/Source/UIUtil/Camera.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/player_lantern.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/night_glow.h"
 #include "WoW/Source/DB/Rec/AreaTableRec.h"
 #include "WoW/Source/DB/DBClient/DBClient.h"
 #include "WoW/Source/ObjectMgrClient/ObjectMgrClient.h"
@@ -71,6 +72,8 @@ namespace env = wxl::grass::environment;
 env::Values options;
 wxl::atmosphere::RegionalFog regionalFog;
 wxl::atmosphere::PlayerLantern frameLantern;
+wxl::atmosphere::NightGlowHandoff nightGlow;
+bool worldDepthReady = false;
 int regionalFogArea = -1;
 wxl::atmosphere::GroundFloor groundFloor;
 uint64_t floorFrame = 0;
@@ -377,6 +380,7 @@ void RestoreWaterDepthWrite() {
 }
 }
 void WxlReleaseModernVisuals() {
+    nightGlow.Reset();
     frameLantern = {};
     WxlWmoRelease();
     WxlGrassInstancingRelease();
@@ -438,6 +442,7 @@ static wxl::atmosphere::PlayerLantern CapturePlayerLantern(CGPlayer_C& player) {
 bool WxlBeginVisualWorld(bool underwater,const float* target) {
     Configure();worldActive=false;replacingFog=false;cameraCaptured=false;++frameNumber;
     DisarmTransparentFog();
+    worldDepthReady = false;
     frameLantern = {};
     if (optionsChanged) {
         selectedConfig = wxl::atmosphere::ApplyOptions(baseline, options);
@@ -503,6 +508,7 @@ void WxlEndModernWater() {
     if(!waterActive)return;
     RestoreWaterDepthWrite();waterActive=false;
     const bool shaded=water.End(device,Depth());
+    worldDepthReady |= shaded;
     if(frameNumber%300==1)VF_LOG_INFO("native water: shaded=%d classes=%u waves=%d ripples=%d contacts=%u (units %u, in liquid %u) skip=%s",shaded,water.ShadedClasses(),water.WavesSimulated(),water.RipplesAvailable(),contactFrame.count,contactsVisited,contactsInLiquid,water.LastSkipReason());
 }
 void WxlCaptureVisualCamera() {
@@ -527,6 +533,7 @@ void WxlBeginTransparentFog() {
         // The whole-frame pass at the end of the world gets the next chance.
         idle(atmosphere.LastSkipReason());return;
     }
+    worldDepthReady = true;
     fogComposited=true;stockFit=atmosphere.LastStockFogFit();
     if(frameNumber%300==1){
         VF_LOG_INFO("native transparent fog: composited early, fit=%d start=%.1f end=%.1f colour=%08X batches last frame=%u",stockFit.fogs,stockFit.start,stockFit.end,stockFit.colour,transparentBatches);
@@ -538,6 +545,7 @@ void WxlBeginTransparentFog() {
 }
 void WxlFinishVisualWorld() {
     if (!worldActive) {
+        nightGlow.Reset();
         frameLantern = {};
         return;
     }
@@ -550,6 +558,7 @@ void WxlFinishVisualWorld() {
     } else if(!atmosphereFailed&&VisualFogEnabled(config)&&CaptureFrame(frame)){
         PrepareGroundMist(frame);
         const bool rendered=atmosphere.Render(device,Depth(),frame,config);
+        worldDepthReady |= rendered;
         if(rendered)atmosphere.RenderGodRaysAfterWorld(device,Depth());
         else {atmosphereFailed=true;VF_LOG_ERROR("native atmosphere disabled until device rebuild: %s",atmosphere.LastSkipReason());}
         if(frameNumber%300==1){
@@ -558,17 +567,29 @@ void WxlFinishVisualWorld() {
             finishMs=0;finishFrames=0;
         }
     }
+    bool glowRequested = false;
     if (options.v[env::kAtmosphereOverride] && (options.v[env::kNight] || options.v[env::kGlow]) &&
         cameraCaptured && !cameraFrame.localLights.cameraInterior) {
         if (auto* player = ClntObjMgrGetActivePlayerObj(); player && player->IsOutdoors()) {
             const float hour = cameraFrame.dayFraction * 24.0f;
             const float weight = std::clamp(std::max((hour - 18.0f) / 4.0f, (7.0f - hour) / 3.0f), 0.0f, 1.0f);
             const float darkness = options.v[env::kNight] ? weight * float(options.v[env::kNightStrength]) : 0.0f;
-            const float glow = options.v[env::kGlow] ? weight * float(options.v[env::kGlowStrength]) : 0.0f;
-            if ((darkness > 0.0f || glow > 0.0f) && !atmosphere.RenderNightLighting(device, Depth(), darkness, glow))
-                visualStatus = "Night lighting scene copy unavailable";
+            float glow = options.v[env::kGlow] ? weight * float(options.v[env::kGlowStrength]) : 0.0f;
+            glowRequested = glow > 0.0f;
+            if (glowRequested) {
+                // Use the stock effect only when it actually contributes bloom to this frame.
+                const bool stockGlow = cameraFrame.clientGlowAmount >= (1.0f / 255.0f) &&
+                    FFX::s_cvarFFX && FFX::s_cvarFFX->m_intValue &&
+                    dynamic_cast<EffectGlow*>(FFX::s_effect) && FFX::s_effect->Valid();
+                glow *= nightGlow.Advance(began * 0.001, stockGlow);
+            }
+            if ((darkness > 0.0f || glow > 0.0f) &&
+                !atmosphere.RenderNightLighting(device, Depth(), cameraFrame, darkness, glow, worldDepthReady))
+                visualStatus = "Night lighting unavailable";
         }
     }
+    if (!glowRequested)
+        nightGlow.Reset();
     if (frameLantern.strength > 0 && cameraCaptured && !cameraFrame.inLiquid)
         atmosphere.RenderLanternHalo(device, Depth(), cameraFrame, frameLantern);
     frameLantern = {};

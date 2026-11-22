@@ -90,12 +90,30 @@ int main(int argc,char** argv) {
             Check(dev->SetViewport(&frame.viewport), "night lighting viewport");
             Check(dev->Clear(0, nullptr, D3DCLEAR_TARGET, 0xff406080, 1.0f, 0), "night lighting clear");
             const auto beforeNight = Pixels(dev, width, height);
-            Require(atmosphere.RenderNightLighting(dev, depth, 0.5f, 0.0f), "night lighting draws");
+            Require(atmosphere.RenderNightLighting(dev, depth, frame, 0.5f, 0.0f), "night lighting draws");
             const auto afterNight = Pixels(dev, width, height);
             Require(afterNight[width * (height / 2) + width / 2] < beforeNight[width * (height / 2) + width / 2],
                     "night lighting darkens scene");
-            Require(atmosphere.RenderNightLighting(dev, depth, 0.0f, 0.0f), "neutral night lighting draws");
+            Require(atmosphere.RenderNightLighting(dev, depth, frame, 0.0f, 0.0f), "neutral night lighting draws");
             Require(Pixels(dev, width, height) == afterNight, "neutral night lighting preserves pixels");
+            Check(dev->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xff182028, 1.0f, 0),
+                  "halo background and sky");
+            const LONG left = width / 4, right = width * 3 / 4, midY = height / 2;
+            const D3DRECT worldLight = {left - 6, midY - 6, left + 6, midY + 6};
+            const D3DRECT skyLight = {right - 6, midY - 6, right + 6, midY + 6};
+            Check(dev->Clear(1, &worldLight, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xffff742c, 0.5f, 0),
+                  "world light with geometry depth");
+            Check(dev->Clear(1, &skyLight, D3DCLEAR_TARGET, 0xffff742c, 1.0f, 0),
+                  "equally bright sky source");
+            const auto beforeHalo = Pixels(dev, width, height);
+            Require(atmosphere.RenderNightLighting(dev, depth, frame, 0.0f, 0.7f), "halo draws");
+            const auto afterHalo = Pixels(dev, width, height);
+            Require(afterHalo[midY * width + left + 9] > beforeHalo[midY * width + left + 9],
+                    "world light has a halo beyond its source");
+            Require(afterHalo[midY * width + right + 9] == beforeHalo[midY * width + right + 9],
+                    "sky source does not create a halo");
+            Require(afterHalo[midY * width + left] == beforeHalo[midY * width + left],
+                    "saturated source keeps its colour");
             Check(dev->EndScene(), "end night lighting scene");
             for(int quality=1;quality<=3;++quality) {
                 config.quality=config.waterQuality=quality;config.temporal=0;

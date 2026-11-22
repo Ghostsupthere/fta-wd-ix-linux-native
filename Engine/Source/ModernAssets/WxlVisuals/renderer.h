@@ -25,7 +25,8 @@ public:
     bool Render(IDirect3DDevice9* dev, const SceneDepth& depth, const FrameInputs& in, const Config& cfg,
                 FogPass pass = FogPass::WholeFrame);
     bool RenderGodRaysAfterWorld(IDirect3DDevice9* dev, const SceneDepth& depth);
-    bool RenderNightLighting(IDirect3DDevice9* dev, const SceneDepth& depth, float darkness, float glow);
+    bool RenderNightLighting(IDirect3DDevice9* dev, const SceneDepth& depth, const FrameInputs& in,
+                             float darkness, float glow, bool depthReady = false);
     void RenderLanternHalo(IDirect3DDevice9* dev, const SceneDepth& depth, const FrameInputs& in,
                            const wxl::atmosphere::PlayerLantern& lantern);
     bool ReadyToRender(IDirect3DDevice9* dev, const SceneDepth& depth, const D3DVIEWPORT9& vp);
@@ -85,6 +86,9 @@ private:
                                     const CompositeChoice& choice, bool overwrites);
     bool EnsureStateBlock(IDirect3DDevice9* dev);
     bool EnsureTargets(IDirect3DDevice9* dev, UINT lowW, UINT lowH, UINT rayW, UINT rayH);
+    bool EnsureNightGlow(IDirect3DDevice9* dev, UINT w, UINT h);
+    void DrawNightGlow(IDirect3DDevice9* dev, IDirect3DTexture9* depth, const D3DSURFACE_DESC& depthDesc,
+                       const FrameInputs& in, float darkness);
     bool EnsureSceneCopy(IDirect3DDevice9* dev, IDirect3DSurface9* target, UINT w, UINT h);
     bool CopyWorldViewport(IDirect3DDevice9* dev, IDirect3DSurface9* target, const D3DVIEWPORT9& vp);
     bool Skip(const char* reason);
@@ -135,6 +139,10 @@ private:
     IDirect3DPixelShader9* m_rayBlur = nullptr;
     IDirect3DPixelShader9* m_rayComposite = nullptr;
     IDirect3DPixelShader9* m_nightLighting = nullptr;
+    IDirect3DPixelShader9* m_nightGlowMask = nullptr;
+    IDirect3DPixelShader9* m_nightGlowBlur = nullptr;
+    IDirect3DTexture9* m_nightGlow[2] = {};
+    UINT m_nightGlowW = 0, m_nightGlowH = 0;
     IDirect3DPixelShader9* m_probe = nullptr;
     IDirect3DVertexDeclaration9* m_decl = nullptr;
     IDirect3DStateBlock9* m_state = nullptr;
@@ -161,6 +169,8 @@ private:
     GpuTimer m_gpuTimer{"fog"};
     GpuTimer m_timerTemporal{"temporal+copy"};  // WXL_FOG_TRACE=2: the pass split into three timed stages
     GpuTimer m_timerComposite{"composite"};
+    GpuTimer m_timerNight{"night lighting"};
+    unsigned m_nightFrames = 0;
     GpuTimer m_timerLantern{"lantern halo"};
     unsigned m_lanternDraws = 0;
     StockFogFit m_stockFogFit;

@@ -43,6 +43,8 @@
 #include "ps_ray_blur.h"
 #include "ps_ray_composite.h"
 #include "ps_night_lighting.h"
+#include "ps_night_glow_mask.h"
+#include "ps_night_glow_blur.h"
 #include "ps_ray_mask.h"
 #include "ps_silhouette_mask.h"
 #include "ps_split_composite_high.h"
@@ -403,6 +405,11 @@ void Renderer::ReleaseDefaultPool()
     m_gpuTimer.Release();
     m_timerTemporal.Release();
     m_timerComposite.Release();
+    m_timerNight.Release();
+    m_nightFrames = 0;
+    for (auto*& target : m_nightGlow)
+        SafeRelease(target);
+    m_nightGlowW = m_nightGlowH = 0;
     m_timerLantern.Release();
     m_lanternDraws = 0;
     m_lateGodRays = {};
@@ -446,6 +453,8 @@ void Renderer::ReleaseAll()
     SafeRelease(m_rayBlur);
     SafeRelease(m_rayComposite);
     SafeRelease(m_nightLighting);
+    SafeRelease(m_nightGlowMask);
+    SafeRelease(m_nightGlowBlur);
     SafeRelease(m_probe);
     SafeRelease(m_decl);
 }
@@ -1226,7 +1235,70 @@ bool Renderer::RenderGodRaysAfterWorld(IDirect3DDevice9* dev, const SceneDepth& 
     return drawn;
 }
 
-bool Renderer::RenderNightLighting(IDirect3DDevice9* dev, const SceneDepth& depth, float darkness, float glow)
+bool Renderer::EnsureNightGlow(IDirect3DDevice9* dev, UINT w, UINT h)
+{
+    if (!m_nightGlowMask && FAILED(dev->CreatePixelShader(
+            reinterpret_cast<const DWORD*>(g_ps_night_glow_mask), &m_nightGlowMask)))
+        return false;
+    if (!m_nightGlowBlur && FAILED(dev->CreatePixelShader(
+            reinterpret_cast<const DWORD*>(g_ps_night_glow_blur), &m_nightGlowBlur)))
+        return false;
+    if (m_nightGlowW == w && m_nightGlowH == h)
+        return m_nightGlow[0] && m_nightGlow[1];
+
+    for (auto*& target : m_nightGlow)
+        SafeRelease(target);
+    m_nightGlowW = w;
+    m_nightGlowH = h;
+    for (auto*& target : m_nightGlow)
+    {
+        if (!CreateTarget(dev, w, h, D3DFMT_A16B16G16R16F, &target) &&
+            !CreateTarget(dev, w, h, D3DFMT_A8R8G8B8, &target))
+        {
+            for (auto*& allocated : m_nightGlow)
+                SafeRelease(allocated);
+            return false;
+        }
+    }
+    return true;
+}
+
+void Renderer::DrawNightGlow(IDirect3DDevice9* dev, IDirect3DTexture9* depth, const D3DSURFACE_DESC& depthDesc,
+                             const FrameInputs& in, float darkness)
+{
+    const auto& vp = in.viewport;
+    const float u = 1.0f / m_nightGlowW, v = 1.0f / m_nightGlowH;
+    const D3DVIEWPORT9 small = {0, 0, m_nightGlowW, m_nightGlowH, 0, 1};
+    const Float4 mask[] = {
+        {float(vp.X), float(vp.Y), float(vp.Width), float(vp.Height)},
+        {1.0f / depthDesc.Width, 1.0f / depthDesc.Height,
+         std::max(0.99903f, MapWorldDepth(in.glProjection, vp).deepest), darkness},
+        {u, v, 0.0f, 0.0f}
+    };
+    SetTarget(dev, m_nightGlow[0]);
+    dev->SetViewport(&small);
+    dev->SetPixelShader(m_nightGlowMask);
+    dev->SetPixelShaderConstantF(0, &mask[0].x, 3);
+    BindTexture(dev, 0, m_sceneCopy, false);
+    BindTexture(dev, 1, depth, false);
+    DrawFullscreenTriangle(dev);
+
+    BindTexture(dev, 1, nullptr, false);
+    dev->SetPixelShader(m_nightGlowBlur);
+    for (unsigned pass = 0; pass < 2; ++pass)
+    {
+        const Float4 direction = {u, v, pass == 0 ? u : 0.0f, pass == 0 ? 0.0f : v};
+        BindTexture(dev, 0, nullptr, false);
+        SetTarget(dev, m_nightGlow[pass ^ 1]);
+        dev->SetViewport(&small);
+        dev->SetPixelShaderConstantF(0, &direction.x, 1);
+        BindTexture(dev, 0, m_nightGlow[pass], true);
+        DrawFullscreenTriangle(dev);
+    }
+}
+
+bool Renderer::RenderNightLighting(IDirect3DDevice9* dev, const SceneDepth& depth, const FrameInputs& in,
+                                  float darkness, float glow, bool depthReady)
 {
     if (dev->TestCooperativeLevel() != D3D_OK || !EnsureShaders(dev) || !EnsureStateBlock(dev))
         return false;
@@ -1234,26 +1306,56 @@ bool Renderer::RenderNightLighting(IDirect3DDevice9* dev, const SceneDepth& dept
             reinterpret_cast<const DWORD*>(g_ps_night_lighting), &m_nightLighting)))
         return false;
 
-    D3DVIEWPORT9 vp{};
-    if (FAILED(dev->GetViewport(&vp)) || !vp.Width || !vp.Height)
-        return false;
-    return WithClientStateSaved(dev, depth, [&](IDirect3DSurface9* target, const D3DSURFACE_DESC& targetDepth) {
-        if (ViewportOutsideTarget(vp, targetDepth) || !CopyWorldViewport(dev, target, vp))
+    const auto& vp = in.viewport;
+    const bool trace = FogTraceMode() == 2 && LogEnabled(LogLevel::Info);
+    bool drewGlow = false;
+    const bool drawn = WithClientStateSaved(dev, depth, [&](IDirect3DSurface9* target, const D3DSURFACE_DESC& depthDesc) {
+        if (ViewportOutsideTarget(vp, depthDesc))
             return false;
+        constexpr UINT scale = 8;
+        drewGlow = glow > 0 && EnsureNightGlow(dev, (vp.Width + scale - 1) / scale, (vp.Height + scale - 1) / scale);
+        if (trace)
+            m_timerNight.Begin(dev);
+        if (drewGlow && !depthReady)
+            drewGlow = depth.Refresh(dev);
+        if ((!drewGlow && glow > 0 && darkness <= 0) || !CopyWorldViewport(dev, target, vp))
+        {
+            if (trace)
+                m_timerNight.Cancel();
+            return false;
+        }
         PrepareFullscreenPasses(dev);
+        if (drewGlow)
+        {
+            DrawNightGlow(dev, depth.texture, depthDesc, in, darkness);
+            dev->SetRenderTarget(0, target);
+        }
         dev->SetViewport(&vp);
         dev->SetRenderState(D3DRS_COLORWRITEENABLE,
             D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
         dev->SetPixelShader(m_nightLighting);
         const Float4 constants[] = {
             {float(vp.X), float(vp.Y), float(vp.Width), float(vp.Height)},
-            {darkness, glow, 0.0f, 0.0f},
+            {darkness, drewGlow ? glow : 0.0f, 0.0f, 0.0f},
         };
         dev->SetPixelShaderConstantF(0, &constants[0].x, 2);
         BindTexture(dev, 0, m_sceneCopy, true);
+        if (drewGlow)
+            BindTexture(dev, 1, m_nightGlow[0], true);
         DrawFullscreenTriangle(dev);
+        if (trace)
+            m_timerNight.End();
         return true;
     });
+    if (drawn && trace && ++m_nightFrames % 300 == 0)
+    {
+        char gpuTime[96] = {};
+        DescribeGpuTime(m_timerNight, dev, gpuTime, sizeof(gpuTime));
+        VF_LOG_INFO("night lighting: halo=%d strength=%.2f depth reused=%d %s",
+                    drewGlow, drewGlow ? glow : 0.0f, depthReady,
+                    gpuTime[0] ? gpuTime : "GPU timing unavailable");
+    }
+    return drawn;
 }
 
 void Renderer::RenderLanternHalo(IDirect3DDevice9* dev, const SceneDepth& depth, const FrameInputs& in,
