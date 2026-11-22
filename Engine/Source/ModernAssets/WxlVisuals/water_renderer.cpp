@@ -4,6 +4,7 @@
 #endif
 #include "NativePlatform.h"
 #include "water_renderer.h"
+#include "water_rain.h"
 
 #include "fog_model.h"
 #include "fullscreen_triangle.h"
@@ -1099,7 +1100,7 @@ void WaterRenderer::ReleaseRipples()
 
 bool WaterRenderer::SimulateRipples(IDirect3DDevice9* dev, double seconds)
 {
-    if (m_cfg.waterRipples <= 0.0f)
+    if (m_cfg.waterRipples <= 0.0f && !m_cfg.waterRainRings)
     {
         ReleaseRipples();
         return false;
@@ -1111,7 +1112,8 @@ bool WaterRenderer::SimulateRipples(IDirect3DDevice9* dev, double seconds)
     m_contacts.Update(m_water.contacts, seconds);
     m_summaryContacts = std::max(m_summaryContacts, m_contacts.Contacts());
     const bool supported = m_ripples.Supported(dev);
-    if (!m_ripples.Running() && !m_contacts.Emitting())
+    const bool raining = m_cfg.waterRainRings && m_water.rain > 0 && m_water.residentWater;
+    if (!m_ripples.Running() && !m_contacts.Emitting() && !raining)
     {
         m_ripplesAvailable = m_ripplesAvailable && supported;
         return false;
@@ -1134,8 +1136,18 @@ bool WaterRenderer::SimulateRipples(IDirect3DDevice9* dev, double seconds)
     WaterRippleDisturbance disturbances[kMaxWaterRippleDisturbances];
     for (int step = 0; step < schedule.steps; ++step)
     {
-        const uint32_t count =
+        uint32_t count =
             m_contacts.TakeDisturbances(schedule.stepSeconds[step], disturbances, kMaxWaterRippleDisturbances);
+        for (unsigned drop = 0; raining && drop < 2 && count < kMaxWaterRippleDisturbances; ++drop)
+        {
+            auto& impact = disturbances[count];
+            if (WaterRainImpact(centre, texels * kWaterRippleTexelYards, schedule.stepSeconds[step], m_water.rain, drop, impact) &&
+                m_water.residentWater(m_in.mapId, impact.to[0], impact.to[1]))
+            {
+                ++count;
+                ++m_summaryRainDrops;
+            }
+        }
         m_ripples.Step(dev, centre, disturbances, count);
     }
     m_summaryRippleTexels = std::max(m_summaryRippleTexels, texels);
@@ -1149,7 +1161,8 @@ void WaterRenderer::FillRippleConstants(double seconds)
     const float extent = window.texels > 0 ? window.extent : 1.0f;
     const float texelUv = window.texels > 0 ? 1.0f / window.texels : 0.0f;
     m_rippleWindow = {window.origin[0], window.origin[1], 1.0f / extent, texelUv};
-    m_rippleShape = {window.weight, m_ripplesShaded ? m_cfg.waterRipples : 0.0f, extent, 0.0f};
+    const float strength = m_cfg.waterRipples > 0 ? m_cfg.waterRipples : (m_cfg.waterRainRings ? 0.5f : 0.0f);
+    m_rippleShape = {window.weight, m_ripplesShaded ? strength : 0.0f, extent, 0.0f};
     m_rippleFade = {extent * (0.5f - kRippleEdgeRampPerExtent), 1.0f / kRippleFadeYards, kWaterRippleTexelYards,
                     0.0f};
 }
@@ -1467,6 +1480,9 @@ void WaterRenderer::LogSummaryWhenDue(IDirect3DDevice9* dev)
     m_summaryWaveResolution = 0;
     m_summaryWaveTiles = 0;
     m_summaryRippleTexels = 0;
+    if (m_cfg.waterRainRings)
+        VF_LOG_INFO("water rain rings: %u resident impacts in the interval", m_summaryRainDrops);
+    m_summaryRainDrops = 0;
     m_summaryContacts = 0;
     m_summaryDroppedSteps = 0;
 }

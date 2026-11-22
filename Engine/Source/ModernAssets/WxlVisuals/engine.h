@@ -50,5 +50,7 @@ struct WaterInputs
     uint32_t oceanColors[kWaterColorPair];
     bool stockFogApplies;
     WaterContactFrame contacts;
+    float rain = 0;
+    bool (*residentWater)(int map, float x, float y) = nullptr;
 };
 

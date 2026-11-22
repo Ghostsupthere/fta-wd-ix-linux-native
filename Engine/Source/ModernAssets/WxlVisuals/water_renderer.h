@@ -236,6 +236,7 @@ private:
     int m_summaryWaveTiles = 0;
     int m_summaryRippleTexels = 0;
     uint32_t m_summaryContacts = 0;
+    uint32_t m_summaryRainDrops = 0;
     uint32_t m_summaryDroppedSteps = 0;
     double m_lastSeconds = -1.0;
     WaterRipples m_ripples;

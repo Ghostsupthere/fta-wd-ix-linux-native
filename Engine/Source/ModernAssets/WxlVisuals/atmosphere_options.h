@@ -39,6 +39,7 @@ inline Config ApplyOptions(const Config& base, const env::Values& values)
     config.localLightIntensity = on(env::kLights) ? number(env::kLightStrength) : 1.0f;
 
     config.water = on(env::kWater);
+    config.waterRainRings = on(env::kRainRings);
     config.waterQuality = static_cast<int>(values.v[env::kWaterQuality]);
     config.waterWaves = on(env::kWaves) ? number(env::kWaveStrength) : 0.0f;
     config.waterRipples = on(env::kWaterRipples) ? number(env::kRippleStrength) : 0.0f;

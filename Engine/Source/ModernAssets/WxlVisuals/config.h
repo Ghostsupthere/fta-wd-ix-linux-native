@@ -81,6 +81,7 @@ struct Config
     float waterClarity = 1.0f;
     float waterZoneColors = 0.5f;
     float waterRipples = 0.5f;
+    bool waterRainRings = false;
     bool waterClientSplashes = false;
     int waterDebugView = 0;
 };

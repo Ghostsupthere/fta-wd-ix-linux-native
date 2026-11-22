@@ -539,6 +539,15 @@ void WxlBeginModernWater() {
     for(unsigned i=0;i<6;++i)inputs.skyColors[i]=Colour(info->m_bands.m_skyColors[i]);
     for(unsigned i=0;i<2;++i){inputs.riverColors[i]=Colour(info->m_bands.m_waterColors[i]);inputs.oceanColors[i]=Colour(info->m_bands.m_waterColors[i+2]);}
     inputs.stockFogApplies=!replacingFog;
+    const auto* weather = World::s_weather;
+    if (config.waterRainRings && weather && weather->m_rain && std::isfinite(weather->m_intensity)) {
+        inputs.rain = std::clamp(weather->m_intensity, 0.0f, 1.0f);
+        inputs.residentWater = [](int map, float x, float y) {
+            float height;
+            int32_t waterType = 0;
+            return CMap::QueryResidentFloor(map, x, y, height, waterType) && waterType != 0;
+        };
+    }
     if(config.waterRipples>0){
         if(!contactsCaptured){ContactScan scan;std::copy(frame.camTarget,frame.camTarget+3,scan.centre);ClntObjMgrEnumVisibleObjects(VisitContact,&scan);contactFrame=scan.frame;contactsCaptured=true;contactsVisited=scan.visited;contactsInLiquid=scan.inLiquid;}
         inputs.contacts=contactFrame;
