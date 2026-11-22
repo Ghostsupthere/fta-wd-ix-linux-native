@@ -20,6 +20,9 @@ static const float kSameSurfaceRelativeDepth = 0.02;
 static const float kTapPlaneRelativeDepth = 0.005;
 static const float kWholeBilinearWeight = 0.999;
 static const float kMaxDisplayedMarchCurvature = 2.0 / 255;
+// When no low-resolution tap lies on the pixel's surface, the nearest-depth tap is used if it is within this relative
+// depth of the pixel; only beyond it does the pixel march the fog itself (the expensive path).
+static const float kNearestTapRelativeDepth = 1000;
 
 float Exposure()
 {
@@ -218,6 +221,8 @@ float4 DepthAwareUpsample(float2 pixel, float depth, float viewZ)
 
     float4 weightedFog = 0;
     float weightSum = 0;
+    float4 nearestFog = 0;
+    float nearestDifference = 1e9;
     [loop] for (int j = 0; j < 4; j++)
     {
         float2 tapOffset = float2(frac(j * 0.5) * 2, floor(j * 0.5));
@@ -230,11 +235,17 @@ float4 DepthAwareUpsample(float2 pixel, float depth, float viewZ)
         float relativeDepthDifference = abs(tapViewZ - viewZ) / max(viewZ, 1e-3);
         float weight = sameClass && sameDepth ?
             bilinearWeight.x * bilinearWeight.y / (1e-3 + relativeDepthDifference) : 0;
-        weightedFog += tex2Dlod(sFog, float4(LowResTexelToUv(tapTexel), 0, 0)) * weight;
+        float4 tapFog = tex2Dlod(sFog, float4(LowResTexelToUv(tapTexel), 0, 0));
+        weightedFog += tapFog * weight;
         weightSum += weight;
+        bool nearer = sameClass && relativeDepthDifference < nearestDifference;
+        nearestFog = nearer ? tapFog : nearestFog;
+        nearestDifference = nearer ? relativeDepthDifference : nearestDifference;
     }
     [branch] if (weightSum > 1e-6)
         return weightedFog / weightSum;
+    [branch] if (nearestDifference <= kNearestTapRelativeDepth)
+        return nearestFog;
     return FogWithoutMatchingTap(pixel, depth, viewZ);
 }
 
