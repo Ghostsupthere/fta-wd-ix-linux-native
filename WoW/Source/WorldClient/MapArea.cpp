@@ -1,5 +1,6 @@
 #include "MapArea.h"
 #include "WoW/Source/WorldClient/WorldConstants.h"
+#include <cstdlib>
 #include <cstring>
 #include "Engine/Source/Services/AsyncFile.h"
 #include "Engine/Source/Storm/H/storm.h"
@@ -242,11 +243,11 @@ CMapChunk* CMapArea::PrepareChunk(int32_t chunkX, int32_t chunkY) {
     return chunk;
 }
 
-// VERIFY: b5606f47 manual
-// OFFSET: 0x007D6BF0
-void CMapArea::Update(int32_t addToScene, CiRect* chunkRect) {
-    if (!this->m_chunkInfo) {
-        return;
+template <bool TestFrustumOnce>
+static void UpdateAreaChunks(CMapArea& area, bool addToScene, CiRect* chunkRect) {
+    if constexpr (TestFrustumOnce) {
+        // The scene sets the coarse frustum rectangle before walking the map.
+        addToScene = addToScene && CWorldScene::InsideFrustumRect(chunkRect);
     }
 
     for (int32_t chunkY = chunkRect->minY; chunkY <= chunkRect->maxY; chunkY++) {
@@ -256,28 +257,47 @@ void CMapArea::Update(int32_t addToScene, CiRect* chunkRect) {
             int32_t localX = chunkX & 0xF;
 
             if (chunkX >= CWorld::gbChunkRect.minX && chunkX <= CWorld::gbChunkRect.maxX && chunkY >= CWorld::gbChunkRect.minY && chunkY <= CWorld::gbChunkRect.maxY) {
-                CMapChunk** slot = &this->m_mapChunks[localX + 16 * localY];
+                CMapChunk** slot = &area.m_mapChunks[localX + 16 * localY];
                 CMapChunk* chunk = *slot;
 
                 if (!chunk) {
-                    this->PrepareChunk(localX, localY);
+                    area.PrepareChunk(localX, localY);
                     chunk = *slot;
                 }
 
-                if (addToScene && CWorldScene::InsideFrustumRect(chunkRect)) {
+                if (addToScene && (TestFrustumOnce || CWorldScene::InsideFrustumRect(chunkRect))) {
                     CWorldScene::AddMapChunk(chunk);
                     chunk->CullAndBucketChunk();
                 }
             } else {
-                CMapChunk* chunk = this->m_mapChunks[16 * localY + localX];
+                CMapChunk* chunk = area.m_mapChunks[16 * localY + localX];
 
                 if (chunk) {
-                    this->m_mapChunks[16 * chunk->m_aIndex.y + chunk->m_aIndex.x] = nullptr;
+                    area.m_mapChunks[16 * chunk->m_aIndex.y + chunk->m_aIndex.x] = nullptr;
                     CMap::FreeBaseObjLink(chunk->m_parentLinkList.Head());
                     CMapArea::PurgeChunk(chunk);
                 }
             }
         }
+    }
+}
+
+// VERIFY: b5606f47 manual
+// OFFSET: 0x007D6BF0
+void CMapArea::Update(int32_t addToScene, CiRect* chunkRect) {
+    if (!this->m_chunkInfo) {
+        return;
+    }
+
+    static const bool testFrustumOnce = [] {
+        const char* value = std::getenv("WXL_TERRAIN_BLOCK_FRUSTUM");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+
+    if (testFrustumOnce) {
+        UpdateAreaChunks<true>(*this, addToScene != 0, chunkRect);
+    } else {
+        UpdateAreaChunks<false>(*this, addToScene != 0, chunkRect);
     }
 }
 
