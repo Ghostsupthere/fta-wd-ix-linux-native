@@ -1537,7 +1537,8 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
     UploadLayerNoise(dev, fog, in.camPos, now);
     const double windPeriod = static_cast<double>(kDensityNoiseSize) / std::max(cfg.noiseScale, 0.001f);
     const Float4 variation = {m_densityNoise ? cfg.noiseAmount : 0.0f, cfg.noiseScale,
-                              static_cast<float>(std::fmod(TickSeconds(now) * cfg.noiseWindSpeed, windPeriod)), 0.0f};
+                              m_fogWind.Advance(TickSeconds(now), cfg.noiseWindSpeed, windPeriod),
+                              fog.authored ? 0.0f : cfg.fogDetailBoost};
     dev->SetPixelShaderConstantF(78, &variation.x, 1);
     BindTexture(dev, 0, depthTexture, false);
     DrawFullscreenTriangle(dev);
@@ -1669,6 +1670,11 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
                     TickSeconds(now), m_frame, gpuTime[0] ? gpuTime : "gpu timing unavailable", pointLightCount,
                     samplesNoise ? 1 : 0, cfg.quality, scale, splitSamples ? 1 : 0, FogBlendName(blend),
                     raysNow ? rayStrength : 0.0f, sceneBlend ? 1 : 0, usesGroundFloor ? 1 : 0);
+        VF_LOG_INFO("fog controls: region area=%d profile=%d haze=%.7f distance=%.7f noise c78=(%.3f %.5f %.2f %.3f) "
+                    "weights haze=%.2f distance=%.2f wind=%.2f",
+                    in.regionalFogArea, in.regionalFogProfile, fog.layers[0].density,
+                    fog.layers[kDistanceFogLayer].density, variation.x, variation.y, variation.z, variation.w,
+                    fog.layers[0].densityVariation, fog.layers[kDistanceFogLayer].densityVariation, cfg.noiseWindSpeed);
     }
     ++m_frame;
     return true;

@@ -32,6 +32,8 @@ struct FrameInputs
     float clientGlowAmount;
     bool inLiquid;
     int mapId;
+    int regionalFogArea = -1;
+    int regionalFogProfile = 0;
     LightParamsSelection lightParams;
     LocalLightInputs localLights;
     const wxl::atmosphere::GroundFloor* groundFloor = nullptr;

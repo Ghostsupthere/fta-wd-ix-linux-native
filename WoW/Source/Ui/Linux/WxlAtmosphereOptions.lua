@@ -9,7 +9,7 @@ panel:Hide()
 local scroll = CreateFrame("ScrollFrame", "WXLNativeAtmosphereScroll", panel, "UIPanelScrollFrameTemplate")
 scroll:SetPoint("TOPLEFT", 12, -10)
 scroll:SetPoint("BOTTOMRIGHT", -30, 12)
-local content = CreateFrame("Frame", nil, scroll)
+local content = CreateFrame("Frame", "WXLNativeAtmosphereContent", scroll)
 content:SetSize(330, 1000)
 scroll:SetScrollChild(content)
 
@@ -82,7 +82,8 @@ end
 local function Check(label, key, _, _, parent, help)
     local y = flow
     flow = flow + 26
-    local frame = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+    local name = panel:GetName() .. "Check" .. (#controls + 1)
+    local frame = CreateFrame("CheckButton", name, content, "UICheckButtonTemplate")
     frame:SetPoint("TOPLEFT", 2, -y)
     local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     text:SetPoint("LEFT", frame, "RIGHT", 1, 0)
@@ -127,14 +128,17 @@ Check("Depth fog", "atmosphere.fog", 1, 126)
 Check("Sun and moon shafts", "atmosphere.shafts", 2, 126)
 Slider("Fog density", "atmosphere.density", 1, 177, 0, 2, .05, "atmosphere.fog", nil, "Scales atmospheric fog without changing view distance.")
 Slider("Shaft strength", "atmosphere.shaftStrength", 2, 177, 0, 2, .05, "atmosphere.shafts")
-Check("Zone-specific fog", "atmosphere.regions", 1, 213, "atmosphere.fog")
+Check("Zone-specific fog", "atmosphere.regions", 1, 213, "atmosphere.fog",
+    "Uses authored fog settings where the current area has a profile.")
 Check("Fog transparent models", "atmosphere.transparentFog", 2, 213, "atmosphere.fog")
 Check("Ground mist", "atmosphere.mist", 1, 246, "atmosphere.fog")
 Check("Moving fog detail", "atmosphere.drift", 2, 246, "atmosphere.fog")
 Slider("Ground mist strength", "atmosphere.mistStrength", 1, 299, 0, 2, .05, "atmosphere.mist")
 Slider("Fog variation", "atmosphere.variation", 2, 299, 0, 2, .05, "atmosphere.drift")
-Slider("Fog movement (yards/sec)", "atmosphere.wind", 1, 349, 0, 12, .25, "atmosphere.drift")
-Slider("Fog detail size (yards)", "atmosphere.patchSize", 2, 349, 10, 120, 5, "atmosphere.drift", "%.0f")
+Slider("Fog movement (yards/sec)", "atmosphere.wind", 1, 349, 0, 12, .25, "atmosphere.drift",
+    nil, "Needs variation above 0. A speed of 0 freezes the pattern.")
+Slider("Fog detail size (yards)", "atmosphere.patchSize", 2, 349, 10, 120, 5, "atmosphere.drift",
+    "%.0f", "Needs variation above 0. Higher values make broader patches.")
 
 Section("Night and local lighting", 452)
 Check("Outdoor night darkening", "atmosphere.night", 1, 474)
@@ -157,7 +161,7 @@ Slider("Shore foam", "water.foam", 1, 849, 0, 2, .05, "water.modern")
 Slider("Water reflections", "water.reflections", 2, 849, 0, 2, .05, "water.modern")
 Slider("Water clarity", "water.clarity", 1, 900, 0, 2, .05, "water.modern")
 
-local restore = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+local restore = CreateFrame("Button", "WXLNativeAtmosphereRestore", content, "UIPanelButtonTemplate")
 restore:SetSize(165, 24)
 restore:SetPoint("TOPLEFT", 5, -(flow + 12))
 content:SetHeight(flow + 56)

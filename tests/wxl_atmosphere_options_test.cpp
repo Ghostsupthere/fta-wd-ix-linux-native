@@ -1,6 +1,8 @@
 #include "Engine/Source/ModernAssets/WxlVisuals/atmosphere_options.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/atmosphere_regions.h"
 
+#include "Engine/Source/ModernAssets/WxlVisuals/fog_wind.h"
+
 #include <cassert>
 
 int main()
@@ -27,6 +29,14 @@ int main()
     controls.v[options::kTransparent] = 1;
     const auto fog = ApplyOptions(base, controls);
     assert(fog.stockFog && fog.transparentFog && fog.localLights && fog.fogDensityScale == 1.25f);
+    assert(fog.noiseAmount == 0.15f && fog.fogDetailBoost == 0.0f);
+    assert(fog.noiseWindSpeed == 5.0f && fog.noiseScale == 1.0f / 50.0f);
+    controls.v[options::kVariation] = 2.0;
+    const auto high = ApplyOptions(base, controls);
+    assert(high.noiseAmount == 0.30f && high.fogDetailBoost == 1.0f);
+    controls.v[options::kDrift] = 0;
+    const auto smooth = ApplyOptions(base, controls);
+    assert(smooth.noiseAmount == 0.0f && smooth.fogDetailBoost == 0.0f);
     base.enable = false;
     assert(!ApplyOptions(base, controls).enable && !ApplyOptions(base, controls).water);
 
@@ -37,6 +47,7 @@ int main()
     Config child;
     regions.Apply(child, 1, {9999, 40}, 0.5f, 0, 0.0f, 20.5);
     assert(child.density == westfall.density);
+    assert(regions.ProfileArea() == 40);
     Config crossing;
     regions.Apply(crossing, 1, {9998}, 0.5f, 0, 0.0f, 21.0);
     assert(crossing.density == child.density);
@@ -45,5 +56,12 @@ int main()
     assert(interpolated.density > 1.0f && interpolated.density < crossing.density);
     Config otherMap;
     regions.Apply(otherMap, 530, {}, 0.5f, 0, 0.0f, 22.1);
-    assert(otherMap.density == 1.0f);
+    assert(otherMap.density == 1.0f && regions.ProfileArea() == 0);
+
+    wxl::atmosphere::FogWind wind;
+    assert(wind.Advance(10.0, 5.0f, 100.0) == 50.0f);
+    assert(wind.Advance(11.0, 12.0f, 100.0) == 55.0f);
+    assert(wind.Advance(12.0, 0.0f, 100.0) == 67.0f);
+    assert(wind.Advance(30.0, 5.0f, 100.0) == 67.0f);
+    assert(wind.Advance(37.0, 5.0f, 100.0) == 2.0f);
 }

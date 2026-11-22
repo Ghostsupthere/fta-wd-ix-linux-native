@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "engine.h"
+#include "fog_wind.h"
 #include "fog_data.h"
 #include "fog_model.h"
 #include "gpu_timing.h"
@@ -146,6 +147,7 @@ private:
     bool m_groundFloorUnavailable = false;
     bool m_prevGroundFloor = false;
     IDirect3DVolumeTexture9* m_densityNoise = nullptr;
+    wxl::atmosphere::FogWind m_fogWind;
     IDirect3DVolumeTexture9* m_authoredNoise = nullptr;
     AuthoredNoiseScroll m_noiseScroll;
     long long m_noiseTicks = 0;

@@ -66,6 +66,7 @@ Config selectedConfig;
 namespace env = wxl::grass::environment;
 env::Values options;
 wxl::atmosphere::RegionalFog regionalFog;
+int regionalFogArea = -1;
 wxl::atmosphere::GroundFloor groundFloor;
 uint64_t floorFrame = 0;
 double floorMs = 0, floorMaxMs = 0;
@@ -206,6 +207,8 @@ bool CaptureFrame(FrameInputs& frame,bool snapshot=true) {
        dynamic_cast<EffectGlow*>(FFX::s_effect)&&FFX::s_effect->m_cvar&&FFX::s_effect->m_cvar->m_intValue&&std::isfinite(info->m_bands.m_glow))
         frame.clientGlowAmount=std::clamp(info->m_bands.m_glow,0.0f,1.0f);
     frame.mapId=World::QueryMapId();
+    frame.regionalFogArea = regionalFogArea;
+    frame.regionalFogProfile = regionalFogArea >= 0 ? regionalFog.ProfileArea() : 0;
     CaptureNativeInterior(frame.localLights);
     frame.localLights.capture=LocalLightCapture::UnsupportedClient;
     for(float value:frame.cameraRelativeView)if(!std::isfinite(value))return false;
@@ -423,11 +426,14 @@ bool WxlBeginVisualWorld(bool underwater,const float* target) {
         return false;
     }
     auto* info=DayNight::GetInfo();if(!info)return false;
+    regionalFogArea = -1;
     if (options.v[env::kAtmosphereOverride] && options.v[env::kRegions] && config.density > 0) {
         const int map = World::QueryMapId();
         const auto* weather = World::s_weather;
         const unsigned kind = !weather ? 0 : weather->m_rain ? 1 : weather->m_snow ? 2 : weather->m_sand ? 3 : 0;
-        regionalFog.Apply(config, map, ReadRegionPath(map), info->m_dayProgression,
+        const auto path = ReadRegionPath(map);
+        regionalFogArea = path.front();
+        regionalFog.Apply(config, map, path, info->m_dayProgression,
             kind, weather ? weather->m_intensity : 0.0f, NowMs() * 0.001);
     } else {
         regionalFog.Reset();

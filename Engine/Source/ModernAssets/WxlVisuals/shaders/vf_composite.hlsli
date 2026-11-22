@@ -1,3 +1,5 @@
+// The full-resolution local-light fallback already uses all ps_3_0 temporaries.
+#define FOG_LIGHT_COMPOSITE 1
 #include "vf_integrate.hlsli"
 
 float4 cComposite : register(c96);

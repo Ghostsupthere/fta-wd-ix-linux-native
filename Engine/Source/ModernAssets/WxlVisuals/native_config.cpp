@@ -162,6 +162,7 @@ Config ReadNativeVisualConfig(const std::string& path) {
 
 bool SameFogSettings(const Config& a, const Config& b)
 {
-    return SameValues(kIntSettings, a, b) && SameValues(kFloatSettings, a, b) && SameValues(kBoolSettings, a, b);
+    return a.fogDetailBoost == b.fogDetailBoost &&
+           SameValues(kIntSettings, a, b) && SameValues(kFloatSettings, a, b) && SameValues(kBoolSettings, a, b);
 }
 

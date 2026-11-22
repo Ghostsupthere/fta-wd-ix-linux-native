@@ -52,6 +52,7 @@ struct Config
     bool interiorAware = true;
     float interiorDensity = 0.15f;
     float noiseAmount = 0.15f;
+    float fogDetailBoost = 0.0f; // Live preview variation above its midpoint.
     float noiseScale = 0.025f;
     float noiseWindSpeed = 0.5f;
     bool classicNoise = true;

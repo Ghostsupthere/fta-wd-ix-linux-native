@@ -23,6 +23,7 @@ inline constexpr RegionRow kRegionRows[] = {
 class RegionalFog {
 public:
     void Reset() { started = false; }
+    int ProfileArea() const { return started ? profileArea : 0; }
 
     void Apply(Config& config, int map, const AreaPath& path, float dayFraction,
                unsigned weather, float intensity, double seconds)
@@ -73,6 +74,7 @@ public:
 private:
     void Compile(const AreaPath& path)
     {
+        profileArea = 0;
         for (int day = 0; day < 4; ++day) {
             for (int sky = 0; sky < 4; ++sky) {
                 auto& cell = cells[day][sky];
@@ -82,6 +84,8 @@ private:
                         break;
                     const auto begin = std::lower_bound(std::begin(kRegionRows), std::end(kRegionRows),
                         area, [](const RegionRow& row, int key) { return row.area < key; });
+                    if (!profileArea && begin != std::end(kRegionRows) && begin->area == area)
+                        profileArea = area;
                     const std::array<std::array<int, 2>, 6> order{{
                         {day, sky}, {-1, sky}, {day, -1}, {-1, -1}, {day, 0}, {-1, 0}
                     }};
@@ -109,6 +113,7 @@ private:
     FogMultipliers from = current;
     AreaPath lastPath{};
     int lastMap = -1;
+    int profileArea = 0;
     double changedAt = 0, lastTime = 0;
     bool started = false;
 };

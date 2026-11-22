@@ -15,6 +15,10 @@ static const int kRegistersPerLayer = 6;
 static const float kGoldenRatioFraction = 0.618034;
 static const bool kMarchesLocalLights = LOCAL_LIGHTS;
 static const bool kUnrollsLayers = !kMarchesLocalLights;
+#ifndef FOG_LIGHT_COMPOSITE
+#define FOG_LIGHT_COMPOSITE 0
+#endif
+static const bool kSharedDetailAvailable = !FOG_LIGHT_COMPOSITE || !kMarchesLocalLights;
 
 float4 cLight : register(c9);
 float4 cMarch : register(c11);
@@ -68,6 +72,8 @@ FogLayer LoadConstantFogLayer(int index)
     layer.skyFalloff = cLayers[first + 5].y;
     layer.limit = cLayers[first + 5].z;
     layer.densityVariation = cLayers[first + 5].w;
+    if (!kSharedDetailAvailable && index == kFogLayers - 1)
+        layer.densityVariation = 0;
     return layer;
 }
 
@@ -165,7 +171,8 @@ float DensityVariationAlongRay(MarchRay ray, float distanceAlongRay)
 
 float WeightedVariation(float variation, float weight)
 {
-    return kSamplesAuthoredNoise ? lerp(1, variation, weight) : variation;
+    return kSamplesAuthoredNoise || (kSharedDetailAvailable && cDensityVariation.w > 0)
+        ? lerp(1, variation, weight) : variation;
 }
 
 float GroundMistProfile(MarchRay ray, float sampleDistance)
@@ -205,13 +212,17 @@ StepVariation StepVariationAt(MarchRay ray, float stepStart, float stepEnd, floa
 {
     StepVariation step;
     step.distance = stepStart + (stepEnd - stepStart) * jitter;
-    step.variation = DensityVariationAlongRay(ray, step.distance);
+    step.variation = 1;
+    [branch] if (kUnrollsLayers || (kSharedDetailAvailable && cDensityVariation.w > 0))
+        step.variation = DensityVariationAlongRay(ray, step.distance);
     return step;
 }
 
 float LayerVariation(StepVariation step, MarchRay ray, float sampleDistance)
 {
-    [branch] if (kUnrollsLayers && sampleDistance == step.distance)
+    // At high detail the added layer shares the existing haze sample.
+    [branch] if ((kSharedDetailAvailable && cDensityVariation.w > 0) ||
+                 (kUnrollsLayers && sampleDistance == step.distance))
         return step.variation;
     return DensityVariationAlongRay(ray, sampleDistance);
 }

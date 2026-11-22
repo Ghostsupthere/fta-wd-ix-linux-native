@@ -124,6 +124,7 @@ void DerivedLayers(const FrameInputs& in, const Config& cfg, const FogParams& p,
     haze.upperFalloff = kHazeFalloff;
     Unshadowed(haze);
     Unbounded(haze);
+    haze.densityVariation += cfg.fogDetailBoost;
     haze.endDistance = kDerivedLayerLimit;
 
     FogLayer& ground = out[1];
@@ -377,6 +378,7 @@ FogParams BuildFogParams(const FrameInputs& in, const Config& cfg, const Authore
     {
         DerivedLayers(in, cfg, p, elevationFadedScatter, fogDistance, fogColor, p.layers);
         DistanceLayer(in, cfg, p, elevationFadedScatter, fogColor, distanceFog);
+        distanceFog.densityVariation = cfg.fogDetailBoost;
     }
     ApplyInteriorFog(interiorWeight, cfg, p);
     return p;
