@@ -3,6 +3,7 @@
 #include "WxlGrassInstancing.h"
 #include "WxlGrassMotion.h"
 #include "WxlSurfaceLights.h"
+#include "WxlModernVisuals.h"
 #include "Engine/Source/FrameScript/FrameScript.h"
 #include "Engine/Source/ModernAssets/NativeDiagnostic.h"
 #include "Engine/Source/ModernAssets/WxlGrass/EnvironmentOptions.hpp"
@@ -46,6 +47,7 @@ void Apply() {
     WxlGrassInstancingSetEnabled(values.v[env::kGrassInstanced] != 0.0);
     WxlGrassInstancingSetLimits(static_cast<float>(values.v[env::kGrassMemoryMB]), static_cast<float>(values.v[env::kGrassBuildMs]));
     WxlSurfaceLightsApply(values.v, env::kCount);
+    WxlSetAtmosphereOptions(values);
 }
 
 bool Save() {
@@ -98,6 +100,18 @@ int32_t Script_Set(lua_State* L) {
 
 int32_t Script_Save(lua_State* L) {
     lua_pushboolean(L, Save() ? 1 : 0);
+    return 1;
+}
+
+int32_t Script_AtmosphereStatus(lua_State* L) {
+    lua_pushboolean(L, WxlAtmosphereSupported());
+    lua_pushstring(L, WxlAtmosphereStatus());
+    return 2;
+}
+
+int32_t Script_OptionDefault(lua_State* L) {
+    const size_t index = FindArgument(L);
+    if (index == env::kCount) lua_pushnil(L); else lua_pushnumber(L, env::kOptions[index].initial);
     return 1;
 }
 
@@ -202,6 +216,8 @@ void WxlRegisterEnvironmentLua() {
     FrameScript_RegisterFunction("WarcraftXL_GetEnvironmentOption", &Script_Get);
     FrameScript_RegisterFunction("WarcraftXL_SetEnvironmentOption", &Script_Set);
     FrameScript_RegisterFunction("WarcraftXL_SaveEnvironmentOptions", &Script_Save);
+    FrameScript_RegisterFunction("WarcraftXL_GetEnvironmentOptionDefault", &Script_OptionDefault);
+    FrameScript_RegisterFunction("WXL_AtmosphereStatus", &Script_AtmosphereStatus);
     FrameScript_RegisterFunction("WarcraftXL_ResetEnvironmentOptions", &Script_Reset);
     FrameScript_RegisterFunction("WarcraftXL_GetEnvironmentStatus", &Script_Status);
     FrameScript_RegisterFunction("WarcraftXL_VerifyGrassPlacement", &Script_VerifyPlacement);

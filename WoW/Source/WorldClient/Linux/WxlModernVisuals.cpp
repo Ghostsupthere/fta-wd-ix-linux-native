@@ -29,14 +29,21 @@
 #include "Engine/Source/ModernAssets/WxlVisuals/water_classify.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/native_config.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/selection_policy.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/atmosphere_options.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/atmosphere_regions.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/log.h"
 #include "WoW/Source/WorldClient/World.h"
 #include "WoW/Source/WorldClient/DayNight__DNInfo.h"
 #include "WoW/Source/LiquidSystem/Liquid.h"
 #include "WoW/Source/DB/WowClientDB.h"
 #include "WoW/Source/DB/Rec/LiquidTypeRec.h"
+#include "WoW/Source/DB/Rec/AreaTableRec.h"
+#include "WoW/Source/DB/DBClient/DBClient.h"
 #include "WoW/Source/ObjectMgrClient/ObjectMgrClient.h"
 #include "WoW/Source/Object/ObjectClient/Unit_C.h"
+#include "WoW/Source/Object/ObjectClient/Player_C.h"
+#include "WoW/Source/Ui/GameUI.h"
+#include "WoW/Source/WorldClient/MapWeather.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -52,6 +59,13 @@ IDirect3DTexture9* readableDepth=nullptr;
 IDirect3DSurface9* boundDepth=nullptr;
 D3DSURFACE_DESC depthDescription={};
 Config config;
+Config baseline;
+Config selectedConfig;
+namespace env = wxl::grass::environment;
+env::Values options;
+wxl::atmosphere::RegionalFog regionalFog;
+bool optionsChanged = true;
+const char* visualStatus = "Waiting for a world frame";
 DNFogInfo originalFog;
 bool configured=false,worldActive=false,replacingFog=false,waterActive=false,depthFailed=false;
 uint64_t frameNumber=0;
@@ -95,6 +109,7 @@ void Configure() {
 #undef SELECT
     selection.fogDensityScale=WxlProfileNumber("WXL_FOG_DENSITY_SCALE",0.5f,0.0f,2.0f);
     ApplyVisualSelection(config,selection);
+    baseline = config;
     // The FTA profile keeps the client's own splash and wake sprites (the selection
     // policy forces WaterClientSplashes on); modern ripples are added to them.
     // TransparentFog stays opt-in (WXL_TRANSPARENT_FOG) and needs the distance fog
@@ -224,6 +239,8 @@ void TraceLightOwners(CM2Scene* scene,const LocalLightInputs& lights) {
     ++events;
     for(uint32_t i=0;i<lights.pointLightCount;++i) {
         const auto* target=reinterpret_cast<const CM2Light*>(lights.pointLights[i].nativeId);
+        if (!target)
+            continue;
         const char* owner="not found among the scene's models";unsigned slot=0,count=0;
         const CM2Model* found=nullptr;
         for(CM2Model* model=scene->m_modelList;model;model=model->m_sceneNext) {
@@ -234,7 +251,7 @@ void TraceLightOwners(CM2Scene* scene,const LocalLightInputs& lights) {
             if(match){owner=model->m_shared->m_fileName;found=model;break;}
         }
         VF_LOG_INFO("  local light %u owner: %s (light %u of %u), last animated %d frames ago",i,owner,slot,count,
-                    int(scene->m_frameStamp-reinterpret_cast<const CM2Light*>(lights.pointLights[i].nativeId)->m_stamp));
+                    int(scene->m_frameStamp-target->m_stamp));
         if(found)
             VF_LOG_INFO("    model %p: parent %s, flags %08x/%08x, attachment %u, sequence callback %d, event callback %d, "
                         "last anim time %u of scene time %u, model age %d ms",
@@ -255,7 +272,26 @@ void CaptureNativePointLights(FrameInputs& frame) {
     // itself (and kept lights that had since gone), which the fog then paid for.
     output.pointLightCount=0;
     for(auto& light:output.pointLights)light=LocalPointLight{};
-    if(!config.localLights||!scene||!scene->m_lightGrid)return;
+    if(!config.localLights)return;
+    const bool preview = options.v[env::kAtmosphereOverride] != 0;
+    if (preview && options.v[env::kLantern] && options.v[env::kLanternStrength] > 0) {
+        if (auto* player = ClntObjMgrGetActivePlayerObj()) {
+            const auto position = player->GetPosition();
+            const float facing = player->GetFacing();
+            LocalPointLight lantern;
+            lantern.position[0] = position.x - 0.35f * std::sin(facing);
+            lantern.position[1] = position.y + 0.35f * std::cos(facing);
+            lantern.position[2] = position.z + 1.0f;
+            lantern.color[0] = 1.0f;
+            lantern.color[1] = 0.66f;
+            lantern.color[2] = 0.28f;
+            lantern.attenuation[0] = 1.0f;
+            lantern.attenuation[2] = 0.08f;
+            engine::SelectLocalPointLight(output, lantern, frame.camPos,
+                {config.colorSpace != 0, float(options.v[env::kLanternStrength])});
+        }
+    }
+    if((preview && !options.v[env::kLights]) || !scene || !scene->m_lightGrid)return;
     PointLightUpload upload;upload.linear=config.colorSpace!=0;upload.intensity=config.localLightIntensity;
     unsigned visited=0;
     for(unsigned bucket=0;bucket<4096;++bucket) {
@@ -304,15 +340,57 @@ void WxlReleaseModernVisuals() {
     readableDepth=nullptr;boundDepth=nullptr;device=nullptr;
     worldActive=false;replacingFog=false;waterActive=false;depthFailed=false;cameraCaptured=false;atmosphereFailed=false;
 }
+void WxlSetAtmosphereOptions(const env::Values& values) {
+    options = values;
+    optionsChanged = true;
+}
+bool WxlAtmosphereSupported() { return Backend() != nullptr; }
+const char* WxlAtmosphereStatus() { return visualStatus; }
+
+static wxl::atmosphere::AreaPath ReadRegionPath(int map) {
+    wxl::atmosphere::AreaPath path{};
+    int area = CGGameUI::m_subzoneID;
+    const auto* subzone = area > 0 ? g_areaTableDB.GetRecord(area) : nullptr;
+    if (!subzone || subzone->m_continentID != map)
+        area = CGGameUI::m_areaID;
+    for (size_t i = 0; i < path.size() && area > 0; ++i) {
+        const auto* row = g_areaTableDB.GetRecord(area);
+        if (!row || row->m_continentID != map || std::find(path.begin(), path.begin() + i, area) != path.begin() + i)
+            break;
+        path[i] = area;
+        area = row->m_parentAreaID;
+    }
+    return path;
+}
+
 bool WxlBeginVisualWorld(bool underwater,const float* target) {
     Configure();worldActive=false;replacingFog=false;cameraCaptured=false;++frameNumber;
     DisarmTransparentFog();
+    if (optionsChanged) {
+        selectedConfig = wxl::atmosphere::ApplyOptions(baseline, options);
+        optionsChanged = false;
+        atmosphereFailed = false;
+    }
+    config = selectedConfig;
     targetValid=target!=nullptr;contactsCaptured=false;
     for(unsigned i=0;targetValid&&i<3;++i){cameraTarget[i]=target[i];if(!std::isfinite(target[i]))targetValid=false;}
-    if(!config.enable||!config.hooks||underwater||!ClntObjMgrGetActivePlayerObj())return false;
+    if(!config.enable||!config.hooks||underwater||!ClntObjMgrGetActivePlayerObj()){
+        visualStatus = underwater ? "Stock underwater rendering" : "World effects inactive";
+        return false;
+    }
     auto* info=DayNight::GetInfo();if(!info)return false;
+    if (options.v[env::kAtmosphereOverride] && options.v[env::kRegions] && config.density > 0) {
+        const int map = World::QueryMapId();
+        const auto* weather = World::s_weather;
+        const unsigned kind = !weather ? 0 : weather->m_rain ? 1 : weather->m_snow ? 2 : weather->m_sand ? 3 : 0;
+        regionalFog.Apply(config, map, ReadRegionPath(map), info->m_dayProgression,
+            kind, weather ? weather->m_intensity : 0.0f, NowMs() * 0.001);
+    } else {
+        regionalFog.Reset();
+    }
     originalFog=info->m_fogInterior;
-    if(!PrepareDepth())return false;
+    if(!PrepareDepth()){visualStatus = "Readable world depth unavailable";return false;}
+    visualStatus = options.v[env::kAtmosphereOverride] ? "Atmosphere controls active" : "Using launch profile";
     worldActive=true;
     D3DVIEWPORT9 viewport={};device->GetViewport(&viewport);
     replacingFog=!atmosphereFailed&&VisualFogEnabled(config)&&config.stockFog==1&&atmosphere.ReadyToRender(device,Depth(),viewport);
@@ -395,6 +473,17 @@ void WxlFinishVisualWorld() {
             VF_LOG_INFO("native atmosphere: rendered=%d replacing=%d skip=%s",rendered,replacingFog,atmosphere.LastSkipReason());
             VF_LOG_INFO("native fog cpu (per frame, last 300): whole-frame submit %.3f ms (%u frames)",finishFrames?finishMs/finishFrames:0.0,finishFrames);
             finishMs=0;finishFrames=0;
+        }
+    }
+    if (options.v[env::kAtmosphereOverride] && (options.v[env::kNight] || options.v[env::kGlow]) &&
+        cameraCaptured && !cameraFrame.localLights.cameraInterior) {
+        if (auto* player = ClntObjMgrGetActivePlayerObj(); player && player->IsOutdoors()) {
+            const float hour = cameraFrame.dayFraction * 24.0f;
+            const float weight = std::clamp(std::max((hour - 18.0f) / 4.0f, (7.0f - hour) / 3.0f), 0.0f, 1.0f);
+            const float darkness = options.v[env::kNight] ? weight * float(options.v[env::kNightStrength]) : 0.0f;
+            const float glow = options.v[env::kGlow] ? weight * float(options.v[env::kGlowStrength]) : 0.0f;
+            if ((darkness > 0.0f || glow > 0.0f) && !atmosphere.RenderNightLighting(device, Depth(), darkness, glow))
+                visualStatus = "Night lighting scene copy unavailable";
         }
     }
     worldActive=false;

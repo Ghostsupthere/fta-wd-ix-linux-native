@@ -1,5 +1,6 @@
 #include "Engine/Source/Base/Profiler.h"
 #if defined(WOWDECOMP_LINUX)
+#include "WxlAtmosphereOptionsEmbedded.h"
 #include "WoW/Source/Ui/Linux/WxlRequiredAddons.h"
 #include "WoW/Source/Ui/ModernLuaApi.h"
 #include "WoW/Source/Ui/Linux/WxlNamePlates.h"
@@ -3776,6 +3777,9 @@ void CGGameUI::EnterWorld() {
 
     FrameScript_SignalEvent(SCRIPT_EVENT_PLAYER_ENTERING_WORLD, nullptr);
     BonusLootClient::EnterWorld();
+#if defined(WOWDECOMP_LINUX)
+    FrameScript_Execute(kAtmosphereOptionsUI, "FTA Native Atmosphere Options", nullptr);
+#endif
     RequestMacroTimewalking();
     CGMinimapFrame::EnterWorld();
     CGChat::EnterWorld();

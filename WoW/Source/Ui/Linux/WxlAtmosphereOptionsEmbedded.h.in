@@ -1,0 +1,2 @@
+#pragma once
+inline constexpr char kAtmosphereOptionsUI[] = R"atmosphere(@ATMOSPHERE_OPTIONS_SOURCE@)atmosphere";

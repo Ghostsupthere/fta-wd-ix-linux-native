@@ -19,10 +19,16 @@ imported renderers run directly against it.
   (NVAPI registration/StretchRect path removed; RESZ-only, see below) and
   `selection_policy.cpp` (the Windows client-config reader is removed; the
   selection helpers keep the supplied behavior and the native profile feeds them).
-- **HLSL**: all `shaders/*` are byte-identical to the supplied `shaders/`.
+- **HLSL**: the original shaders use the supplied sources. The native
+  `vf_night_lighting.hlsl` adds an outdoor darkening and highlight halo pass.
 - **Native-only files**: `native_config.*` (bounded, non-throwing INI reader),
   `native_lights.cpp` (point-light selection extracted from `engine_lights.cpp`),
   `native_support.cpp`, `NativePlatform.h` (QPC and exception shims).
+- **Regional fog data**: `atmosphere_regions.inc` adapts six fog multipliers
+  from the 37 regional profiles derived from Lumenveil 0.1.1
+  (`8e9a74ee2001390ec413097fa88ecff13832f391`). The data's GPL-2.0 text is
+  in `LICENSE-regional-fog`. The Linux selection and blending code is in
+  `atmosphere_regions.h`.
 
 ## Depth copy
 

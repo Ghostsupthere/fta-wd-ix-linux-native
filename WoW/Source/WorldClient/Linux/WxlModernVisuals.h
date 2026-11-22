@@ -1,4 +1,5 @@
 #pragma once
+namespace wxl::grass::environment { struct Values; }
 namespace Liquid {class CMaterialSettings;}
 // Returns true only when native fog may be replaced for this world frame.
 bool WxlBeginVisualWorld(bool underwater,const float* target=nullptr);
@@ -13,3 +14,8 @@ void WxlBeginModernWater();
 void WxlTagModernWater(const Liquid::CMaterialSettings* settings);
 void WxlEndModernWater();
 void WxlReleaseModernVisuals();
+#if defined(WOWDECOMP_LINUX)
+void WxlSetAtmosphereOptions(const wxl::grass::environment::Values& values);
+bool WxlAtmosphereSupported();
+const char* WxlAtmosphereStatus();
+#endif

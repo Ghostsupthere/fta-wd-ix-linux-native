@@ -14,6 +14,7 @@
     "vf_integrate.hlsli": "9f650e1f61e55c5c9a5cd89303bd579b6421a3060fbec6217f6aab2bdc4f3218",
     "vf_local_lights.hlsli": "dae48b6175fa4d37510ad0d777b3e1767b89fa2b7f0a7a5ef0f35be1ca5647e9",
     "vf_march.hlsl": "0870874736861def5532c535d1e8efd777e3ae55e28201e336f489abf4ad2d00",
+    "vf_night_lighting.hlsl": "85b914abce9f02950e3a3944b8d64abce693660b19cd3b106337caf8ebf7a0b1",
     "vf_probe.hlsl": "c6318c3d9458afd97ed4644989cafb757df7e57e5507db003a41f264cf5e16b3",
     "vf_ray_blur.hlsl": "64acb157de13fa4fb816d5e5041ec56a4bf357a0e83beb6bdab3fb0a7216a18d",
     "vf_ray_composite.hlsl": "4e736509729cd1b2b317ce01f50c5288cdc17e0f5c2bf6ed359ea333d26718b4",
@@ -577,6 +578,13 @@
       "defines": [],
       "bytecode_sha256": "39e5c6225fe4f6a4f2e377debe20d3e7a9916ac42eef3c0859dae010545a3f60",
       "bytecode_bytes": 128
+    },
+    "ps_night_lighting": {
+      "source": "vf_night_lighting.hlsl",
+      "profile": "ps_3_0",
+      "defines": [],
+      "bytecode_sha256": "058c5427474e3a8f44a57349d0d094405d69df8973e517ac46d3e9c9ff465c57",
+      "bytecode_bytes": 1084
     }
   }
 }

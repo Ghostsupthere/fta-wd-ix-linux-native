@@ -42,6 +42,37 @@ namespace wxl::grass::environment
         {"lights.occlusion", 0, 1, 1, true},
         {"lights.raysPerFrame", 64, 2048, 256, true},
         {"lights.indoorIsolation", 0, 1, 1, true},
+        {"atmosphere.preview", 0, 1, 0, true},
+        {"atmosphere.fog", 0, 1, 1, true},
+        {"atmosphere.density", 0, 2, 0.5, false},
+        {"atmosphere.quality", 1, 3, 2, true},
+        {"atmosphere.regions", 0, 1, 0, true},
+        {"atmosphere.mist", 0, 1, 0, true},
+        {"atmosphere.mistStrength", 0, 2, 0.6, false},
+        {"atmosphere.drift", 0, 1, 1, true},
+        {"atmosphere.variation", 0, 2, 1, false},
+        {"atmosphere.wind", 0, 12, 5, false},
+        {"atmosphere.patchSize", 10, 120, 50, false},
+        {"atmosphere.shafts", 0, 1, 0, true},
+        {"atmosphere.shaftStrength", 0, 2, 0.6, false},
+        {"atmosphere.transparentFog", 0, 1, 0, true},
+        {"atmosphere.nativeLights", 0, 1, 0, true},
+        {"atmosphere.lightStrength", 0, 2, 0.7, false},
+        {"atmosphere.lantern", 0, 1, 0, true},
+        {"atmosphere.lanternStrength", 0, 2, 0.7, false},
+        {"atmosphere.night", 0, 1, 0, true},
+        {"atmosphere.nightDarkness", 0, 1, 0.5, false},
+        {"atmosphere.glow", 0, 1, 0, true},
+        {"atmosphere.glowStrength", 0, 2, 0.7, false},
+        {"water.modern", 0, 1, 1, true},
+        {"water.quality", 1, 3, 2, true},
+        {"water.waves", 0, 1, 1, true},
+        {"water.waveStrength", 0, 2, 1, false},
+        {"water.ripples", 0, 1, 1, true},
+        {"water.rippleStrength", 0, 2, 0.5, false},
+        {"water.foam", 0, 2, 1, false},
+        {"water.reflections", 0, 2, 1, false},
+        {"water.clarity", 0, 2, 1, false},
     };
     constexpr size_t kCount = sizeof(kOptions) / sizeof(kOptions[0]);
 
@@ -50,6 +81,13 @@ namespace wxl::grass::environment
         kGrassInstanced, kGrassMemoryMB, kGrassBuildMs, kGrassWindStrength, kGrassWindSpeed, kGrassInteraction,
         kLightsEnabled, kLightsModels, kLightsBrightness, kLightsRadius, kLightsRange, kLightsPerCell,
         kLightsFlicker, kLightsFlickerSpeed, kLightsOcclusion, kLightsRaysPerFrame, kLightsIndoorIsolation,
+        kAtmosphereOverride, kFog, kDensity, kQuality, kRegions,
+        kMist, kMistStrength, kDrift, kVariation, kWind,
+        kPatch, kShafts, kShaftStrength, kTransparent, kLights,
+        kLightStrength, kLantern, kLanternStrength, kNight, kNightStrength,
+        kGlow, kGlowStrength, kWater, kWaterQuality, kWaves,
+        kWaveStrength, kWaterRipples, kRippleStrength, kWaterFoam, kWaterReflections,
+        kWaterClarity,
     };
 
     struct Values
@@ -120,7 +158,7 @@ namespace wxl::grass::environment
 
     inline std::string Format(const Values& values)
     {
-        std::string out = "; Live WarcraftXL grass and surface-light settings.\r\n[Environment]\r\n";
+        std::string out = "; Live WarcraftXL environment settings.\r\n[Environment]\r\n";
         char number[64];
         for (size_t i = 0; i < kCount; ++i)
         {

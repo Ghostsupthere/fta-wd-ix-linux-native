@@ -12,7 +12,7 @@ static void Require(bool ok, const char* what) { if (!ok) { std::fprintf(stderr,
 
 int main() {
     Values defaults;
-    Require(kCount == 17, "17 options");
+    Require(kCount == kWaterClarity + 1, "option indices match the table");
     Require(defaults.v[kLightsEnabled] == 1 && defaults.v[kLightsModels] == 1 && defaults.v[kGrassMemoryMB] == 64, "defaults (surface lights on)");
 
     // Clamping, integer rounding, non-finite input.
@@ -35,7 +35,8 @@ int main() {
         "lights.flicker=0.2\r\nlights.flickerSpeed=1\r\nlights.occlusion=0\r\nlights.raysPerFrame=256\r\n"
         "lights.indoorIsolation=0\r\n";
     Values loaded;
-    Require(Parse(saved, loaded) == kCount, "all 17 read");
+    Require(Parse(saved, loaded) == kAtmosphereOverride, "legacy options read");
+    Require(loaded.v[kAtmosphereOverride] == 0, "legacy file keeps launch profile");
     Require(loaded.v[kLightsEnabled] == 0 && loaded.v[kLightsBrightness] == 1.4 && loaded.v[kLightsRange] == 120, "values");
 
     // Round trip.

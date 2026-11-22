@@ -14,6 +14,10 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/BonusLootUI.lua" BONUS_LOOT_UI_SOURCE)
 configure_file(BonusLootUIEmbedded.h.in BonusLootUIEmbedded.h @ONLY)
 
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Linux/WxlAtmosphereOptions.lua")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/Linux/WxlAtmosphereOptions.lua" ATMOSPHERE_OPTIONS_SOURCE)
+configure_file(Linux/WxlAtmosphereOptionsEmbedded.h.in WxlAtmosphereOptionsEmbedded.h @ONLY)
+
 target_include_directories(Ui
     PUBLIC
         ${CMAKE_SOURCE_DIR}

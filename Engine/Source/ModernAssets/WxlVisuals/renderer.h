@@ -23,6 +23,7 @@ public:
     bool Render(IDirect3DDevice9* dev, const SceneDepth& depth, const FrameInputs& in, const Config& cfg,
                 FogPass pass = FogPass::WholeFrame);
     bool RenderGodRaysAfterWorld(IDirect3DDevice9* dev, const SceneDepth& depth);
+    bool RenderNightLighting(IDirect3DDevice9* dev, const SceneDepth& depth, float darkness, float glow);
     bool ReadyToRender(IDirect3DDevice9* dev, const SceneDepth& depth, const D3DVIEWPORT9& vp);
 
     const StockFogFit& LastStockFogFit() const { return m_stockFogFit; }
@@ -128,6 +129,7 @@ private:
     IDirect3DPixelShader9* m_rayMask = nullptr;
     IDirect3DPixelShader9* m_rayBlur = nullptr;
     IDirect3DPixelShader9* m_rayComposite = nullptr;
+    IDirect3DPixelShader9* m_nightLighting = nullptr;
     IDirect3DPixelShader9* m_probe = nullptr;
     IDirect3DVertexDeclaration9* m_decl = nullptr;
     IDirect3DStateBlock9* m_state = nullptr;

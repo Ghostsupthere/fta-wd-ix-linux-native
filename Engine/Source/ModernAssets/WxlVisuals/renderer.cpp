@@ -41,6 +41,7 @@
 #include "ps_probe.h"
 #include "ps_ray_blur.h"
 #include "ps_ray_composite.h"
+#include "ps_night_lighting.h"
 #include "ps_ray_mask.h"
 #include "ps_silhouette_mask.h"
 #include "ps_split_composite_high.h"
@@ -437,6 +438,7 @@ void Renderer::ReleaseAll()
     SafeRelease(m_rayMask);
     SafeRelease(m_rayBlur);
     SafeRelease(m_rayComposite);
+    SafeRelease(m_nightLighting);
     SafeRelease(m_probe);
     SafeRelease(m_decl);
 }
@@ -1184,6 +1186,36 @@ bool Renderer::RenderGodRaysAfterWorld(IDirect3DDevice9* dev, const SceneDepth& 
     else
         m_gpuTimer.Cancel();
     return drawn;
+}
+
+bool Renderer::RenderNightLighting(IDirect3DDevice9* dev, const SceneDepth& depth, float darkness, float glow)
+{
+    if (dev->TestCooperativeLevel() != D3D_OK || !EnsureShaders(dev) || !EnsureStateBlock(dev))
+        return false;
+    if (!m_nightLighting && FAILED(dev->CreatePixelShader(
+            reinterpret_cast<const DWORD*>(g_ps_night_lighting), &m_nightLighting)))
+        return false;
+
+    D3DVIEWPORT9 vp{};
+    if (FAILED(dev->GetViewport(&vp)) || !vp.Width || !vp.Height)
+        return false;
+    return WithClientStateSaved(dev, depth, [&](IDirect3DSurface9* target, const D3DSURFACE_DESC& targetDepth) {
+        if (ViewportOutsideTarget(vp, targetDepth) || !CopyWorldViewport(dev, target, vp))
+            return false;
+        PrepareFullscreenPasses(dev);
+        dev->SetViewport(&vp);
+        dev->SetRenderState(D3DRS_COLORWRITEENABLE,
+            D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+        dev->SetPixelShader(m_nightLighting);
+        const Float4 constants[] = {
+            {float(vp.X), float(vp.Y), float(vp.Width), float(vp.Height)},
+            {darkness, glow, 0.0f, 0.0f},
+        };
+        dev->SetPixelShaderConstantF(0, &constants[0].x, 2);
+        BindTexture(dev, 0, m_sceneCopy, true);
+        DrawFullscreenTriangle(dev);
+        return true;
+    });
 }
 
 void Renderer::PrepareFullscreenPasses(IDirect3DDevice9* dev)
