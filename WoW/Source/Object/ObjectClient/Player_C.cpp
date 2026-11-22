@@ -1031,11 +1031,15 @@ void CGPlayer_C::PreAnimate(CGWorldFrame* frame) {
 void CGPlayer_C::ShouldRender(uint32_t flags, int32_t& culled, int32_t& hidden) {
     this->CGUnit_C::ShouldRender(flags, culled, hidden);
 
-    if (this->IsCommentatorUberOrInArena() || ((this->m_clientFlags & 0x400000) && this->m_pendingItemCacheCount)) {
-        hidden = 1;
-    } else if (!s_playerRenderDisabled && this->m_obj->m_guid == ClntObjMgrGetActivePlayer()) {
+    if (this->IsPlayerModelHidden()) {
         hidden = 1;
     }
+}
+
+bool CGPlayer_C::IsPlayerModelHidden() const {
+    return this->IsCommentatorUberOrInArena() ||
+           ((this->m_clientFlags & 0x400000) && this->m_pendingItemCacheCount) ||
+           (!s_playerRenderDisabled && this->m_obj->m_guid == ClntObjMgrGetActivePlayer());
 }
 
 // VERIFY: 486d0703 auto

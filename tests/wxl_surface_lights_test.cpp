@@ -1,6 +1,7 @@
 // Table parsing, flicker, merging, pool selection, the cell grid and baked occlusion of the
 // surface-light list. Optional argument: the client's DBFilesClient directory (checks the real files).
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/LightPool.hpp"
+#include "Engine/Source/ModernAssets/WxlVisuals/player_lantern.h"
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/LightShaderPack.hpp"
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/LightTextureLayout.hpp"
 #include "Engine/Source/ModernAssets/WxlWmo/WmoShaderPack.cpp"
@@ -204,6 +205,37 @@ int main(int argc, char** argv) {
         Require(pool.active.size() == size_t(kMaxPool) && pool.poolDropped == 40, "pool capped");
         for (size_t i = 1; i < pool.active.size(); ++i) Require(pool.active[i].pos[0] > pool.active[i - 1].pos[0], "stable order");
         Require(pool.active.back().pos[0] < (kMaxPool) * 0.1f, "the farthest dropped");
+    }
+
+    {
+        // A brighter supplemental source still yields to an authored light in a full cell.
+        Settings g = s;
+        g.cellSize = 16;
+        g.maxPerCell = 1;
+        g.range = 64;
+        std::vector<ActiveLight> active(2);
+        active[0].radius = active[1].radius = 6;
+        active[1].supplemental = true;
+        GridBuilder builder;
+        Grid grid;
+        GridStats stats;
+        builder.Build(active, {1, 100}, eye, g, grid, stats);
+        const int cell = 4 * grid.cells + 4;
+        Require(grid.count[cell] == 1 && grid.index[cell] == 0, "authored light keeps its bounded cell slot");
+        g.maxPerCell = 2;
+        builder.Build(active, {1, 100}, eye, g, grid, stats);
+        Require(grid.count[cell] == 2 && grid.index[cell * 2 + 1] == 1, "lantern takes only a spare slot");
+    }
+    {
+        using wxl::atmosphere::BeltLantern;
+        const float rider[] = {0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 100, 20, 4, 1};
+        const auto large = BeltLantern(rider, 2.0f, 0.6f, 0.7f);
+        const auto small = BeltLantern(rider, 1.1f, 0.35f, 0.7f);
+        Require(large.strength == 0.7f && large.position[0] < 100 && large.position[1] == 20,
+                "belt follows the rider transform and strength");
+        Require(small.position[2] > 4 && small.position[2] < large.position[2],
+                "belt height follows the smaller avatar");
+        Require(BeltLantern(rider, 2, 0.5f, 0).strength == 0, "zero strength is off");
     }
 
     // --- grid ---

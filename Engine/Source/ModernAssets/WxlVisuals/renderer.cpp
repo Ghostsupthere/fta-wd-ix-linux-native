@@ -403,6 +403,8 @@ void Renderer::ReleaseDefaultPool()
     m_gpuTimer.Release();
     m_timerTemporal.Release();
     m_timerComposite.Release();
+    m_timerLantern.Release();
+    m_lanternDraws = 0;
     m_lateGodRays = {};
     SafeRelease(m_state);
     m_lowW = m_lowH = m_rayW = m_rayH = 0;
@@ -1252,6 +1254,107 @@ bool Renderer::RenderNightLighting(IDirect3DDevice9* dev, const SceneDepth& dept
         DrawFullscreenTriangle(dev);
         return true;
     });
+}
+
+void Renderer::RenderLanternHalo(IDirect3DDevice9* dev, const SceneDepth& depth, const FrameInputs& in,
+                                 const wxl::atmosphere::PlayerLantern& lantern)
+{
+    const auto& vp = in.viewport;
+    const auto* projection = in.glProjection;
+    const float relative[] = {lantern.position[0] - in.camPos[0], lantern.position[1] - in.camPos[1],
+                              lantern.position[2] - in.camPos[2]};
+    float view[3];
+    TransformDirection(relative, in.cameraRelativeView, view);
+    if (!(view[2] > 0.5f && view[2] < in.farClip) || !vp.Width || !vp.Height)
+        return;
+
+    const float ndcX = projection[0] * view[0] / view[2] + projection[8];
+    const float ndcY = projection[5] * view[1] / view[2] + projection[9];
+    if (!(std::abs(ndcX) < 1.0f && std::abs(ndcY) < 1.0f))
+        return;
+    const float screenX = vp.X + (0.5f + 0.5f * ndcX) * vp.Width - 0.5f;
+    const float screenY = vp.Y + (0.5f - 0.5f * ndcY) * vp.Height - 0.5f;
+    const auto mapping = MapWorldDepth(projection, vp);
+    const float z = mapping.atInfinity + mapping.perInverseViewDepth / view[2];
+    if (!(z >= 0 && z <= 1))
+        return;
+    const float radius = std::clamp(std::abs(projection[5]) * vp.Height * 0.15f / view[2], 3.0f, 32.0f);
+    const auto alpha = static_cast<DWORD>(std::clamp(76.0f * lantern.strength, 0.0f, 255.0f));
+    constexpr DWORD rgb = 0x00FFA847;
+    struct Vertex { float x, y, depth, rhw; DWORD colour; };
+    constexpr unsigned segments = 12;
+    Vertex fan[segments + 2];
+    fan[0] = {screenX, screenY, z, 1, rgb | (alpha << 24)};
+    for (unsigned i = 0; i <= segments; ++i)
+    {
+        const float angle = i * (6.283185307f / segments);
+        fan[i + 1] = {screenX + radius * std::cos(angle), screenY + radius * std::sin(angle), z, 1, rgb};
+    }
+    if (!EnsureStateBlock(dev))
+        return;
+
+    const bool trace = FogTraceMode() == 2 && LogEnabled(LogLevel::Info);
+    const bool drawn = WithClientStateSaved(dev, depth, [&](IDirect3DSurface9*, const D3DSURFACE_DESC& desc) {
+        if (ViewportOutsideTarget(vp, desc))
+            return false;
+        constexpr D3DTEXTURESTAGESTATETYPE states[] = {D3DTSS_COLOROP, D3DTSS_COLORARG1, D3DTSS_ALPHAOP, D3DTSS_ALPHAARG1};
+        constexpr DWORD values[] = {D3DTOP_SELECTARG1, D3DTA_DIFFUSE, D3DTOP_SELECTARG1, D3DTA_DIFFUSE};
+        DWORD saved[4] = {}, nextColour = 0, nextAlpha = 0, shade = 0, lighting = 0;
+        for (unsigned i = 0; i < 4; ++i)
+        {
+            dev->GetTextureStageState(0, states[i], &saved[i]);
+            dev->SetTextureStageState(0, states[i], values[i]);
+        }
+        dev->GetTextureStageState(1, D3DTSS_COLOROP, &nextColour);
+        dev->GetTextureStageState(1, D3DTSS_ALPHAOP, &nextAlpha);
+        dev->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+        dev->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+        dev->GetRenderState(D3DRS_SHADEMODE, &shade);
+        dev->GetRenderState(D3DRS_LIGHTING, &lighting);
+        dev->SetRenderState(D3DRS_SHADEMODE, D3DSHADE_GOURAUD);
+        dev->SetRenderState(D3DRS_LIGHTING, FALSE);
+        dev->SetRenderState(D3DRS_ZENABLE, D3DZB_TRUE);
+        dev->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+        dev->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+        dev->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+        dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+        dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+        dev->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, FALSE);
+        dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+        dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+        dev->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+        dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+        dev->SetRenderState(D3DRS_FOGENABLE, FALSE);
+        dev->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+        dev->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
+        dev->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
+        dev->SetRenderState(D3DRS_COLORWRITEENABLE,
+            D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+        dev->SetVertexShader(nullptr);
+        dev->SetPixelShader(nullptr);
+        dev->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+        dev->SetStreamSourceFreq(0, 1);
+        dev->SetViewport(&vp);
+        dev->SetTexture(0, nullptr);
+        if (trace)
+            m_timerLantern.Begin(dev);
+        const HRESULT result = dev->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, segments, fan, sizeof(Vertex));
+        if (trace)
+            m_timerLantern.End();
+        for (unsigned i = 0; i < 4; ++i)
+            dev->SetTextureStageState(0, states[i], saved[i]);
+        dev->SetTextureStageState(1, D3DTSS_COLOROP, nextColour);
+        dev->SetTextureStageState(1, D3DTSS_ALPHAOP, nextAlpha);
+        dev->SetRenderState(D3DRS_SHADEMODE, shade);
+        dev->SetRenderState(D3DRS_LIGHTING, lighting);
+        return SUCCEEDED(result);
+    });
+    if (drawn && trace && ++m_lanternDraws % 300 == 0)
+    {
+        char gpuTime[96] = {};
+        DescribeGpuTime(m_timerLantern, dev, gpuTime, sizeof(gpuTime));
+        VF_LOG_INFO("player lantern: %s", gpuTime[0] ? gpuTime : "halo GPU timing unavailable");
+    }
 }
 
 void Renderer::PrepareFullscreenPasses(IDirect3DDevice9* dev)

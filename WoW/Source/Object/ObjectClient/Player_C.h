@@ -347,6 +347,7 @@ class CGPlayer_C : public CGUnit_C, public CGPlayer {
     int32_t UpdateUnitCollisionBox(int32_t a2, int32_t a3);
     int32_t UpdateMountedCollisionBox(float mountHeight, int32_t force);
     int32_t IsCommentatorUberOrInArena() const;
+    bool IsPlayerModelHidden() const;
     int32_t IsInMelee() const;
     void OnLootGameObject(const WOWGUID& guid);
     bool HasEquipBypassSkill(int32_t skillId) const;

@@ -2,6 +2,8 @@
 #define WOWDECOMP_GX_DXVK
 #include <d3d9.h>
 #include "WxlSurfaceLights.h"
+#include "WxlModernVisuals.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/player_lantern.h"
 #include "WxlVisualEnvironment.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
 #include "Engine/Source/Gx/CGxDeviceD3d9Ex/CGxDeviceD3d9Ex.h"
@@ -527,6 +529,24 @@ void UpdateLights(float dt, const float eye[3]) {
     stats.fromClient = fromClient; stats.fromWorld = fromWorld; stats.fileColor = fileColor;
     stats.inRange = static_cast<unsigned>(cands.size());
     stats.merged = sl::MergeCandidates(cands, settings.mergeDistance);
+    const auto& lantern = WxlFrameLantern();
+    if (lantern.strength > 0 && cands.size() < sl::kMaxPool)
+    {
+        const float dx = lantern.position[0] - eye[0], dy = lantern.position[1] - eye[1];
+        const float dz = lantern.position[2] - eye[2];
+        if (dx * dx + dy * dy + dz * dz < range * range)
+        {
+            sl::Candidate light;
+            std::memcpy(light.pos, lantern.position, sizeof(light.pos));
+            for (int i = 0; i < 3; ++i)
+                light.color[i] = lantern.Color[i] * lantern.strength;
+            light.radius = lantern.SurfaceRadius * 16.0f / settings.radius;
+            light.flickerAmount = 0;
+            light.moving = true;
+            light.supplemental = true;
+            cands.push_back(light);
+        }
+    }
     indoorTestsThisFrame = 0;
     pool = sl::ChooseActive(cands, settings, eye, lightTime, [](const float* p) { return IsIndoor(p); });
     stats.active = static_cast<unsigned>(pool.active.size());

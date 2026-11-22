@@ -58,6 +58,7 @@ namespace wxl::surfacelights
         bool indoor = false;
         const void* model = nullptr;
         const float* occlusion = nullptr;
+        bool supplemental = false;
     };
 
     // A light this frame, before merging and choosing.
@@ -75,6 +76,7 @@ namespace wxl::surfacelights
         const void* model = nullptr;
         bool bake = false;
         bool moving = false;
+        bool supplemental = false;
     };
 
     struct Grid
@@ -298,6 +300,7 @@ namespace wxl::surfacelights
             l.spotScale = c.spotScale;
             l.dip = 1.0f - flicker;
             l.model = c.model;
+            l.supplemental = c.supplemental;
             l.indoor = settings.indoorSkipsTerrain && indoor && indoor(l.pos);
             out.indoor += l.indoor ? 1 : 0;
             out.active.push_back(l);
@@ -334,7 +337,7 @@ namespace wxl::surfacelights
                     const auto& old = inputs_[i];
                     const auto& light = active[i];
                     if (old.x != light.pos[0] || old.y != light.pos[1] || old.radius != light.radius ||
-                        old.luminance != baseLuminance[i]) { unchanged = false; break; }
+                        old.luminance != baseLuminance[i] || old.supplemental != light.supplemental) { unchanged = false; break; }
                 }
             if (unchanged)
             {
@@ -344,7 +347,8 @@ namespace wxl::surfacelights
             inputs_.clear();
             inputs_.reserve(active.size());
             for (size_t i = 0; i < active.size(); ++i)
-                inputs_.push_back({active[i].pos[0], active[i].pos[1], active[i].radius, baseLuminance[i]});
+                inputs_.push_back({active[i].pos[0], active[i].pos[1], active[i].radius, baseLuminance[i],
+                                   active[i].supplemental});
             const size_t cellCount = static_cast<size_t>(next.cells) * next.cells;
             next.count.assign(cellCount, 0);
             next.index.assign(cellCount * next.perCell, 0);
@@ -369,11 +373,16 @@ namespace wxl::surfacelights
                         if (nx * nx + ny * ny > r * r) continue;
                         const float cx = (x + 0.5f) * cs - lx, cy = (y + 0.5f) * cs - ly;
                         const float t = 1.0f - std::min(std::sqrt(cx * cx + cy * cy) / (r + halfDiag), 1.0f);
-                        entries_.push_back({static_cast<uint32_t>(y * next.cells + x), baseLuminance[i] * t * t, static_cast<uint16_t>(i)});
+                        entries_.push_back({static_cast<uint32_t>(y * next.cells + x), baseLuminance[i] * t * t,
+                                            static_cast<uint16_t>(i), l.supplemental});
                     }
             }
             std::sort(entries_.begin(), entries_.end(), [](const CellEntry& a, const CellEntry& b)
-                      { return a.cell != b.cell ? a.cell < b.cell : (a.score != b.score ? a.score > b.score : a.light < b.light); });
+            {
+                if (a.cell != b.cell) return a.cell < b.cell;
+                if (a.supplemental != b.supplemental) return !a.supplemental;
+                return a.score != b.score ? a.score > b.score : a.light < b.light;
+            });
 
             GridStats s;
             for (size_t e = 0; e < entries_.size();)
@@ -398,8 +407,8 @@ namespace wxl::surfacelights
         void Reset() { inputs_.clear(); last_ = {}; }
 
     private:
-        struct CellEntry { uint32_t cell; float score; uint16_t light; };
-        struct Input { float x, y, radius, luminance; };
+        struct CellEntry { uint32_t cell; float score; uint16_t light; bool supplemental; };
+        struct Input { float x, y, radius, luminance; bool supplemental; };
         std::vector<Input> inputs_;
         std::vector<CellEntry> entries_;
         GridStats last_;

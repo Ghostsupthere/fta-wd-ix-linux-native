@@ -7,6 +7,7 @@
 #include "fog_model.h"
 #include "gpu_timing.h"
 #include "msaa_depth.h"
+#include "player_lantern.h"
 #include "transparent_fog.h"
 
 #include <d3d9.h>
@@ -25,6 +26,8 @@ public:
                 FogPass pass = FogPass::WholeFrame);
     bool RenderGodRaysAfterWorld(IDirect3DDevice9* dev, const SceneDepth& depth);
     bool RenderNightLighting(IDirect3DDevice9* dev, const SceneDepth& depth, float darkness, float glow);
+    void RenderLanternHalo(IDirect3DDevice9* dev, const SceneDepth& depth, const FrameInputs& in,
+                           const wxl::atmosphere::PlayerLantern& lantern);
     bool ReadyToRender(IDirect3DDevice9* dev, const SceneDepth& depth, const D3DVIEWPORT9& vp);
 
     const StockFogFit& LastStockFogFit() const { return m_stockFogFit; }
@@ -158,6 +161,8 @@ private:
     GpuTimer m_gpuTimer{"fog"};
     GpuTimer m_timerTemporal{"temporal+copy"};  // WXL_FOG_TRACE=2: the pass split into three timed stages
     GpuTimer m_timerComposite{"composite"};
+    GpuTimer m_timerLantern{"lantern halo"};
+    unsigned m_lanternDraws = 0;
     StockFogFit m_stockFogFit;
     GodRayFrame m_lateGodRays;
     UINT m_lowW = 0;

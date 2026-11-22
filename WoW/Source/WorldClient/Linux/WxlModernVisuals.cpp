@@ -37,6 +37,10 @@
 #include "WoW/Source/LiquidSystem/Liquid.h"
 #include "WoW/Source/DB/WowClientDB.h"
 #include "WoW/Source/DB/Rec/LiquidTypeRec.h"
+#include "WoW/Source/DB/Rec/CreatureModelDataRec.h"
+#include "WoW/Source/Ui/WorldFrame.h"
+#include "WoW/Source/UIUtil/Camera.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/player_lantern.h"
 #include "WoW/Source/DB/Rec/AreaTableRec.h"
 #include "WoW/Source/DB/DBClient/DBClient.h"
 #include "WoW/Source/ObjectMgrClient/ObjectMgrClient.h"
@@ -66,6 +70,7 @@ Config selectedConfig;
 namespace env = wxl::grass::environment;
 env::Values options;
 wxl::atmosphere::RegionalFog regionalFog;
+wxl::atmosphere::PlayerLantern frameLantern;
 int regionalFogArea = -1;
 wxl::atmosphere::GroundFloor groundFloor;
 uint64_t floorFrame = 0;
@@ -285,41 +290,36 @@ void CaptureNativePointLights(FrameInputs& frame) {
     for(auto& light:output.pointLights)light=LocalPointLight{};
     if(!config.localLights)return;
     const bool preview = options.v[env::kAtmosphereOverride] != 0;
-    if (preview && options.v[env::kLantern] && options.v[env::kLanternStrength] > 0) {
-        if (auto* player = ClntObjMgrGetActivePlayerObj()) {
-            const auto position = player->GetPosition();
-            const float facing = player->GetFacing();
-            LocalPointLight lantern;
-            lantern.position[0] = position.x - 0.35f * std::sin(facing);
-            lantern.position[1] = position.y + 0.35f * std::cos(facing);
-            lantern.position[2] = position.z + 1.0f;
-            lantern.color[0] = 1.0f;
-            lantern.color[1] = 0.66f;
-            lantern.color[2] = 0.28f;
-            lantern.attenuation[0] = 1.0f;
-            lantern.attenuation[2] = 0.08f;
-            engine::SelectLocalPointLight(output, lantern, frame.camPos,
-                {config.colorSpace != 0, float(options.v[env::kLanternStrength])});
+    const bool nativeLights = (!preview || options.v[env::kLights]) && scene && scene->m_lightGrid;
+    if (!nativeLights && frameLantern.strength <= 0)
+        return;
+    if (nativeLights) {
+        PointLightUpload upload;upload.linear=config.colorSpace!=0;upload.intensity=config.localLightIntensity;
+        unsigned visited=0;
+        for(unsigned bucket=0;bucket<4096;++bucket) {
+            unsigned links=0;
+            for(auto* light=scene->m_lightGrid[bucket];light;light=light->m_lightNext) {
+                if(++links>512||++visited>8192){output.pointLightCount=0;output.capture=LocalLightCapture::DamagedTable;return;}
+                if(light->m_scene!=scene||light->m_type!=M2LIGHT_POINT||!light->m_visible)continue;
+                LocalPointLight candidate;candidate.nativeId=reinterpret_cast<uintptr_t>(light);
+                std::memcpy(candidate.position,&light->m_pos,sizeof(candidate.position));
+                std::memcpy(candidate.color,&light->m_dirColor,sizeof(candidate.color));
+                candidate.attenuation[0]=light->m_constantAttenuation;
+                candidate.attenuation[1]=light->m_linearAttenuation;
+                candidate.attenuation[2]=light->m_quadraticAttenuation;
+                bool valid=true;for(float coefficient:candidate.attenuation)
+                    if(!std::isfinite(coefficient)||coefficient<0||coefficient>1000000.0f)valid=false;
+                if(valid)engine::SelectLocalPointLight(output,candidate,frame.camPos,upload);
+            }
         }
     }
-    if((preview && !options.v[env::kLights]) || !scene || !scene->m_lightGrid)return;
-    PointLightUpload upload;upload.linear=config.colorSpace!=0;upload.intensity=config.localLightIntensity;
-    unsigned visited=0;
-    for(unsigned bucket=0;bucket<4096;++bucket) {
-        unsigned links=0;
-        for(auto* light=scene->m_lightGrid[bucket];light;light=light->m_lightNext) {
-            if(++links>512||++visited>8192){output.pointLightCount=0;output.capture=LocalLightCapture::DamagedTable;return;}
-            if(light->m_scene!=scene||light->m_type!=M2LIGHT_POINT||!light->m_visible)continue;
-            LocalPointLight candidate;candidate.nativeId=reinterpret_cast<uintptr_t>(light);
-            std::memcpy(candidate.position,&light->m_pos,sizeof(candidate.position));
-            std::memcpy(candidate.color,&light->m_dirColor,sizeof(candidate.color));
-            candidate.attenuation[0]=light->m_constantAttenuation;
-            candidate.attenuation[1]=light->m_linearAttenuation;
-            candidate.attenuation[2]=light->m_quadraticAttenuation;
-            bool valid=true;for(float coefficient:candidate.attenuation)
-                if(!std::isfinite(coefficient)||coefficient<0||coefficient>1000000.0f)valid=false;
-            if(valid)engine::SelectLocalPointLight(output,candidate,frame.camPos,upload);
-        }
+    if (frameLantern.strength > 0 && output.pointLightCount < kMaxLocalPointLights) {
+        LocalPointLight lantern;
+        std::memcpy(lantern.position, frameLantern.position, sizeof(lantern.position));
+        std::memcpy(lantern.color, frameLantern.Color, sizeof(lantern.color));
+        lantern.attenuation[0] = 1.0f;
+        lantern.attenuation[2] = 0.08f;
+        engine::SelectLocalPointLight(output, lantern, frame.camPos, {config.colorSpace != 0, frameLantern.strength});
     }
     TraceLightOwners(scene,output);
 }
@@ -377,6 +377,7 @@ void RestoreWaterDepthWrite() {
 }
 }
 void WxlReleaseModernVisuals() {
+    frameLantern = {};
     WxlWmoRelease();
     WxlGrassInstancingRelease();
     WxlSurfaceLightsRelease();
@@ -410,9 +411,34 @@ static wxl::atmosphere::AreaPath ReadRegionPath(int map) {
     return path;
 }
 
+const wxl::atmosphere::PlayerLantern& WxlFrameLantern() { return frameLantern; }
+
+static wxl::atmosphere::PlayerLantern CapturePlayerLantern(CGPlayer_C& player) {
+    const float strength = float(options.v[env::kLanternStrength]);
+    if (!options.v[env::kAtmosphereOverride] || !options.v[env::kLantern] || !(strength > 0))
+        return {};
+    auto* camera = CGWorldFrame::GetActiveCamera();
+    auto* rider = player.m_worldModel;
+    if (!camera || camera->IsFirstPersonView() || player.IsDeadOrGhost() ||
+        player.IsPlayerModelHidden() || (player.m_movementData.m_flags & 0x200000) ||
+        !rider || !(rider->m_fFlags & 1) || !(rider->m_fFlags & 0x8000) || !rider->m_scene ||
+        !(rider->m_alpha > 0.05f))
+        return {};
+
+    // Use the rider's pose. The unit's root model is the mount while mounted.
+    rider->Animate();
+    const C44Matrix world = rider->m_matrixF4 * rider->m_scene->m_viewInv;
+    float matrix[16];
+    std::memcpy(matrix, &world, sizeof(matrix));
+    const auto* shape = player.GetModelData();
+    return wxl::atmosphere::BeltLantern(matrix, shape ? shape->m_collisionHeight : player.m_height,
+                                      shape ? shape->m_collisionWidth : 0.0f, strength);
+}
+
 bool WxlBeginVisualWorld(bool underwater,const float* target) {
     Configure();worldActive=false;replacingFog=false;cameraCaptured=false;++frameNumber;
     DisarmTransparentFog();
+    frameLantern = {};
     if (optionsChanged) {
         selectedConfig = wxl::atmosphere::ApplyOptions(baseline, options);
         optionsChanged = false;
@@ -421,7 +447,8 @@ bool WxlBeginVisualWorld(bool underwater,const float* target) {
     config = selectedConfig;
     targetValid=target!=nullptr;contactsCaptured=false;
     for(unsigned i=0;targetValid&&i<3;++i){cameraTarget[i]=target[i];if(!std::isfinite(target[i]))targetValid=false;}
-    if(!config.enable||!config.hooks||underwater||!ClntObjMgrGetActivePlayerObj()){
+    auto* player = ClntObjMgrGetActivePlayerObj();
+    if(!config.enable||!config.hooks||underwater||!player){
         visualStatus = underwater ? "Stock underwater rendering" : "World effects inactive";
         return false;
     }
@@ -438,6 +465,7 @@ bool WxlBeginVisualWorld(bool underwater,const float* target) {
     } else {
         regionalFog.Reset();
     }
+    frameLantern = CapturePlayerLantern(*player);
     originalFog=info->m_fogInterior;
     if(!PrepareDepth()){visualStatus = "Readable world depth unavailable";return false;}
     visualStatus = options.v[env::kAtmosphereOverride] ? "Atmosphere controls active" : "Using launch profile";
@@ -509,7 +537,10 @@ void WxlBeginTransparentFog() {
     NativeVisualHooks::m2BatchFog=&FitM2BatchFog;
 }
 void WxlFinishVisualWorld() {
-    if(!worldActive)return;
+    if (!worldActive) {
+        frameLantern = {};
+        return;
+    }
     const double began=NowMs();
     struct Timed{double began;~Timed(){finishMs+=NowMs()-began;++finishFrames;}} timed{began};
     FrameInputs frame={};
@@ -538,6 +569,9 @@ void WxlFinishVisualWorld() {
                 visualStatus = "Night lighting scene copy unavailable";
         }
     }
+    if (frameLantern.strength > 0 && cameraCaptured && !cameraFrame.inLiquid)
+        atmosphere.RenderLanternHalo(device, Depth(), cameraFrame, frameLantern);
+    frameLantern = {};
     worldActive=false;
 }
 #else

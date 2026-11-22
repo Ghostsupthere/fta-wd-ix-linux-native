@@ -4,6 +4,10 @@ namespace Liquid {class CMaterialSettings;}
 // Returns true only when native fog may be replaced for this world frame.
 bool WxlBeginVisualWorld(bool underwater,const float* target=nullptr);
 void WxlCaptureVisualCamera();
+#if defined(WOWDECOMP_LINUX)
+namespace wxl::atmosphere { struct PlayerLantern; }
+const wxl::atmosphere::PlayerLantern& WxlFrameLantern();
+#endif
 void WxlFinishVisualWorld();
 // Draws the glare and the fog once the liquid pass is done, then fits the stock fog
 // the see-through M2 batches use (TransparentFog). No-op unless it can run this frame.
