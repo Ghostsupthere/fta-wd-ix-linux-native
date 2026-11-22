@@ -34,7 +34,8 @@ constexpr const char* kNames[Count] = {
     "World update smooth facing",
     "Map prepare WMO resources", "Map prepare areas", "Map prepare area queues", "Map prepare area traversal",
     "Map prepare barriers", "Map prepare WMO instances", "Map prepare doodads", "Map prepare entities", "Map prepare preload",
-    "Camera update vehicles", "Camera update target", "Camera update collision", "Camera update liquid"
+    "Camera update vehicles", "Camera update target", "Camera update collision", "Camera update liquid",
+    "Map prepare area replay"
 };
 
 constexpr uint32_t kM2DrawTypes = static_cast<uint32_t>(M2DrawType::Count);

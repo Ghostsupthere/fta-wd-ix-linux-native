@@ -1,4 +1,5 @@
 #include "MapArea.h"
+#include "WoW/Source/WorldClient/TerrainAreaReplay.h"
 #include "WoW/Source/WorldClient/WorldConstants.h"
 #include <cstdlib>
 #include <cstring>
@@ -45,6 +46,7 @@ void CMapArea::PurgeChunk(CMapChunk* chunk) {
 // VERIFY: 3489b6fa manual
 // OFFSET: 0x007C35F0
 void CMapArea::Purge() {
+    TerrainAreaReplay::Invalidate();
     if (this->m_asyncObject) {
         if (!AsyncFile::Cancel(this->m_asyncObject, CMapArea::FreeAsyncObject)) {
             this->m_fileBuffer = nullptr;
@@ -333,6 +335,7 @@ void CMapArea::LoadTextures(char* fileNames, uint32_t fileNamesSize) {
 // VERIFY: 2e3ea90a manual
 // OFFSET: 0x007D6EF0
 void CMapArea::ProcessIffChunks() {
+    TerrainAreaReplay::Invalidate();
     SIffChunk* version = static_cast<SIffChunk*>(this->m_fileBuffer);
     uint8_t* header = reinterpret_cast<uint8_t*>(&version->m_data) + version->m_size + offsetof(SIffChunk, m_data);
 

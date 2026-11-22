@@ -11,6 +11,10 @@
 #endif
 #include <cstring>
 #include <cmath>
+#include <cfenv>
+#include <cstdlib>
+#include <unordered_map>
+#include <vector>
 #include "Engine/Source/Base/Handle.h"
 #include "Engine/Source/Base/ObjectAlloc.h"
 #include "Engine/Source/Base/RCString.h"
@@ -77,6 +81,8 @@
 #include "WoW/Source/WorldClient/MapObjDef.h"
 #include "WoW/Source/WorldClient/MapObjGroup.h"
 #include "WoW/Source/WorldClient/MapRenderChunk.h"
+#include "WoW/Source/WorldClient/SortTable.h"
+#include "WoW/Source/WorldClient/TerrainAreaReplay.h"
 #include "WoW/Source/WorldClient/Types.h"
 #include "WoW/Source/WorldClient/WaterRipple.h"
 #include "WoW/Source/WorldClient/World.h"
@@ -1765,6 +1771,159 @@ void CMap::UpdateBarriers() {
     }
 }
 
+namespace TerrainAreaReplay {
+namespace {
+
+struct TerrainEntry {
+    CMapChunk* chunk;
+    float distance;
+    int bucket;
+};
+
+struct AreaEntries {
+    CiRect rect;
+    std::vector<TerrainEntry> terrain;
+    std::vector<CMapChunk*> wetChunks;
+};
+
+struct View {
+    CiRect streamRect;
+    CiRect frustumRect;
+    C4Plane planes[NUM_PLANES];
+    C4Plane distancePlane;
+    C4Plane bucketPlane;
+    C3Vector eye;
+    C3Vector target;
+    int32_t farCorner;
+    int rounding;
+};
+
+static_assert(sizeof(CiRect) == 4 * sizeof(int32_t));
+static_assert(sizeof(View) == 2 * sizeof(CiRect) + (NUM_PLANES + 2) * 4 * sizeof(float)
+    + 6 * sizeof(float) + sizeof(int32_t) + sizeof(int));
+
+View CaptureView() {
+    View view;
+    view.streamRect = CWorld::gbChunkRect;
+    view.frustumRect = CWorldScene::s_frustumChunkRect;
+    std::memcpy(view.planes, CWorldScene::frustumStack[CWorldScene::frustumIndex].planes, sizeof(view.planes));
+    view.distancePlane = CWorldScene::camPlane;
+    view.bucketPlane = CWorldScene::camPlaneXY;
+    view.eye = CWorldScene::s_activeWorldView;
+    view.target = CWorldScene::camTarget;
+    view.farCorner = CMapChunk::farCornerIndex;
+    view.rounding = std::fegetround();
+    return view;
+}
+
+bool Enabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_TERRAIN_AREA_REPLAY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+
+bool invalidated = true;
+bool haveView = false;
+bool stableView = false;
+int32_t viewFrame = 0;
+View cachedView;
+std::unordered_map<CMapArea*, AreaEntries> areas;
+AreaEntries* current = nullptr;
+
+struct RecordArea {
+    explicit RecordArea(AreaEntries& entries) {
+        current = &entries;
+        recording = true;
+    }
+
+    ~RecordArea() {
+        recording = false;
+        current = nullptr;
+    }
+};
+
+} // namespace
+
+bool recording = false;
+
+void Invalidate() {
+    invalidated = true;
+}
+
+void RecordTerrain(CMapChunk* chunk, int bucket) {
+    current->terrain.push_back({chunk, chunk->m_distToCamera, bucket});
+}
+
+void RecordWetChunk(CMapChunk* chunk) {
+    current->wetChunks.push_back(chunk);
+}
+
+static void Update(CMapArea* area, CiRect& rect, bool addToScene) {
+    if (current) {
+        // A nested update can stream chunks or change the active view. Discard the outer recording.
+        invalidated = true;
+        const bool wasRecording = recording;
+        recording = false;
+        CMap::UpdateArea(addToScene, area, &rect, 0);
+        recording = wasRecording;
+        return;
+    }
+    if (!Enabled() || !addToScene || CMap::bPreload || !area->m_chunkInfo || CWorldScene::frustumIndex != 0) {
+        CMap::UpdateArea(addToScene, area, &rect, 0);
+        return;
+    }
+
+    const View view = CaptureView();
+    const bool viewChanged = !haveView || std::memcmp(&view, &cachedView, sizeof(view)) != 0;
+    if (viewChanged) {
+        haveView = true;
+        stableView = false;
+        cachedView = view;
+    } else if (viewFrame != CWorld::frameCnt) {
+        stableView = true;
+    }
+    viewFrame = CWorld::frameCnt;
+
+    if (invalidated || viewChanged) {
+        areas.clear();
+        invalidated = false;
+    }
+    if (!stableView) {
+        CMap::UpdateArea(addToScene, area, &rect, 0);
+        return;
+    }
+
+    const auto found = areas.find(area);
+    if (found != areas.end() && std::memcmp(&rect, &found->second.rect, sizeof(rect)) == 0) {
+        Profiler::Scope replay(Profiler::UiDetailZone(Profiler::MapPrepareAreaReplay, Profiler::MapPrepareAreaTraversal));
+        for (const TerrainEntry& entry : found->second.terrain) {
+            entry.chunk->m_distToCamera = entry.distance;
+            if (entry.bucket < 64) {
+                CWorldScene::sortTable.m_table[entry.bucket].m_mapChunkList.LinkToTail(entry.chunk);
+            }
+        }
+        for (CMapChunk* wet : found->second.wetChunks) {
+            wet->CullAndBucketChunk();
+        }
+        return;
+    }
+
+    AreaEntries entries;
+    entries.rect = rect;
+    {
+        RecordArea record(entries);
+        CMap::UpdateArea(addToScene, area, &rect, 0);
+    }
+    const View after = CaptureView();
+    if (!invalidated && std::memcmp(&view, &after, sizeof(view)) == 0) {
+        areas.insert_or_assign(area, std::move(entries));
+    }
+}
+
+} // namespace TerrainAreaReplay
+
 // VERIFY: 9eee5402 auto
 // OFFSET: 0x007B4DF0
 void CMap::UpdateArea(int32_t addToScene, CMapArea* area, CiRect* chunkRect, int32_t depth) {
@@ -2119,7 +2278,7 @@ void CMap::PreUpdateAreas(bool addToScene) {
             rect.maxX = area->m_tileChunkIndex.x + 15;
             rect.maxY = area->m_tileChunkIndex.y + 15;
             Profiler::Scope traversal(Profiler::UiDetailZone(Profiler::MapPrepareAreaTraversal, Profiler::MapPrepareAreas));
-            CMap::UpdateArea(addToScene, area, &rect, 0);
+            TerrainAreaReplay::Update(area, rect, addToScene);
         }
     }
 

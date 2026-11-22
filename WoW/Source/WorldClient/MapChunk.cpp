@@ -1,4 +1,5 @@
 #include "MapChunk.h"
+#include "WoW/Source/WorldClient/TerrainAreaReplay.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "WoW/Source/WorldClient/WorldConstants.h"
 #include "WoW/Source/WorldClient/DetailDoodad.h"
@@ -85,6 +86,7 @@ void CMapChunk::GetVertexPosition(int32_t index, C3Vector* pos) {
 // VERIFY: d0968beb manual
 // OFFSET: 0x007C3370
 void CMapChunk::Purge() {
+    TerrainAreaReplay::Invalidate();
     if (this->m_renderChunk) {
         CMap::FreeRenderChunk(this->m_renderChunk);
         this->m_renderChunk = nullptr;
@@ -869,7 +871,13 @@ void CMapChunk::CreateLiquids(bool a3) {
 // VERIFY: 2c9fa8ff manual
 // OFFSET: 0x007C5B20
 void CMapChunk::CullAndBucketChunk() {
-    if (this->m_liquidBounds.t.x < this->m_liquidBounds.b.x || CWorldScene::FrustumCull(&this->m_liquidBounds)) {
+    if (this->m_liquidBounds.t.x < this->m_liquidBounds.b.x) {
+        return;
+    }
+    if (TerrainAreaReplay::recording) {
+        TerrainAreaReplay::RecordWetChunk(this);
+    }
+    if (CWorldScene::FrustumCull(&this->m_liquidBounds)) {
         return;
     }
 
@@ -1018,6 +1026,7 @@ void CMapChunk::CreateRefs(CMapArea* area, uint32_t* mcrfPtr, uint32_t doodadRef
 // VERIFY: 637523f5 manual
 // OFFSET: 0x007C64B0
 void CMapChunk::Create(SIffChunk* headerChunk, bool a3) {
+    TerrainAreaReplay::Invalidate();
     this->m_chunkInfoBeginPtr = reinterpret_cast<uint8_t*>(headerChunk);
     this->ProcessIffChunks(a3);
 

@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstring>
 #include "MapDoodadDef.h"
 #include "WoW/Source/WorldClient/WorldLightingConstants.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
@@ -17,6 +18,7 @@
 #include "WoW/Source/WorldClient/MapObj.h"
 #include "WoW/Source/WorldClient/MapObjDef.h"
 #include "WoW/Source/WorldClient/MapObjGroup.h"
+#include "WoW/Source/WorldClient/TerrainAreaReplay.h"
 #include "WoW/Source/WorldClient/Types.h"
 #include "WoW/Source/WorldClient/World.h"
 #include "WoW/Source/WorldClient/WorldView.h"
@@ -29,7 +31,11 @@
 void CMapDoodadDef::ExtendBounds(CMapDoodadDef* doodadDef, CMapBaseObj* parent) {
     if (parent->m_type & CMapBaseObj::Type_Chunk) {
         CMapChunk* chunk = static_cast<CMapChunk*>(parent);
-        chunk->m_bbox.t.z = doodadDef->m_bbox.t.z < chunk->m_bbox.t.z ? chunk->m_bbox.t.z : doodadDef->m_bbox.t.z;
+        const float top = doodadDef->m_bbox.t.z < chunk->m_bbox.t.z ? chunk->m_bbox.t.z : doodadDef->m_bbox.t.z;
+        if (std::memcmp(&top, &chunk->m_bbox.t.z, sizeof(top)) != 0) {
+            TerrainAreaReplay::Invalidate();
+        }
+        chunk->m_bbox.t.z = top;
     } else if (parent->m_type & CMapBaseObj::Type_MapObjDefGroup) {
         CMapObjDefGroup* group = static_cast<CMapObjDefGroup*>(parent);
         group->m_bbox |= doodadDef->m_bbox;

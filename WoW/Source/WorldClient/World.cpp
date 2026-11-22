@@ -2,6 +2,7 @@
 #include "Engine/Source/Base/Profiler.h"
 #include "WoW/Source/WorldClient/Linux/WxlModernVisuals.h"
 #include "World.h"
+#include "WoW/Source/WorldClient/TerrainAreaReplay.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Common/ComponentCore/WxlEquipmentOwner.h"
@@ -2319,7 +2320,11 @@ void CWorldScene::AddMapChunkToRenderList(CMapChunk* mapChunk, C3Vector* pos) {
     int32_t bucket = 0;
     float distance = pos->y * CWorldScene::camPlaneXY.n.y + pos->z * CWorldScene::camPlaneXY.n.z + pos->x * CWorldScene::camPlaneXY.n.x + CWorldScene::camPlaneXY.d;
 
-    if (distance <= 0.0f || (bucket = CMath::fint_(distance * CBDIVISOR - 0.5f)) < 64) {
+    const bool visible = distance <= 0.0f || (bucket = CMath::fint_(distance * CBDIVISOR - 0.5f)) < 64;
+    if (TerrainAreaReplay::recording) {
+        TerrainAreaReplay::RecordTerrain(mapChunk, visible ? bucket : 64);
+    }
+    if (visible) {
         CWorldScene::sortTable.m_table[bucket].m_mapChunkList.LinkToTail(mapChunk);
     }
 }

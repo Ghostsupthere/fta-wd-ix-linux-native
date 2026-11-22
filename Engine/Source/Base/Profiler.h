@@ -70,6 +70,7 @@ enum Id : uint32_t {
     CameraUpdateTarget,
     CameraUpdateCollision,
     CameraUpdateLiquid,
+    MapPrepareAreaReplay,
     Count
 };
 
