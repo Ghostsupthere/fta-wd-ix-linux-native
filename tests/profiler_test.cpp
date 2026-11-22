@@ -114,6 +114,14 @@ int main() {
                 Profiler::CountDraw(3);
                 {
                     Profiler::Scope update(Profiler::UiDetailZone(Profiler::WorldFrameUpdate, Profiler::UiCallbackWorld));
+                    assert(Profiler::UiDetailZone(Profiler::WorldUpdateMapPreparation, Profiler::WorldUpdateMap)
+                        == Profiler::Count);
+                    Profiler::Scope map(Profiler::UiDetailZone(Profiler::WorldUpdateMap, Profiler::WorldFrameUpdate));
+                    {
+                        Profiler::Scope prepare(Profiler::UiDetailZone(Profiler::WorldUpdateMapPreparation, Profiler::WorldUpdateMap));
+                        Profiler::CountDraw(7);
+                    }
+                    Profiler::CountDraw(9);
                 }
                 {
                     Profiler::Scope names(Profiler::UiDetailZone(Profiler::PlayerNameUpdate, Profiler::UiCallbackWorld));
@@ -141,14 +149,20 @@ int main() {
         assert(s.zones[Profiler::UiCallbackWorld].calls == detailCalls);
         assert(s.zones[Profiler::UiCallbackWorld].selfDraws == detailCalls);
         assert(s.zones[Profiler::WorldFrameUpdate].calls == detailCalls);
+        assert(s.zones[Profiler::WorldFrameUpdate].selfDraws == 0.0);
+        assert(s.zones[Profiler::WorldUpdateMap].calls == detailCalls);
+        assert(s.zones[Profiler::WorldUpdateMap].selfDraws == detailCalls);
+        assert(s.zones[Profiler::WorldUpdateMapPreparation].calls == detailCalls);
+        assert(s.zones[Profiler::WorldUpdateMapPreparation].selfDraws == detailCalls);
+        assert(s.zones[Profiler::WorldUpdateMap].totalMs >= s.zones[Profiler::WorldUpdateMapPreparation].totalMs);
         assert(s.zones[Profiler::PlayerNameUpdate].calls == detailCalls);
         assert(s.zones[Profiler::WorldTextRender].calls == detailCalls);
         assert(s.zones[Profiler::WorldTextRender].selfDraws == detailCalls);
-        assert(s.zones[Profiler::UiRender].selfDraws == (detailCalls ? 0.0 : 4.0));
+        assert(s.zones[Profiler::UiRender].selfDraws == (detailCalls ? 0.0 : 6.0));
         assert(s.zones[Profiler::WorldRender].selfDraws == 1.0);
         assert(s.zones[Profiler::UiCallbackScroll].selfDraws == detailCalls);
         assert(s.zones[Profiler::UiCallbackUnitModel].selfDraws == detailCalls);
-        assert(s.drawCalls == 5.0 && s.triangles == 117.0);
+        assert(s.drawCalls == 7.0 && s.triangles == 133.0);
     }
     return 0;
 }

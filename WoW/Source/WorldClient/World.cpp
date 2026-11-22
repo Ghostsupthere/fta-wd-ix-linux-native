@@ -1546,7 +1546,10 @@ void CWorld::Update(C3Vector* camPos, C3Vector* camTarget, C3Vector* position) {
     }
 
     CWorld::gbChunkRectOld = CWorld::gbChunkRect;
-    World::PrepareAreaOfInterest(*position);
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdateAreaOfInterest, Profiler::WorldUpdateMap));
+        World::PrepareAreaOfInterest(*position);
+    }
 
     int32_t maxX = CWorld::gbChunkRectOld.maxX < CWorld::gbChunkRect.maxX ? CWorld::gbChunkRectOld.maxX : CWorld::gbChunkRect.maxX;
     int32_t maxY = CWorld::gbChunkRectOld.maxY < CWorld::gbChunkRect.maxY ? CWorld::gbChunkRectOld.maxY : CWorld::gbChunkRect.maxY;
@@ -1579,7 +1582,10 @@ void CWorld::Update(C3Vector* camPos, C3Vector* camTarget, C3Vector* position) {
         }
     }
 
-    CWorldScene::Update(camPos, camTarget);
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdateScene, Profiler::WorldUpdateMap));
+        CWorldScene::Update(camPos, camTarget);
+    }
 
     bool prepareAll = true;
     bool preload = false;
@@ -1598,7 +1604,10 @@ void CWorld::Update(C3Vector* camPos, C3Vector* camTarget, C3Vector* position) {
         CMap::bPreload = 1;
     }
 
-    CMap::PrepareUpdate(prepareAll);
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdateMapPreparation, Profiler::WorldUpdateMap));
+        CMap::PrepareUpdate(prepareAll);
+    }
 
     if (preload) {
         CMap::bPreload = 0;

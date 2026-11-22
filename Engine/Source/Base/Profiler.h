@@ -45,6 +45,18 @@ enum Id : uint32_t {
     WorldFrameUpdate, // CGWorldFrame::OnWorldUpdate, inside the world frame callback
     PlayerNameUpdate,
     WorldTextRender,
+    WorldUpdateCamera,
+    WorldUpdateDayNightAndHousing,
+    WorldUpdateAudio,
+    WorldUpdateObjectEffects,
+    WorldUpdatePortraits,
+    WorldUpdateObjectDisplays,
+    WorldUpdateSpells,
+    WorldUpdateMap,
+    WorldUpdateAreaOfInterest,
+    WorldUpdateScene,
+    WorldUpdateMapPreparation,
+    WorldUpdateSmoothFacing,
     Count
 };
 

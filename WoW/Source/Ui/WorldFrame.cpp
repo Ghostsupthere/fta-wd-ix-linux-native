@@ -2073,80 +2073,105 @@ void CGWorldFrame::OnWorldUpdate() {
         CWorldScene::SetCameraTarget(target->m_worldObject, WOWGUID{ target->GetTransportGUID() });
     }
 
-    CVehiclePassenger_C::UpdateAll(FrameTime::s_curTimeMs);
-    CGCamera::UpdateCallback(nullptr, this->m_camera);
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdateCamera, Profiler::WorldFrameUpdate));
+        CVehiclePassenger_C::UpdateAll(FrameTime::s_curTimeMs);
+        CGCamera::UpdateCallback(nullptr, this->m_camera);
+    }
 
     CGCamera* camera = this->m_camera;
     C3Vector camPos = camera->m_position;
     C3Vector forward = camera->Forward();
     C3Vector camTarget = C3Vector(camera->m_position.x + forward.x, camera->m_position.y + forward.y, camera->m_position.z + forward.z);
     this->m_camera->SetupWorldProjection(this->m_viewportDDC);
-    this->UpdateDayNight(elapsedSec);
+
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdateDayNightAndHousing, Profiler::WorldFrameUpdate));
+        this->UpdateDayNight(elapsedSec);
 #if defined(WOWDECOMP_LINUX)
-    WxlHousingUpdate();
+        WxlHousingUpdate();
 #endif
+    }
 
-    if (!this->m_camera->HasModelCamera() && s_listenerAtCharacterVar && s_listenerAtCharacterVar->m_intValue) {
-        CGObject_C* focus = CGObject_C::GetFocusObject();
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdateAudio, Profiler::WorldFrameUpdate));
+        if (!this->m_camera->HasModelCamera() && s_listenerAtCharacterVar && s_listenerAtCharacterVar->m_intValue) {
+            CGObject_C* focus = CGObject_C::GetFocusObject();
 
-        if (focus) {
-            // STATIC: 0x00B743B8
-            static C3Vector s_listenerUp = C3Vector(0.0f, 0.0f, 1.0f);
+            if (focus) {
+                // STATIC: 0x00B743B8
+                static C3Vector s_listenerUp = C3Vector(0.0f, 0.0f, 1.0f);
 
-            C3Vector facing = (focus->m_obj->m_type & TYPE_UNIT) ? GetFacingVector(focus) : this->m_camera->Forward();
+                C3Vector facing = (focus->m_obj->m_type & TYPE_UNIT) ? GetFacingVector(focus) : this->m_camera->Forward();
 
-            // STATIC: 0x00B743B4
-            static CVar* s_listenerBackDist = CVar::Lookup("Sound_ListenerBackDist");
-            // STATIC: 0x00B743B0
-            static CVar* s_listenerUpDist = CVar::Lookup("Sound_ListenerUpDist");
+                // STATIC: 0x00B743B4
+                static CVar* s_listenerBackDist = CVar::Lookup("Sound_ListenerBackDist");
+                // STATIC: 0x00B743B0
+                static CVar* s_listenerUpDist = CVar::Lookup("Sound_ListenerUpDist");
 
-            float backDist = 2.0f;
-            float upDist = 4.0f;
+                float backDist = 2.0f;
+                float upDist = 4.0f;
 
-            if (s_listenerBackDist) {
-                backDist = s_listenerBackDist->m_floatValue;
-            }
+                if (s_listenerBackDist) {
+                    backDist = s_listenerBackDist->m_floatValue;
+                }
 
-            if (s_listenerUpDist) {
-                upDist = s_listenerUpDist->m_floatValue;
-            }
+                if (s_listenerUpDist) {
+                    upDist = s_listenerUpDist->m_floatValue;
+                }
 
-            C3Vector offset = C3Vector(facing.x * backDist, facing.y * backDist, backDist * facing.z);
-            C3Vector listener;
+                C3Vector offset = C3Vector(facing.x * backDist, facing.y * backDist, backDist * facing.z);
+                C3Vector listener;
 
-            if (focus->m_worldModel && (focus->m_worldModel->m_fFlags & 0x8000)) {
-                listener = focus->m_worldModel->GetWorldPosition() - offset;
-                listener.z = listener.z + upDist;
+                if (focus->m_worldModel && (focus->m_worldModel->m_fFlags & 0x8000)) {
+                    listener = focus->m_worldModel->GetWorldPosition() - offset;
+                    listener.z = listener.z + upDist;
+                } else {
+                    C3Vector position = focus->GetPosition();
+                    listener = C3Vector(position.x - offset.x, position.y - offset.y, position.z - offset.z + upDist);
+                }
+
+                SI2::SetListenerAttributes(&listener, &facing, &s_listenerUp, nullptr);
             } else {
-                C3Vector position = focus->GetPosition();
-                listener = C3Vector(position.x - offset.x, position.y - offset.y, position.z - offset.z + upDist);
+                C3Vector up = this->m_camera->Up();
+                C3Vector cameraForward = this->m_camera->Forward();
+                SI2::SetListenerAttributes(&camPos, &cameraForward, &up, nullptr);
             }
-
-            SI2::SetListenerAttributes(&listener, &facing, &s_listenerUp, nullptr);
         } else {
             C3Vector up = this->m_camera->Up();
             C3Vector cameraForward = this->m_camera->Forward();
             SI2::SetListenerAttributes(&camPos, &cameraForward, &up, nullptr);
         }
-    } else {
-        C3Vector up = this->m_camera->Up();
-        C3Vector cameraForward = this->m_camera->Forward();
-        SI2::SetListenerAttributes(&camPos, &cameraForward, &up, nullptr);
     }
 
-    CGObject_C::UpdateAllObjectEffectManagers();
-    UpdatePendingPortraits();
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdateObjectEffects, Profiler::WorldFrameUpdate));
+        CGObject_C::UpdateAllObjectEffectManagers();
+    }
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdatePortraits, Profiler::WorldFrameUpdate));
+        UpdatePendingPortraits();
+    }
     this->MoveToFreeList(&this->m_modelList);
     this->MoveToFreeList(&this->m_hitModelList);
-    ClntObjMgrEnumVisibleObjects(UnitUpdateProc, nullptr);
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdateObjectDisplays, Profiler::WorldFrameUpdate));
+        ClntObjMgrEnumVisibleObjects(UnitUpdateProc, nullptr);
+    }
     World::SetObjectCollisionCallback(ObjectCollisionProc);
-    CEffect::CleanUpStaticLists();
-    CMissile::UpdateStaticLists();
-    Spell_C_ExpireDestLocSpellCasts(FrameTime::s_curTimeMs);
-    Spell_C_UpdateInTransitList();
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdateSpells, Profiler::WorldFrameUpdate));
+        CEffect::CleanUpStaticLists();
+        CMissile::UpdateStaticLists();
+        Spell_C_ExpireDestLocSpellCasts(FrameTime::s_curTimeMs);
+        Spell_C_UpdateInTransitList();
+    }
 
     C3Vector position = (this->m_camera->m_model || !target) ? camPos : target->GetPosition();
-    CWorld::Update(&camPos, &camTarget, &position);
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdateMap, Profiler::WorldFrameUpdate));
+        CWorld::Update(&camPos, &camTarget, &position);
+    }
 
     C44Matrix viewProjection;
     GxXformViewProj(viewProjection);
@@ -2157,8 +2182,11 @@ void CGWorldFrame::OnWorldUpdate() {
     }
 
     ClientUpdateTaxiBenchmarkMode();
-    SI2::UpdateTaxiSounds(elapsedSec);
-    SI2::DSP_MakeDSPsExpire(elapsedSec);
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdateAudio, Profiler::WorldFrameUpdate));
+        SI2::UpdateTaxiSounds(elapsedSec);
+        SI2::DSP_MakeDSPsExpire(elapsedSec);
+    }
 
     CGUnit_C* mover = static_cast<CGUnit_C*>(ClntObjMgrObjectPtr(CGUnit_C::s_activeMover, TYPE_UNIT, __FILE__, __LINE__));
 
@@ -2166,7 +2194,10 @@ void CGWorldFrame::OnWorldUpdate() {
         mover->UpdateMissileTrajectory();
     }
 
-    CGUnit_C::UpdateAllSmoothFacing();
+    {
+        Profiler::Scope profile(Profiler::UiDetailZone(Profiler::WorldUpdateSmoothFacing, Profiler::WorldFrameUpdate));
+        CGUnit_C::UpdateAllSmoothFacing();
+    }
     CheckEventWorldStateUITimerUpdate();
 }
 

@@ -27,7 +27,11 @@ constexpr const char* kNames[Count] = {
     "UI layout", "UI frame updates", "UI OnUpdate scripts", "UI batch build", "UI textures", "UI text", "UI callbacks",
     "UI callback world frame", "UI callback unit model", "UI callback other model", "UI callback minimap",
     "UI callback quest POI", "UI callback scroll", "UI callback movie", "UI callback model effects", "UI callback other",
-    "World frame update", "Player name update", "World text render"
+    "World frame update", "Player name update", "World text render",
+    "World update camera", "World update day-night and housing", "World update audio",
+    "World update object effects", "World update portraits", "World update object displays", "World update spells",
+    "World update map", "World update area of interest", "World update scene", "World update map preparation",
+    "World update smooth facing"
 };
 
 constexpr uint32_t kM2DrawTypes = static_cast<uint32_t>(M2DrawType::Count);
