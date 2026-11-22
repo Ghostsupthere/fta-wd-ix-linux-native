@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Turn Logs/samples.txt (WXL_SAMPLE_PROFILE, see Engine/Source/Base/Profiler.cpp) into a per-function report.
 
-Usage: symbolize-samples.py SAMPLES.txt [--zone NAME] [--top N] [--depth D]
+Usage: symbolize-samples.py SAMPLES.txt [--zone NAME] [--top N] [--depth D] [--inline]
+                            [--module MAPPED_PATH=SYMBOL_FILE]
 
 Samples carry the profiler zone the render thread was in. --zone keeps only that zone (for example "UI render");
-without it every sample counts. Each sample's frames are listed innermost first: the report shows the functions
-at the top of the stack (self time) and, with --depth > 1, the callers above them (inclusive time).
-Addresses are resolved with addr2line against the executable and shared objects named in the file's module map.
+without it every sample counts. The report shows the innermost function (self time) and the first D functions
+after sampler frames are removed (inclusive time). --inline expands inline frames when debug information is present.
+--module reads symbols from a saved build while retaining the address ranges recorded in the sample.
 """
 import argparse
 import collections
+import re
 import subprocess
 import sys
 
@@ -26,7 +28,7 @@ def load(path):
             modules.append((int(parts[1], 16), int(parts[2], 16), int(parts[3], 16), ' '.join(parts[4:])))
         elif parts[0] == 'S':
             samples.append((int(parts[1]), [int(p, 16) for p in parts[2:]]))
-    return None, modules, samples
+    return modules, samples
 
 
 def zone_names(path):
@@ -49,9 +51,20 @@ def main():
     parser.add_argument('samples')
     parser.add_argument('--zone')
     parser.add_argument('--top', type=int, default=30)
-    parser.add_argument('--depth', type=int, default=1)
+    parser.add_argument('--depth', type=int, default=8)
+    parser.add_argument('--inline', action='store_true')
+    parser.add_argument('--module', action='append', default=[], metavar='MAPPED_PATH=SYMBOL_FILE')
     args = parser.parse_args()
-    _, modules, samples = load(args.samples)
+    if args.depth < 1:
+        parser.error('--depth must be positive')
+    modules, samples = load(args.samples)
+    symbol_files = {}
+    mapped_paths = {path for _, _, _, path in modules}
+    for mapping in args.module:
+        path, separator, symbols = mapping.partition('=')
+        if not separator or not symbols or path not in mapped_paths:
+            parser.error(f'expected a recorded module path and symbol file, got {mapping!r}')
+        symbol_files[path] = symbols
     names = zone_names(args.samples)
     by_zone = collections.Counter(names.get(z, 'outside zones' if z < 0 else str(z)) for z, _ in samples)
     print('samples per zone:', dict(by_zone.most_common()))
@@ -73,35 +86,48 @@ def main():
 
     wanted = collections.defaultdict(set)
     for _, frames in samples:
-        for address in frames[:max(args.depth, 1) + 2]:
+        for address in frames:
             path, offset = locate(address)
             if path:
                 wanted[path].add(offset - 1 if offset else offset)  # return addresses point past the call
     resolved = {}
     for path, offsets in wanted.items():
-        ordered = sorted(offsets)
+        command = ['addr2line', '-a', '-f', '-C']
+        if args.inline:
+            command.append('-i')
+        command.extend(['-e', symbol_files.get(path, path)])
         try:
-            out = subprocess.run(['addr2line', '-f', '-C', '-e', path] + [hex(o) for o in ordered],
+            out = subprocess.run(command, input=''.join(f'{o:x}\n' for o in sorted(offsets)),
                                  capture_output=True, text=True, check=True).stdout.splitlines()
-        except (OSError, subprocess.CalledProcessError):
+        except (OSError, subprocess.CalledProcessError) as error:
+            if path in symbol_files:
+                parser.error(f'could not read symbols from {symbol_files[path]!r}: {error}')
             continue
-        for index, offset in enumerate(ordered):
-            function = out[index * 2] if index * 2 < len(out) else '??'
-            resolved[(path, offset)] = function if function != '??' else '%s+0x%x' % (path.rsplit('/', 1)[-1], offset)
+        frames = iter(out)
+        for line in frames:
+            if re.fullmatch(r'0x[0-9a-fA-F]+', line):
+                offset = int(line, 16)
+                resolved[path, offset] = []
+            else:
+                next(frames, None)  # source position
+                if line != '??':
+                    resolved[path, offset].append(line)
 
-    def name(address):
+    def functions(address):
         path, offset = locate(address)
-        return resolved.get((path, offset - 1 if offset else offset), '%x' % address)
+        if path is None:
+            return [f'{address:x}']
+        return resolved.get((path, offset - 1 if offset else offset)) or [f'{path.rsplit("/", 1)[-1]}+0x{offset:x}']
 
     skip = ('__sigaction', '__restore_rt', 'backtrace', '_Unwind', '__GI_')
     self_time, inclusive = collections.Counter(), collections.Counter()
     for _, frames in samples:
-        stack = [name(a) for a in frames]
+        stack = [function for address in frames for function in functions(address)]
         stack = [f for f in stack if not f.startswith(skip) and 'OnSample' not in f]
         if not stack:
             continue
         self_time[stack[0]] += 1
-        for function in set(stack[:max(args.depth, 8)]):
+        for function in dict.fromkeys(stack[:args.depth]):
             inclusive[function] += 1
     total = max(len(samples), 1)
     print('\nself time (innermost function):')
