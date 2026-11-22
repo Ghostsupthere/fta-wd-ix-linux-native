@@ -1499,7 +1499,7 @@ void Renderer::DrawGodRayMask(IDirect3DDevice9* dev, IDirect3DTexture9* depthTex
     dev->SetPixelShader(m_rayMask);
     const Float4 mask[2] = {
         {rays.toLightInView[0], rays.toLightInView[1], rays.toLightInView[2], kRayFalloff},
-        {0.0f, kRayThreshold, 1.0f / m_rayW, 1.0f / m_rayH},
+        {rays.shaftEdges ? 1.0f : 0.0f, kRayThreshold, 1.0f / m_rayW, 1.0f / m_rayH},
     };
     dev->SetPixelShaderConstantF(9, &mask[0].x, 2);
     BindTexture(dev, 0, depthTexture, false);
@@ -1665,6 +1665,7 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
     std::memcpy(godRays.toLightInView, toLightInView, sizeof(toLightInView));
     std::memcpy(godRays.sunPx, sunPx, sizeof(sunPx));
     godRays.strength = rayStrength;
+    godRays.shaftEdges = cfg.shaftEdges;
     std::memcpy(godRays.colour, fog.rayColor, sizeof(godRays.colour));
     godRays.glowToCompensate = cfg.glowCompensation ? in.clientGlowAmount : 0.0f;
 
@@ -1741,8 +1742,9 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
     BindWrappedVolume(dev, 9, m_densityNoise);
     UploadLayerNoise(dev, fog, in.camPos, now);
     const double windPeriod = static_cast<double>(kDensityNoiseSize) / std::max(cfg.noiseScale, 0.001f);
+    const float windSpeed = cfg.noiseWindSpeed * (1.0f + in.fogWindWeather);
     const Float4 variation = {m_densityNoise ? cfg.noiseAmount : 0.0f, cfg.noiseScale,
-                              m_fogWind.Advance(TickSeconds(now), cfg.noiseWindSpeed, windPeriod),
+                              m_fogWind.Advance(TickSeconds(now), windSpeed, windPeriod),
                               fog.authored ? 0.0f : cfg.fogDetailBoost};
     dev->SetPixelShaderConstantF(78, &variation.x, 1);
     BindTexture(dev, 0, depthTexture, false);
@@ -1879,7 +1881,9 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
                     "weights haze=%.2f distance=%.2f wind=%.2f",
                     in.regionalFogArea, in.regionalFogProfile, fog.layers[0].density,
                     fog.layers[kDistanceFogLayer].density, variation.x, variation.y, variation.z, variation.w,
-                    fog.layers[0].densityVariation, fog.layers[kDistanceFogLayer].densityVariation, cfg.noiseWindSpeed);
+                    fog.layers[0].densityVariation, fog.layers[kDistanceFogLayer].densityVariation, windSpeed);
+        if (rays && cfg.shaftEdges)
+            VF_LOG_INFO("fog shafts: four-tap sky coverage in %ux%u mask", m_rayW, m_rayH);
     }
     ++m_frame;
     return true;

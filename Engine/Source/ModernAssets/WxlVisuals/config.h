@@ -57,6 +57,8 @@ struct Config
     float noiseWindSpeed = 0.5f;
     bool classicNoise = true;
     float godRays = 0.0f;
+    bool weatherDrift = false;
+    bool shaftEdges = false;
     bool glowCompensation = true;
     int foreverGlow = 0;
     float colorGrading = 0.0f;

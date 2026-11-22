@@ -73,6 +73,8 @@ namespace wxl::grass::environment
         {"water.foam", 0, 2, 1, false},
         {"water.reflections", 0, 2, 1, false},
         {"water.clarity", 0, 2, 1, false},
+        {"atmosphere.weatherDrift", 0, 1, 0, true},
+        {"atmosphere.shaftEdges", 0, 1, 0, true},
     };
     constexpr size_t kCount = sizeof(kOptions) / sizeof(kOptions[0]);
 
@@ -88,6 +90,8 @@ namespace wxl::grass::environment
         kGlow, kGlowStrength, kWater, kWaterQuality, kWaves,
         kWaveStrength, kWaterRipples, kRippleStrength, kWaterFoam, kWaterReflections,
         kWaterClarity,
+        kWeatherDrift,
+        kShaftEdges,
     };
 
     struct Values

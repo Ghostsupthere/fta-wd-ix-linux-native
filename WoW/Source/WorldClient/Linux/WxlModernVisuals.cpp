@@ -215,6 +215,10 @@ bool CaptureFrame(FrameInputs& frame,bool snapshot=true) {
        dynamic_cast<EffectGlow*>(FFX::s_effect)&&FFX::s_effect->m_cvar&&FFX::s_effect->m_cvar->m_intValue&&std::isfinite(info->m_bands.m_glow))
         frame.clientGlowAmount=std::clamp(info->m_bands.m_glow,0.0f,1.0f);
     frame.mapId=World::QueryMapId();
+    const auto* weather = World::s_weather;
+    frame.fogWindWeather = config.weatherDrift && weather &&
+        (weather->m_rain || weather->m_snow || weather->m_sand) && std::isfinite(weather->m_intensity)
+        ? std::clamp(weather->m_intensity, 0.0f, 1.0f) : 0.0f;
     frame.regionalFogArea = regionalFogArea;
     frame.regionalFogProfile = regionalFogArea >= 0 ? regionalFog.ProfileArea() : 0;
     CaptureNativeInterior(frame.localLights);

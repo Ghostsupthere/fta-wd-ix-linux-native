@@ -140,6 +140,9 @@ Slider("Fog movement (yards/sec)", "atmosphere.wind", 1, 349, 0, 12, .25, "atmos
 Slider("Fog detail size (yards)", "atmosphere.patchSize", 2, 349, 10, 120, 5, "atmosphere.drift",
     "%.0f", "Needs variation above 0. Higher values make broader patches.")
 
+Check("Weather-driven fog movement", "atmosphere.weatherDrift", 1, 0, "atmosphere.drift")
+Check("Refine shaft edges", "atmosphere.shaftEdges", 1, 0, "atmosphere.shafts")
+
 Section("Night and local lighting", 452)
 Check("Outdoor night darkening", "atmosphere.night", 1, 474)
 Check("Night light halos", "atmosphere.glow", 2, 474, nil, "Adds a soft glow around bright scene pixels after dark.")

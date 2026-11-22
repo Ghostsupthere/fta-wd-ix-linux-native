@@ -67,6 +67,7 @@ private:
         float strength = 0.0f;
         float colour[3] = {};
         float glowToCompensate = 0.0f;
+        bool shaftEdges = false;
     };
 
     template <typename Passes>

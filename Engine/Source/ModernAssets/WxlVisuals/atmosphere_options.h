@@ -28,6 +28,8 @@ inline Config ApplyOptions(const Config& base, const env::Values& values)
     config.transparentFog = fog && on(env::kTransparent);
     config.godRays = on(env::kShafts) ? number(env::kShaftStrength) : 0.0f;
     config.interiorAware = fog || config.godRays > 0.0f;
+    config.weatherDrift = on(env::kWeatherDrift);
+    config.shaftEdges = on(env::kShaftEdges);
     const float variation = fog && on(env::kDrift) ? number(env::kVariation) : 0.0f;
     config.noiseAmount = variation * 0.15f;
     config.fogDetailBoost = std::max(0.0f, variation - 1.0f);

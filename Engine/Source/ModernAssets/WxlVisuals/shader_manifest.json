@@ -21,7 +21,7 @@
     "vf_probe.hlsl": "c6318c3d9458afd97ed4644989cafb757df7e57e5507db003a41f264cf5e16b3",
     "vf_ray_blur.hlsl": "64acb157de13fa4fb816d5e5041ec56a4bf357a0e83beb6bdab3fb0a7216a18d",
     "vf_ray_composite.hlsl": "4e736509729cd1b2b317ce01f50c5288cdc17e0f5c2bf6ed359ea333d26718b4",
-    "vf_ray_mask.hlsl": "3aef734b46f9bc98ae640aff3326af6ba1469111b82608f359a2d43ddad0bd56",
+    "vf_ray_mask.hlsl": "2af9d233be77a26d15bdf7b4cff5b0c1774c0e65347e61f49bd1d565c991a069",
     "vf_sample_split.hlsli": "fa157fa549a4677a20b52c4ea77caabc475e4c26802313db9ef13107792d3ae9",
     "vf_silhouette_mask.hlsl": "3ab1e6005f1e3f48e59f460c53616761c806a030bf8fbafb64f85a2cda50ccf7",
     "vf_temporal.hlsl": "d23010218a9767f99f8f2be61cfd0da545a08b5d75cae476acf156ca97f595c2",
@@ -364,8 +364,8 @@
       "source": "vf_ray_mask.hlsl",
       "profile": "ps_3_0",
       "defines": [],
-      "bytecode_sha256": "896d5f6bfe343466018232da72909f28290bf6e79b588c56d3356c4b556176ac",
-      "bytecode_bytes": 1108
+      "bytecode_sha256": "2a36c64e96cfbfa6257f83f08581ae24c455a882c8e107d8155ea4c9f5f54126",
+      "bytecode_bytes": 1748
     },
     "ps_silhouette_mask": {
       "source": "vf_silhouette_mask.hlsl",

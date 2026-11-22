@@ -32,6 +32,7 @@ struct FrameInputs
     float clientGlowAmount;
     bool inLiquid;
     int mapId;
+    float fogWindWeather = 0;
     int regionalFogArea = -1;
     int regionalFogProfile = 0;
     LightParamsSelection lightParams;
