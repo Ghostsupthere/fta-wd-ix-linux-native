@@ -135,7 +135,6 @@ Slider("Ground mist strength", "atmosphere.mistStrength", 1, 299, 0, 2, .05, "at
 Slider("Fog variation", "atmosphere.variation", 2, 299, 0, 2, .05, "atmosphere.drift")
 Slider("Fog movement (yards/sec)", "atmosphere.wind", 1, 349, 0, 12, .25, "atmosphere.drift")
 Slider("Fog detail size (yards)", "atmosphere.patchSize", 2, 349, 10, 120, 5, "atmosphere.drift", "%.0f")
-Slider("Atmosphere quality", "atmosphere.quality", 1, 399, 1, 3, 1, nil, "%.0f", "Fog sampling detail and cost. 1: quarter-resolution fog, 16 steps (fastest, about 1.5 ms cheaper than 2 at 3440x1440). 2: half resolution, 24 steps. 3: half resolution, 32 steps. Fog is smooth, so the difference shows mainly at silhouettes such as tree edges against the sky.")
 
 Section("Night and local lighting", 452)
 Check("Outdoor night darkening", "atmosphere.night", 1, 474)

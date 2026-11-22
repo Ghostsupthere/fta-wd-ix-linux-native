@@ -115,6 +115,8 @@ void Configure() {
 #undef SELECT
     selection.fogDensityScale=WxlProfileNumber("WXL_FOG_DENSITY_SCALE",0.5f,0.0f,2.0f);
     ApplyVisualSelection(config,selection);
+    // Quarter-resolution fog only: quality 2 and 3 cost 1-2 ms more for no visible gain, so the profile's Quality is ignored.
+    config.quality=1;
     baseline = config;
     // The FTA profile keeps the client's own splash and wake sprites (the selection
     // policy forces WaterClientSplashes on); modern ripples are added to them.

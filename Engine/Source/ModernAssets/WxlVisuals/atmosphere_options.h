@@ -15,7 +15,9 @@ inline Config ApplyOptions(const Config& base, const env::Values& values)
 
     Config config = base;
     const bool fog = on(env::kFog) && number(env::kDensity) > 0;
-    config.quality = static_cast<int>(values.v[env::kQuality]);
+    // The fog always marches at quarter resolution (quality 1): the higher levels cost 1-2 ms and look the same.
+    // The saved atmosphere.quality value is ignored.
+    config.quality = 1;
     config.density = fog ? 1.0f : 0.0f;
     config.fogDensityScale = number(env::kDensity);
     config.haze = fog ? 1.0f : 0.0f;
