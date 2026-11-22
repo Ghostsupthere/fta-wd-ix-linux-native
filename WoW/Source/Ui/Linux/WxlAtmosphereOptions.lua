@@ -4,11 +4,11 @@ local panel = CreateFrame("Frame", "WXLNativeAtmospherePanel", InterfaceOptionsF
 panel.name = "Atmosphere & Water"
 panel:Hide()
 
-local scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+local scroll = CreateFrame("ScrollFrame", "WXLNativeAtmosphereScroll", panel, "UIPanelScrollFrameTemplate")
 scroll:SetPoint("TOPLEFT", 12, -10)
 scroll:SetPoint("BOTTOMRIGHT", -30, 12)
 local content = CreateFrame("Frame", nil, scroll)
-content:SetSize(540, 1000)
+content:SetSize(330, 1000)
 scroll:SetScrollChild(content)
 
 local title = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
@@ -68,14 +68,20 @@ local function Change(key, value)
     end
     Synchronize()
 end
-local function Section(label, y)
+local flow = 60
+local function Section(label)
+    flow = flow + 10
+    local y = flow
+    flow = flow + 24
     local heading = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     heading:SetPoint("TOPLEFT", 4, -y)
     heading:SetText(label)
 end
-local function Check(label, key, col, y, parent, help)
+local function Check(label, key, _, _, parent, help)
+    local y = flow
+    flow = flow + 26
     local frame = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
-    frame:SetPoint("TOPLEFT", col == 1 and 2 or 269, -y)
+    frame:SetPoint("TOPLEFT", 2, -y)
     local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     text:SetPoint("LEFT", frame, "RIGHT", 1, 0)
     text:SetText(label)
@@ -88,11 +94,13 @@ local function Check(label, key, col, y, parent, help)
     frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
     controls[#controls + 1] = {frame=frame, key=key, parent=parent}
 end
-local function Slider(label, key, col, y, low, high, step, parent, format, help)
+local function Slider(label, key, _, _, low, high, step, parent, format, help)
+    local y = flow + 16
+    flow = flow + 46
     local name = panel:GetName() .. "Slider" .. (#controls + 1)
     local frame = CreateFrame("Slider", name, content, "OptionsSliderTemplate")
-    frame:SetPoint("TOPLEFT", col == 1 and 8 or 275, -y)
-    frame:SetWidth(217)
+    frame:SetPoint("TOPLEFT", 8, -y)
+    frame:SetWidth(210)
     frame:SetMinMaxValues(low, high)
     frame:SetValueStep(step)
     _G[name .. "Text"]:SetText(label)
@@ -150,7 +158,8 @@ Slider("Water clarity", "water.clarity", 1, 900, 0, 2, .05, "water.modern")
 
 local restore = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
 restore:SetSize(165, 24)
-restore:SetPoint("TOPLEFT", 5, -952)
+restore:SetPoint("TOPLEFT", 5, -(flow + 12))
+content:SetHeight(flow + 56)
 restore:SetText("Restore page defaults")
 local function Defaults()
     for _, entry in ipairs(controls) do
