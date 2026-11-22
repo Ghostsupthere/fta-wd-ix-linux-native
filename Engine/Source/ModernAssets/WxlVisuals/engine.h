@@ -9,6 +9,8 @@
 
 #include <cstdint>
 
+namespace wxl::atmosphere { class GroundFloor; }
+
 struct FrameInputs
 {
     float cameraRelativeView[16];
@@ -32,6 +34,7 @@ struct FrameInputs
     int mapId;
     LightParamsSelection lightParams;
     LocalLightInputs localLights;
+    const wxl::atmosphere::GroundFloor* groundFloor = nullptr;
 };
 
 constexpr int kSkyColorCount = 6;

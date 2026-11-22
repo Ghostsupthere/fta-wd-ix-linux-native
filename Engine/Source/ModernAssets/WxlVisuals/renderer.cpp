@@ -7,6 +7,7 @@
 
 #include "fog_data.h"
 #include "fog_model.h"
+#include "ground_floor.h"
 #include "fullscreen_triangle.h"
 #include "noise_volume.h"
 #include "log.h"
@@ -389,6 +390,10 @@ void Renderer::ReleaseDefaultPool()
     SafeRelease(m_rays[1]);
     SafeRelease(m_sceneCopy);
     SafeRelease(m_localLightData);
+    SafeRelease(m_groundFloor);
+    m_groundFloorVersion = 0;
+    m_groundFloorUnavailable = false;
+    m_prevGroundFloor = false;
     SafeRelease(m_densityNoise);
     SafeRelease(m_authoredNoise);
     DropPendingDepthProbe();
@@ -978,6 +983,37 @@ void Renderer::BindWrappedVolume(IDirect3DDevice9* dev, DWORD stage, IDirect3DVo
     dev->SetSamplerState(stage, D3DSAMP_ADDRESSW, D3DTADDRESS_WRAP);
 }
 
+bool Renderer::UploadGroundFloor(IDirect3DDevice9* dev, const wxl::atmosphere::GroundFloor& floor)
+{
+    using wxl::atmosphere::FloorTexel;
+    using wxl::atmosphere::GroundFloor;
+    static_assert(sizeof(FloorTexel) == 4 * sizeof(float), "one RGBA32F texel");
+
+    if (m_groundFloorUnavailable)
+        return false;
+    if (!m_groundFloor && FAILED(dev->CreateTexture(GroundFloor::Side, GroundFloor::Side, 1, D3DUSAGE_DYNAMIC,
+            D3DFMT_A32B32G32R32F, D3DPOOL_DEFAULT, &m_groundFloor, nullptr)))
+    {
+        m_groundFloorUnavailable = true;
+        VF_LOG_ERROR("ground mist: could not create the resident floor texture");
+        return false;
+    }
+    if (m_groundFloorVersion == floor.Version())
+        return true;
+
+    D3DLOCKED_RECT locked = {};
+    if (FAILED(m_groundFloor->LockRect(0, &locked, nullptr, D3DLOCK_DISCARD)))
+        return false;
+    constexpr size_t rowBytes = GroundFloor::Side * sizeof(FloorTexel);
+    auto* destination = static_cast<unsigned char*>(locked.pBits);
+    for (int row = 0; row < GroundFloor::Side; ++row)
+        std::memcpy(destination + row * locked.Pitch, floor.Texels() + row * GroundFloor::Side, rowBytes);
+    if (FAILED(m_groundFloor->UnlockRect(0)))
+        return false;
+    m_groundFloorVersion = floor.Version();
+    return true;
+}
+
 FogParams Renderer::DrawableFog(IDirect3DDevice9* dev, const FogParams& fog)
 {
     if (!AnyLayerNoise(fog))
@@ -1340,8 +1376,21 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
     AuthoredFog authored = {};
     const bool hasAuthored =
         cfg.dataMode == 1 && GlobalFogData().Resolve(in.mapId, in.camPos, in.dayFraction, in.lightParams, authored);
-    const FogParams fog = DrawableFog(dev, FogParamsFor(in, cfg, hasAuthored ? &authored : nullptr));
+    FogParams fog = DrawableFog(dev, FogParamsFor(in, cfg, hasAuthored ? &authored : nullptr));
     const bool samplesNoise = AnyLayerNoise(fog);
+    float floorConstants[4] = {};
+    const bool usesGroundFloor = !fog.authored && fog.layers[1].density > 0 && in.groundFloor &&
+                                 UploadGroundFloor(dev, *in.groundFloor);
+    if (usesGroundFloor)
+    {
+        using wxl::atmosphere::GroundFloor;
+        // The shader supplies a terrain-relative vertical profile for this layer.
+        fog.layers[1].upperFalloff = 0;
+        in.groundFloor->CameraUV(in.camPos, floorConstants);
+        floorConstants[2] = 1.0f / (GroundFloor::Side * GroundFloor::CellYards);
+        // Keep mist through the day while making it denser near sunrise and sunset.
+        floorConstants[3] = 1.0f + 0.5f * std::exp(-8.0f * std::abs(in.toLight[2]));
+    }
     LogLightChange(in, authored, hasAuthored);
     const float* proj = in.glProjection;
     const WorldDepthMapping worldDepth = MapWorldDepth(proj, vp);
@@ -1372,6 +1421,7 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
     const float forwardDot = worldToView[2] * m_prevWorldToView[2] +
                              worldToView[6] * m_prevWorldToView[6] + worldToView[10] * m_prevWorldToView[10];
     const bool historyValid = m_historyValid && cfg.temporal > 0.0f && m_prevScale == scale &&
+                              usesGroundFloor == m_prevGroundFloor &&
                               SameFogSettings(cfg, m_prevConfig) && in.mapId == m_prevMap &&
                               in.lightParams.screenEffectSlot == m_prevLightSlot &&
                               forwardDot > kHistoryMinForwardDot &&
@@ -1473,6 +1523,9 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
     dev->SetPixelShader(m_drawnMarch);
     dev->SetPixelShaderConstantF(53, &localControl.x, 1);
     BindTexture(dev, 8, m_localLightData, false);
+    dev->SetPixelShaderConstantF(79, floorConstants, 1);
+    if (usesGroundFloor)
+        BindTexture(dev, 11, m_groundFloor, true);
     if (cfg.noiseAmount > 0.0f && !m_densityNoise)
         CreateDensityNoise(dev, &m_densityNoise);
     BindWrappedVolume(dev, 9, m_densityNoise);
@@ -1490,7 +1543,7 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
     }
 
     m_adaptiveLightingHistory =
-        pointLightCount > 0 || m_prevLocalLightCount > 0 || cfg.noiseAmount > 0.0f || samplesNoise;
+        pointLightCount > 0 || m_prevLocalLightCount > 0 || cfg.noiseAmount > 0.0f || samplesNoise || usesGroundFloor;
     const bool temporalFiltering = cfg.temporal > 0.0f;
     IDirect3DTexture9* const fogResult =
         temporalFiltering ? FilterWithHistory(dev, depthTexture, reproj, historyValid, cfg.temporal) : m_marchTarget;
@@ -1565,7 +1618,12 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
         m_gpuTimer.End();
     m_timerComposite.End();
     if (pass == FogPass::BeforeTransparents)
+    {
+        // Stock linear fog cannot describe the thin, terrain-relative sheet.
+        if (usesGroundFloor)
+            fog.layers[1].density = 0;
         m_stockFogFit = FitStockFog(fog, in, {composite[0].x, composite[2].w, pointLightCount, cfg.localLightPhase});
+    }
 
     if (DepthProbeDue(now))
     {
@@ -1583,6 +1641,7 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
     m_prevMap = in.mapId;
     m_prevLightSlot = in.lightParams.screenEffectSlot;
     m_prevLocalLightCount = pointLightCount;
+    m_prevGroundFloor = usesGroundFloor;
     m_prevTicks = now;
     m_historyValid = temporalFiltering;
     // WXL_FOG_TRACE=1: one line per 300 frames with the pass's own GPU time and the choices that drive its cost,
@@ -1601,10 +1660,10 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
             VF_LOG_INFO("fog trace stages: %s; %s; %s", gpuTime, stage[0], stage[1]);
         }
         VF_LOG_INFO("fog trace %.1fs frame %u: %s | lights %u noise %d quality %d march 1/%u split %d blend %s rays %.2f "
-                    "scene copy %d",
+                    "scene copy %d ground floor %d",
                     TickSeconds(now), m_frame, gpuTime[0] ? gpuTime : "gpu timing unavailable", pointLightCount,
                     samplesNoise ? 1 : 0, cfg.quality, scale, splitSamples ? 1 : 0, FogBlendName(blend),
-                    raysNow ? rayStrength : 0.0f, sceneBlend ? 1 : 0);
+                    raysNow ? rayStrength : 0.0f, sceneBlend ? 1 : 0, usesGroundFloor ? 1 : 0);
     }
     ++m_frame;
     return true;

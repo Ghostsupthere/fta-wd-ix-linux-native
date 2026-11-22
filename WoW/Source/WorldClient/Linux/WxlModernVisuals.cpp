@@ -44,6 +44,8 @@
 #include "WoW/Source/Object/ObjectClient/Player_C.h"
 #include "WoW/Source/Ui/GameUI.h"
 #include "WoW/Source/WorldClient/MapWeather.h"
+#include "WoW/Source/WorldClient/Map.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/ground_floor.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -64,6 +66,10 @@ Config selectedConfig;
 namespace env = wxl::grass::environment;
 env::Values options;
 wxl::atmosphere::RegionalFog regionalFog;
+wxl::atmosphere::GroundFloor groundFloor;
+uint64_t floorFrame = 0;
+double floorMs = 0, floorMaxMs = 0;
+unsigned floorFrames = 0, floorProbes = 0, floorMisses = 0;
 bool optionsChanged = true;
 const char* visualStatus = "Waiting for a world frame";
 DNFogInfo originalFog;
@@ -324,6 +330,42 @@ void DisarmTransparentFog() {
     NativeVisualHooks::m2BatchFog=nullptr;
     fogComposited=false;glareDrawnEarly=false;stockFit={};
 }
+bool CaptureResidentFloor(int map, float x, float y, wxl::atmosphere::FloorSample& sample) {
+    int32_t waterType;
+    if (!CMap::QueryResidentFloor(map, x, y, sample.height, waterType))
+        return false;
+    using wxl::atmosphere::FloorSurface;
+    if (waterType != 0) {
+        const auto* type = g_liquidTypeDB.GetRecord(waterType);
+        sample.surface = type && type->m_soundBank == kLiquidSoundBankOcean ? FloorSurface::Sea : FloorSurface::FreshWater;
+    }
+    return true;
+}
+
+void PrepareGroundMist(FrameInputs& frame) {
+    if (config.groundFog <= 0 || config.density <= 0 || config.fogDensityScale <= 0 ||
+        frame.inLiquid || frame.localLights.cameraInterior || CMap::bDungeon)
+        return;
+    if (floorFrame != frameNumber) {
+        floorFrame = frameNumber;
+        const double began = NowMs();
+        const auto stats = groundFloor.Update(frame.mapId, frame.camPos, began * 0.001, CaptureResidentFloor);
+        const double elapsed = NowMs() - began;
+        floorMs += elapsed;
+        floorMaxMs = std::max(floorMaxMs, elapsed);
+        floorProbes += stats.probes;
+        floorMisses += stats.misses;
+        if (++floorFrames == 300) {
+            VF_LOG_INFO("ground mist floor: cpu mean %.4f ms max %.4f ms, probes=%u misses=%u known=%u/1024",
+                        floorMs / floorFrames, floorMaxMs, floorProbes, floorMisses, groundFloor.Known());
+            floorMs = floorMaxMs = 0;
+            floorFrames = floorProbes = floorMisses = 0;
+        }
+    }
+    if (groundFloor.HasGrid())
+        frame.groundFloor = &groundFloor;
+}
+
 void RestoreWaterDepthWrite() {
     NativeVisualHooks::waterDepthWriteOverride=false;
     if(auto* gx=Backend();gx&&device)device->SetRenderState(D3DRS_ZWRITEENABLE,gx->m_deviceStates[CGxDeviceD3d9Ex::Ds_ZWriteEnable]);
@@ -441,6 +483,7 @@ void WxlBeginTransparentFog() {
     if(!CaptureFrame(frame)||frame.inLiquid){idle("the camera frame is unavailable or under water");return;}
     D3DVIEWPORT9 viewport={};device->GetViewport(&viewport);
     if(!atmosphere.ReadyToRender(device,Depth(),viewport)){idle(atmosphere.LastSkipReason());return;}
+    PrepareGroundMist(frame);
     // The glare is drawn first so its occlusion query reads the finished depth; the
     // frame then skips its own glare call.
     DayNight::RenderGlares();glareDrawnEarly=true;
@@ -466,6 +509,7 @@ void WxlFinishVisualWorld() {
         NativeVisualHooks::m2BatchFog=nullptr;
         if(!atmosphere.RenderGodRaysAfterWorld(device,Depth()))VF_LOG_ERROR("native god rays after the world skipped: %s",atmosphere.LastSkipReason());
     } else if(!atmosphereFailed&&VisualFogEnabled(config)&&CaptureFrame(frame)){
+        PrepareGroundMist(frame);
         const bool rendered=atmosphere.Render(device,Depth(),frame,config);
         if(rendered)atmosphere.RenderGodRaysAfterWorld(device,Depth());
         else {atmosphereFailed=true;VF_LOG_ERROR("native atmosphere disabled until device rebuild: %s",atmosphere.LastSkipReason());}

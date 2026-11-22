@@ -101,6 +101,7 @@ private:
                          const float* viewToWorld, const float* toLightInView, const float* sunPx, float rayStrength);
     void BindTexture(IDirect3DDevice9* dev, DWORD stage, IDirect3DBaseTexture9* tex, bool linear);
     void BindWrappedVolume(IDirect3DDevice9* dev, DWORD stage, IDirect3DVolumeTexture9* volume);
+    bool UploadGroundFloor(IDirect3DDevice9* dev, const wxl::atmosphere::GroundFloor& floor);
     FogParams DrawableFog(IDirect3DDevice9* dev, const FogParams& fog);
     void UploadLayerNoise(IDirect3DDevice9* dev, const FogParams& fog, const float* camera, long long now);
     bool RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDirect3DSurface9* target,
@@ -140,6 +141,10 @@ private:
     IDirect3DTexture9* m_rays[2] = {};
     IDirect3DTexture9* m_sceneCopy = nullptr;
     IDirect3DTexture9* m_localLightData = nullptr;
+    IDirect3DTexture9* m_groundFloor = nullptr;
+    uint64_t m_groundFloorVersion = 0;
+    bool m_groundFloorUnavailable = false;
+    bool m_prevGroundFloor = false;
     IDirect3DVolumeTexture9* m_densityNoise = nullptr;
     IDirect3DVolumeTexture9* m_authoredNoise = nullptr;
     AuthoredNoiseScroll m_noiseScroll;

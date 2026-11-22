@@ -21,6 +21,8 @@ float4 cMarch : register(c11);
 float4 cLayers[kFogLayers * kRegistersPerLayer] : register(c12);
 
 sampler2D sDepth : register(s0);
+sampler2D sGroundFloor : register(s11);
+float4 cGroundFloor : register(c79);
 
 struct FogLayer
 {
@@ -166,6 +168,22 @@ float WeightedVariation(float variation, float weight)
     return kSamplesAuthoredNoise ? lerp(1, variation, weight) : variation;
 }
 
+float GroundMistProfile(MarchRay ray, float sampleDistance)
+{
+    float2 uv = cGroundFloor.xy + ray.directionWorld.xy * (sampleDistance * cGroundFloor.z);
+    float edge = saturate((0.5 - max(abs(uv.x - 0.5), abs(uv.y - 0.5))) * 16);
+    [branch] if (edge <= 0)
+        return 0;
+
+    float4 floor = tex2Dlod(sGroundFloor, float4(uv, 0, 0));
+    float weight = floor.w;
+    // Evaluate the profile in premultiplied space to interpolate across unavailable cells.
+    float z = (ray.cameraHeight + ray.directionWorld.z * sampleDistance) * weight - floor.x;
+    float top = 3 * weight + 2 * floor.y - floor.z;
+    float sheet = saturate(1 - z / max(top, 1e-5));
+    return sheet * sheet * (z >= 0 ? 1 : 0) * edge * cGroundFloor.w * (weight + 0.35 * floor.y);
+}
+
 float DensityProfile(FogLayer layer, MarchRay ray, float distanceAlongRay, float variation)
 {
     float density = DistanceCurve(layer, distanceAlongRay) *
@@ -247,7 +265,8 @@ void AccumulateLayers(float4 noiseDensities, float cosToLight, float skyMask, fl
         [loop] for (int j = 0; j < kFogLayers; j++)
         {
             FogLayer layer = LoadFogLayer(j);
-            float noiseDensity = kSamplesAuthoredNoise ? dot(noiseDensities, j == int4(0, 1, 2, 3) ? 1 : 0) : 1;
+            float noiseDensity = kSamplesAuthoredNoise ? dot(noiseDensities, j == int4(0, 1, 2, 3) ? 1 : 0)
+                                                       : (j == 1 ? noiseDensities.y : 1);
             AccumulateLayer(layer, j, noiseDensity, cosToLight, SkyDensityScale(layer, skyMask, upward), stepStart,
                             stepEnd, jitter, ray, stepVariation, radiance, opticalDepth);
         }
@@ -305,6 +324,10 @@ float4 IntegrateFogAtDepth(float2 pixel, float depth, float jitter)
         float3 stepRadiance = 0;
         float stepOpticalDepth = 0;
         float4 noiseDensities = LayerNoiseDensities(StepSamplePosition(ray, stepStart, stepEnd, jitter));
+        // The derived mist layer occupies slot 1. Feed the terrain profile to
+        // both celestial and local scattering through its per-step weight.
+        [branch] if (!kSamplesAuthoredNoise && cGroundFloor.z > 0)
+            noiseDensities.y = GroundMistProfile(ray, lerp(max(stepStart, cLayers[6].x), stepEnd, jitter));
         AccumulateLayers(noiseDensities, cosToLight, skyMask, upward, stepStart, stepEnd, jitter, ray, stepRadiance,
                          stepOpticalDepth);
         [branch] if (kMarchesLocalLights && lightCoverage.nextEndpoint <= stepStart)

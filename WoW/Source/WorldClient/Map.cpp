@@ -5924,6 +5924,53 @@ void CMap::VectorIntersectMapObjs(CMapChunk* chunk, const C3Vector& start, const
     }
 }
 
+bool CMap::QueryResidentFloor(int32_t map, float x, float y, float& height, int32_t& waterType) {
+    if (!bActive || bDungeon || map != s_mapId ||
+        !(std::abs(x) < HALF_WORLD_SIZE - 1.0f) || !(std::abs(y) < HALF_WORLD_SIZE - 1.0f))
+        return false;
+
+    // Use the same tile orientation and surface interpolation as QueryHeight.
+    const float gridY = (HALF_WORLD_SIZE - y) * OO_COORD_TO_SUBCHUNK;
+    const float gridX = (HALF_WORLD_SIZE - x) * OO_COORD_TO_SUBCHUNK;
+    const int32_t column = CMath::fint_(gridY - 0.5f);
+    const int32_t row = CMath::fint_(gridX - 0.5f);
+    const auto areaX = static_cast<unsigned>(column) >> 7;
+    const auto areaY = static_cast<unsigned>(row) >> 7;
+    if (areaX >= 64 || areaY >= 64)
+        return false;
+    CMapArea* area = GetLoadedArea(areaX, areaY);
+    if (!area)
+        return false;
+    CMapChunk* chunk = area->m_mapChunks[((column >> 3) & 15) + 16 * ((row >> 3) & 15)];
+    if (!chunk || !chunk->m_bLoaded || !chunk->m_header || !chunk->m_height)
+        return false;
+
+    C3Vector position(x, y, 0);
+    bool found = GetHeightTerrain(chunk, position, column, row, &height) && std::isfinite(height);
+    waterType = 0;
+    const C2iVector tile{column & 7, row & 7};
+    const C2Vector fraction(gridY - column, gridX - row);
+    unsigned layers = 0;
+    for (auto* liquid = chunk->m_liquidChunkLinkList.Head(); liquid;
+         liquid = chunk->m_liquidChunkLinkList.Next(liquid)) {
+        if (++layers > 8)
+            return false;
+        if (!liquid->m_vertexData || liquid->m_type <= 0 || !liquid->TileExists(tile.x, tile.y))
+            continue;
+        const auto* type = g_liquidTypeDB.GetRecord(liquid->m_type);
+        const auto* material = type ? g_liquidMaterialDB.GetRecord(type->m_materialID) : nullptr;
+        if (!material || (material->m_lvf != 0 && material->m_lvf != 2))
+            continue;
+        float surface;
+        if (liquid->GetHeight(fraction, tile, surface) && std::isfinite(surface) && (!found || surface > height)) {
+            height = surface;
+            waterType = liquid->m_type;
+            found = true;
+        }
+    }
+    return found;
+}
+
 // VERIFY: c6ec57f9 manual
 // OFFSET: 0x007ADE10
 bool CMap::QueryHeight(const C3Vector& position, float range, float* height) {
