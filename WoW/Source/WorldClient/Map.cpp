@@ -1819,7 +1819,7 @@ View CaptureView() {
 bool Enabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("WXL_TERRAIN_AREA_REPLAY");
-        return value && std::strcmp(value, "1") == 0;
+        return !value || std::strcmp(value, "0") != 0;
     }();
     return enabled;
 }

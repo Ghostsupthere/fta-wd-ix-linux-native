@@ -22,6 +22,10 @@ with tempfile.TemporaryDirectory(prefix="terrain-area-replay-") as work:
         "-std=c++17", "-O2", "-UNDEBUG", "-Wall", "-Wextra", "-Werror",
         "-I", str(root), "-I", str(work), str(here / "test.cpp"), "-o", str(binary),
     ], check=True)
-    for setting in ("0", "1"):
-        subprocess.run([str(binary), setting], check=True,
-                       env={**os.environ, "WXL_TERRAIN_AREA_REPLAY": setting})
+    for setting, expected in ((None, "1"), ("0", "0"), ("1", "1")):
+        env = os.environ.copy()
+        if setting is None:
+            env.pop("WXL_TERRAIN_AREA_REPLAY", None)
+        else:
+            env["WXL_TERRAIN_AREA_REPLAY"] = setting
+        subprocess.run([str(binary), expected], check=True, env=env)
