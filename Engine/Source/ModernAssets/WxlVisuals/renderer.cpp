@@ -1386,10 +1386,15 @@ bool Renderer::RenderPasses(IDirect3DDevice9* dev, const SceneDepth& depth, IDir
         using wxl::atmosphere::GroundFloor;
         // The shader supplies a terrain-relative vertical profile for this layer.
         fog.layers[1].upperFalloff = 0;
+        // The mist step applies its own amplified noise weight to both scattering paths.
+        fog.layers[1].densityVariation = 0;
         in.groundFloor->CameraUV(in.camPos, floorConstants);
         floorConstants[2] = 1.0f / (GroundFloor::Side * GroundFloor::CellYards);
-        // Keep mist through the day while making it denser near sunrise and sunset.
-        floorConstants[3] = 1.0f + 0.5f * std::exp(-8.0f * std::abs(in.toLight[2]));
+        // The base layer already scales linearly with strength. Give the outdoor sheet
+        // more range at the high end, with the same sunrise and sunset boost.
+        const float strength = std::clamp(cfg.groundFog, 0.0f, 2.0f);
+        const float twilight = 1.0f + 0.5f * std::exp(-8.0f * std::abs(in.toLight[2]));
+        floorConstants[3] = (1.5f + 0.75f * strength) * twilight;
     }
     LogLightChange(in, authored, hasAuthored);
     const float* proj = in.glProjection;

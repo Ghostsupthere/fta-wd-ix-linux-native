@@ -179,9 +179,11 @@ float GroundMistProfile(MarchRay ray, float sampleDistance)
     float weight = floor.w;
     // Evaluate the profile in premultiplied space to interpolate across unavailable cells.
     float z = (ray.cameraHeight + ray.directionWorld.z * sampleDistance) * weight - floor.x;
-    float top = 3 * weight + 2 * floor.y - floor.z;
-    float sheet = saturate(1 - z / max(top, 1e-5));
-    return sheet * sheet * (z >= 0 ? 1 : 0) * edge * cGroundFloor.w * (weight + 0.35 * floor.y);
+    float top = 8 * weight + 2 * floor.y - 2 * floor.z;
+    float relativeHeight = saturate(z / max(top, 1e-5));
+    // Fade exponentially, then ease out to zero over the top half of the sheet.
+    float sheet = exp2(-1.5 * relativeHeight) * saturate(2 * (1 - relativeHeight));
+    return sheet * (z >= 0 ? 1 : 0) * edge * cGroundFloor.w * (weight + 0.35 * floor.y);
 }
 
 float DensityProfile(FogLayer layer, MarchRay ray, float distanceAlongRay, float variation)
@@ -327,7 +329,12 @@ float4 IntegrateFogAtDepth(float2 pixel, float depth, float jitter)
         // The derived mist layer occupies slot 1. Feed the terrain profile to
         // both celestial and local scattering through its per-step weight.
         [branch] if (!kSamplesAuthoredNoise && cGroundFloor.z > 0)
-            noiseDensities.y = GroundMistProfile(ray, lerp(max(stepStart, cLayers[6].x), stepEnd, jitter));
+        {
+            float distance = lerp(max(stepStart, cLayers[6].x), stepEnd, jitter);
+            noiseDensities.y = GroundMistProfile(ray, distance);
+            [branch] if (noiseDensities.y > 0 && cDensityVariation.x > 0)
+                noiseDensities.y *= max(0, 1 + 2.5 * (DensityVariationAlongRay(ray, distance) - 1));
+        }
         AccumulateLayers(noiseDensities, cosToLight, skyMask, upward, stepStart, stepEnd, jitter, ray, stepRadiance,
                          stepOpticalDepth);
         [branch] if (kMarchesLocalLights && lightCoverage.nextEndpoint <= stepStart)
