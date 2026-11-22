@@ -50,6 +50,7 @@
 #include "WoW/Source/Object/ObjectClient/Corpse_C.h"
 #include "Engine/Source/Os/TimeManager.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/corpse_light_list.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/cloud_shade.h"
 #include "WoW/Source/Ui/GameUI.h"
 #include "WoW/Source/WorldClient/MapWeather.h"
 #include "WoW/Source/WorldClient/Map.h"
@@ -79,6 +80,7 @@ wxl::atmosphere::CorpseLightList corpseLights;
 double corpseScanAt = -1;
 int corpseMap = -1;
 float surfaceWetness = 0;
+float surfaceCloud[4] = {};
 wxl::atmosphere::NightGlowHandoff nightGlow;
 bool worldDepthReady = false;
 int regionalFogArea = -1;
@@ -214,7 +216,14 @@ bool CaptureFrame(FrameInputs& frame,bool snapshot=true) {
     for(unsigned i=0;i<3;++i)frame.toLight[i]=direction[i]/length;
     const auto& fog=replacingFog?originalFog:info->m_fogInterior;
     frame.fogColor=Colour(fog.m_color);frame.sunColor=Colour(info->m_bands.m_sunCloudColors[0]);
-    frame.directColor=Colour(info->m_bands.m_diffuse);frame.ambientColor=Colour(info->m_bands.m_ambient);
+    auto direct = info->m_bands.m_diffuse;
+    if (surfaceCloud[0] > 0 && std::isfinite(camera->x) && std::isfinite(camera->y)) {
+        const float shade = wxl::atmosphere::CloudShade(surfaceCloud, camera->x, camera->y);
+        direct.r = static_cast<uint8_t>(direct.r * shade);
+        direct.g = static_cast<uint8_t>(direct.g * shade);
+        direct.b = static_cast<uint8_t>(direct.b * shade);
+    }
+    frame.directColor=Colour(direct);frame.ambientColor=Colour(info->m_bands.m_ambient);
     frame.fogStart=fog.m_start;frame.fogEnd=fog.m_end;
     frame.zoneFogDistance=info->m_bands.m_fogEnd;frame.farClip=info->m_farClip;
     frame.inLiquid=World::SceneCamLiquidStatus(nullptr)!=0;
@@ -431,6 +440,7 @@ static wxl::atmosphere::AreaPath ReadRegionPath(int map) {
 const wxl::atmosphere::PlayerLantern& WxlFrameLantern() { return frameLantern; }
 const wxl::atmosphere::CorpseLightList& WxlFrameCorpseLights() { return corpseLights; }
 float WxlSurfaceWetness() { return surfaceWetness; }
+const float* WxlSurfaceCloud() { return surfaceCloud; }
 
 static void UpdateCorpseLights(bool enabled) {
     const auto* eye = World::GetCamPos();
@@ -497,6 +507,7 @@ bool WxlBeginVisualWorld(bool underwater,const float* target) {
     DisarmTransparentFog();
     worldDepthReady = false;
     surfaceWetness = 0;
+    surfaceCloud[0] = 0;
     frameLantern = {};
     if (optionsChanged) {
         selectedConfig = wxl::atmosphere::ApplyOptions(baseline, options);
@@ -531,6 +542,19 @@ bool WxlBeginVisualWorld(bool underwater,const float* target) {
         if (weather && weather->m_rain && std::isfinite(weather->m_intensity))
             surfaceWetness = std::clamp(weather->m_intensity, 0.0f, 1.0f);
     }
+    if (options.v[env::kAtmosphereOverride] && options.v[env::kCloudShadows] && player->IsOutdoors()) {
+        const double seconds = NowMs() * 0.001;
+        const float hour = info->m_dayProgression * 24.0f;
+        if (std::isfinite(hour)) {
+            surfaceCloud[0] = 0.24f * std::clamp(std::min(hour - 6.0f, 19.0f - hour), 0.0f, 1.0f);
+            surfaceCloud[1] = static_cast<float>(std::fmod(seconds * 0.017, 1.0));
+            surfaceCloud[2] = static_cast<float>(std::fmod(seconds * 0.009, 1.0));
+            surfaceCloud[3] = 0.006f;
+        }
+    }
+    if (frameNumber % 300 == 1 && (surfaceCloud[0] > 0 || surfaceWetness > 0))
+        VF_LOG_INFO("surface weather: wetness=%.3f cloud shade=%.3f phase=%.3f,%.3f",
+                    surfaceWetness, surfaceCloud[0], surfaceCloud[1], surfaceCloud[2]);
     frameLantern = CapturePlayerLantern(*player);
     originalFog=info->m_fogInterior;
     if(!PrepareDepth()){visualStatus = "Readable world depth unavailable";return false;}

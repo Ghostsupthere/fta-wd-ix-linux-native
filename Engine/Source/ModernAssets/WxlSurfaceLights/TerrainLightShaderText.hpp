@@ -307,7 +307,7 @@ namespace wxl::surfacelights::terrainshader
         std::string lightDefs;
         const std::string lightBlock = PixelBlock(r, lightDefs);
 #if defined(WXL_WEATHER_MATERIALS)
-        if (std::regex_search(src, std::regex(R"(\bc21[56]\b)")))
+        if (std::regex_search(src, std::regex(R"(\bc21[567]\b)")))
         { why = "weather material registers in use"; return false; }
         // c215 = wetness, diffuse loss, shimmer weight, world patch frequency.
         // c216.xyz = camera position. Keep the original colour and fog path dry.
@@ -335,7 +335,23 @@ namespace wxl::surfacelights::terrainshader
             "\n      add r25.x, c202.x, -r25.x"
             "\n      mad_sat " + r + ".xyz, " + r + ", r25.x, r26.w"
             "\n    endif";
-        src.insert(static_cast<size_t>(m.position(0)), lightBlock + wetBlock);
+        // c217 = shadow strength, wrapped phase U/V, inverse world tile size.
+        const std::string cloudBlock =
+            "\n    mov r25.w, c202.y"
+            "\n    if_gt c217.x, r25.w"
+            "\n      mul r26.xy, v9, c217.w"
+            "\n      add r26.xy, r26, c217.yzyz"
+            "\n      frc r26.xy, r26"
+            "\n      add r26.xy, r26, r26"
+            "\n      add r26.xy, r26, -c202.x"
+            "\n      abs r26.xy, r26"
+            "\n      add r26.xy, c202.x, -r26"
+            "\n      mul r26.x, r26.x, r26.y"
+            "\n      mul r26.x, r26.x, c217.x"
+            "\n      add r26.x, c202.x, -r26.x"
+            "\n      mul " + r + ".xyz, " + r + ", r26.x"
+            "\n    endif";
+        src.insert(static_cast<size_t>(m.position(0)), lightBlock + wetBlock + cloudBlock);
 #else
         src.insert(static_cast<size_t>(m.position(0)), lightBlock);
 #endif

@@ -817,6 +817,7 @@ void WxlSurfaceLightsBeforeTerrain() {
         const float eye[] = {camera[0], camera[1], camera[2], 0};
         d->SetPixelShaderConstantF(215, wet, 1);
         d->SetPixelShaderConstantF(216, eye, 1);
+        d->SetPixelShaderConstantF(217, WxlSurfaceCloud(), 1);
         d->SetVertexShaderConstantF(249, wet, 1);
     }
     const bool lightsOn = viewOk && settings.enabled && Scene();
@@ -840,6 +841,7 @@ void WxlSurfaceLightsFrame() {
         if (auto* gx = Backend(); gx && gx->m_d3dDevice) {
             const float dry[4] = {};
             gx->m_d3dDevice->SetPixelShaderConstantF(215, dry, 1);
+            gx->m_d3dDevice->SetPixelShaderConstantF(217, dry, 1);
             gx->m_d3dDevice->SetVertexShaderConstantF(249, dry, 1);
         }
     }
