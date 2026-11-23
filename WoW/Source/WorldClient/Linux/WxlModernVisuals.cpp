@@ -454,7 +454,7 @@ const wxl::atmosphere::SpellLightList& WxlFrameSpellLights() { return spellLight
 // Diagnostic counters, summed over the last logged interval: why effects and missiles are or are not accepted.
 static unsigned spellWhy[13];  // 0 no spell, 1 faint, 2 no model, 3 no asset, 4 authored lights, 5 emitters,
                                // 6 not additive, 7 no colour, 8 refused by list, 9 accepted, 10 missiles seen,
-                               // 11 refused: beyond 18 yd, 12 refused: all slots taken
+                               // 11 refused: beyond the camera range, 12 refused: all slots taken
 static wxl::atmosphere::SpellLightList effectLights;   // rebuilt at 10 Hz
 static wxl::atmosphere::SpellLightList missileLights;  // rebuilt every frame; these take the slots first
 
@@ -479,7 +479,7 @@ static void AddSpellModelLight(const CM2Model* model, const float* world, const 
         const float colour[] = {tint.x, tint.y, tint.z};
         if (into.Add(world, colour, eye, fade)) { ++spellWhy[9]; return; }
         const float dx = world[0] - eye[0], dy = world[1] - eye[1], dz = world[2] - eye[2];
-        if (!(dx * dx + dy * dy + dz * dz < 18.0f * 18.0f)) ++spellWhy[11];
+        if (!(dx * dx + dy * dy + dz * dz < wxl::atmosphere::SpellLightList::MaxDistance * wxl::atmosphere::SpellLightList::MaxDistance)) ++spellWhy[11];
         else if (into.count == into.lights.size()) ++spellWhy[12];
         else ++spellWhy[8];
     }

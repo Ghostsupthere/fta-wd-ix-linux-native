@@ -17,6 +17,7 @@ struct SpellLight
 struct SpellLightList
 {
     static constexpr unsigned Capacity = 4;
+    static constexpr float MaxDistance = 40.0f;  // from the camera; the light pool fades lights out by its own range
     std::array<SpellLight, Capacity> lights{};
     unsigned count = 0;
 
@@ -25,7 +26,7 @@ struct SpellLightList
         const float dx = position[0] - eye[0], dy = position[1] - eye[1], dz = position[2] - eye[2];
         const float squared = dx * dx + dy * dy + dz * dz;
         const float peak = std::max({colour[0], colour[1], colour[2]});
-        if (!(squared < 18.0f * 18.0f) || !(peak > 0) || !std::isfinite(peak) || !(alpha > 0))
+        if (!(squared < MaxDistance * MaxDistance) || !(peak > 0) || !std::isfinite(peak) || !(alpha > 0))
             return false;
         for (int i = 0; i < 3; ++i)
             if (!(colour[i] >= 0 && colour[i] <= peak))
