@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <cctype>
 #include <iterator>
 #include <emmintrin.h>
@@ -424,6 +425,14 @@ bool CCharacterComponent::Initialize() {
     CCharacterComponent::g_componentCompressVar = CVar::Register("componentCompress", "Character component texture compression", 0x1, "1", &ComponentVarHandler, 0, false, nullptr, false);
 
     uint32_t mipLevels = CCharacterComponent::g_componentTextureLevelVar->m_intValue;
+#if defined(WOWDECOMP_LINUX)
+    // Level 10 (the 1024 atlas) needs its own switch. A value above 9 in an older Config.wtf was always clamped
+    // to 9, so it must keep meaning 9 unless WXL_COMPOSITOR_1024=1 is set.
+    if (mipLevels > 9) {
+        const char* optIn = std::getenv("WXL_COMPOSITOR_1024");
+        if (!optIn || std::strcmp(optIn, "1") != 0) mipLevels = 9;
+    }
+#endif
     int32_t useThread = CCharacterComponent::g_componentThreadVar->m_intValue;
     int32_t useCompression = CCharacterComponent::g_componentCompressVar->m_intValue;
 
