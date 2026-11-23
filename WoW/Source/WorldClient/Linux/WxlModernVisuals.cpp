@@ -7,6 +7,10 @@
 #include "WxlVisualEnvironment.h"
 #include "Engine/Source/Gx/CGxDeviceD3d9Ex/CGxDeviceD3d9Ex.h"
 #include "Engine/Source/Gx/Gx.h"
+#include "Engine/Source/Gx/CGxDevice/CGxShader.h"
+#include "Engine/Source/ModernAssets/WxlSurfaceLights/LightShaderPack.hpp"
+#include "Engine/Source/ModernAssets/WxlVisuals/gpu_timing.h"
+#include <unordered_map>
 #include "Engine/Source/FFX/EffectGlow.h"
 #include "Engine/Source/ConsoleBase/ConsoleVar.h"
 #include "WoW/Source/WorldClient/MapObjDef.h"
@@ -116,6 +120,108 @@ unsigned transparentBatches=0;
 double earlyMs=0,finishMs=0,batchMs=0;unsigned earlyFrames=0,finishFrames=0;
 double NowMs(){return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();}
 WaterContactFrame contactFrame={};bool contactsCaptured=false;unsigned contactsVisited=0,contactsInLiquid=0;
+namespace sl = wxl::surfacelights;
+sl::LightShaderPack softParticlePack;
+bool softPackTried = false;
+std::unordered_map<const sl::LightPackEntry*, IDirect3DVertexShader9*> softVertices;
+std::unordered_map<const sl::LightPackEntry*, IDirect3DPixelShader9*> softPixels;
+IDirect3DTexture9* opaqueParticleDepth = nullptr;
+IDirect3DSurface9* opaqueParticleSource = nullptr;
+DepthCopy opaqueParticleCopy;
+D3DSURFACE_DESC opaqueParticleExtent{};
+D3DVIEWPORT9 opaqueParticleViewport{};
+C44Matrix opaqueParticleProjection;
+GpuTimer particleResolveTimer("soft particle resolve"), particleDrawTimer("soft particle first draw");
+unsigned softDraws = 0, softLastDraws = 0;
+bool softParticleTiming = false;
+const char* softStatus = "Soft particles off";
+
+void ReleaseParticleDepth() {
+    opaqueParticleCopy.Detach();
+    if (opaqueParticleDepth) opaqueParticleDepth->Release();
+    opaqueParticleDepth = nullptr;
+    opaqueParticleSource = nullptr;
+}
+
+template<class Shader, class Create>
+Shader* SoftShader(const CGxShader* stock, uint8_t kind,
+                   std::unordered_map<const sl::LightPackEntry*, Shader*>& cache, Create create) {
+    if (!stock || !stock->m_valid || !stock->m_apiSpecific) return nullptr;
+    const auto* variant = softParticlePack.Find(kind, stock->m_code.m_data, stock->m_code.m_count);
+    if (!variant) return nullptr;
+    auto [found, inserted] = cache.emplace(variant, nullptr);
+    if (inserted) create(reinterpret_cast<const DWORD*>(variant->bytecode.data()), &found->second);
+    return found->second;
+}
+
+bool DrawSoftParticle(void* raw, int type, int base, unsigned minimum, unsigned count,
+                      unsigned start, unsigned primitives) {
+    auto* gx = static_cast<CGxDeviceD3d9Ex*>(g_theGxDevicePtr);
+    auto* d = static_cast<IDirect3DDevice9*>(raw);
+    if (d != device || !opaqueParticleDepth || std::memcmp(&gx->m_projNative, &opaqueParticleProjection, sizeof(C44Matrix))) return false;
+    D3DVIEWPORT9 vp{};
+    if (FAILED(d->GetViewport(&vp)) || std::memcmp(&vp, &opaqueParticleViewport, sizeof(vp))) return false;
+    IDirect3DSurface9* depth = nullptr;
+    if (FAILED(d->GetDepthStencilSurface(&depth))) return false;
+    const bool sameDepth = depth == opaqueParticleSource;
+    if (depth) depth->Release();
+    if (!sameDepth) return false;
+    const auto stock = [&](EGxRenderState state) {
+        return static_cast<CGxShader*>(gx->m_appRenderStates[state].m_value.m_data.p);
+    };
+    const auto* stockVs = stock(GxRs_VertexShader);
+    const auto* stockPs = stock(GxRs_PixelShader);
+    auto* vs = SoftShader(stockVs, 0, softVertices,
+        [&](const DWORD* code, IDirect3DVertexShader9** out) { d->CreateVertexShader(code, out); });
+    auto* ps = SoftShader(stockPs, 1, softPixels,
+        [&](const DWORD* code, IDirect3DPixelShader9** out) { d->CreatePixelShader(code, out); });
+    if (!vs || !ps) return false;
+
+    constexpr DWORD slot = 15;
+    constexpr DWORD firstConstant = 219;
+    constexpr D3DSAMPLERSTATETYPE states[] = {
+        D3DSAMP_MINFILTER, D3DSAMP_MAGFILTER, D3DSAMP_MIPFILTER,
+        D3DSAMP_ADDRESSU, D3DSAMP_ADDRESSV, D3DSAMP_SRGBTEXTURE
+    };
+    constexpr DWORD sample[] = {D3DTEXF_POINT, D3DTEXF_POINT, D3DTEXF_NONE, D3DTADDRESS_CLAMP, D3DTADDRESS_CLAMP, FALSE};
+    DWORD saved[std::size(states)]{};
+    float original[8]{};
+    IDirect3DBaseTexture9* previousTexture = nullptr;
+    if (FAILED(d->GetPixelShaderConstantF(firstConstant, original, 2)) ||
+        FAILED(d->GetTexture(slot, &previousTexture))) return false;
+    for (unsigned i = 0; i < std::size(states); ++i) {
+        if (FAILED(d->GetSamplerState(slot, states[i], &saved[i]))) {
+            if (previousTexture) previousTexture->Release();
+            return false;
+        }
+    }
+
+    const float depthRange = vp.MaxZ - vp.MinZ;
+    const float profile[] = {
+        1.0f / opaqueParticleExtent.Width, 1.0f / opaqueParticleExtent.Height, 0, 0,
+        vp.MinZ + depthRange * gx->m_projNative.c2, depthRange * gx->m_projNative.d2,
+        1.0f / static_cast<float>(options.v[env::kSoftParticleDistance]), NativeVisualHooks::softParticleMode == 2 ? 1.0f : 0.0f
+    };
+    bool ready = SUCCEEDED(d->SetVertexShader(vs)) && SUCCEEDED(d->SetPixelShader(ps)) &&
+                 SUCCEEDED(d->SetTexture(slot, opaqueParticleDepth)) &&
+                 SUCCEEDED(d->SetPixelShaderConstantF(firstConstant, profile, 2));
+    for (unsigned i = 0; i < std::size(states); ++i)
+        ready = SUCCEEDED(d->SetSamplerState(slot, states[i], sample[i])) && ready;
+    const bool timing = softParticleTiming && ready && softDraws == 0;
+    if (timing) particleDrawTimer.Begin(d);
+    const bool drew = ready && SUCCEEDED(d->DrawIndexedPrimitive(static_cast<D3DPRIMITIVETYPE>(type),
+        base, minimum, count, start, primitives));
+    if (timing) particleDrawTimer.End();
+    if (drew) ++softDraws;
+    d->SetVertexShader(static_cast<IDirect3DVertexShader9*>(stockVs->m_apiSpecific));
+    d->SetPixelShader(static_cast<IDirect3DPixelShader9*>(stockPs->m_apiSpecific));
+    d->SetPixelShaderConstantF(firstConstant, original, 2);
+    d->SetTexture(slot, previousTexture);
+    if (previousTexture) previousTexture->Release();
+    for (unsigned i = 0; i < std::size(states); ++i) d->SetSamplerState(slot, states[i], saved[i]);
+    return drew;
+}
+
 SceneDepth Depth() { return {readableDepth,boundDepth,&depthCopy}; }
 CGxDeviceD3d9Ex* Backend() {
     auto* gx=g_theGxDevicePtr;
@@ -409,7 +515,85 @@ void RestoreWaterDepthWrite() {
     if(auto* gx=Backend();gx&&device)device->SetRenderState(D3DRS_ZWRITEENABLE,gx->m_deviceStates[CGxDeviceD3d9Ex::Ds_ZWriteEnable]);
 }
 }
+const char* WxlSoftParticleStatus() {
+    static char text[128];
+    if (!options.v[env::kSoftParticles]) return "Soft particles off";
+    std::snprintf(text, sizeof(text), "%s, %u billboards last frame", softStatus, softLastDraws);
+    return text;
+}
+
+void WxlBeginSoftParticles() {
+    softDraws = 0;
+    if (!options.v[env::kAtmosphereOverride] || !options.v[env::kSoftParticles]) return;
+    softStatus = "Soft particles waiting for readable world depth";
+    auto* gx = Backend();
+    if (!worldActive || !device || !gx || !boundDepth || depthCopy.Method() != DepthCopyMethod::Resz) return;
+    if (!softPackTried) {
+        softPackTried = true;
+        std::error_code error;
+        const auto executable = std::filesystem::canonical("/proc/self/exe", error);
+        const auto directory = error ? std::filesystem::current_path() : executable.parent_path();
+        std::string why;
+        if (!softParticlePack.Load((directory / "Utils/WarcraftXL/visuals/soft_particles.pack").string(), why))
+            VF_LOG_INFO("soft particles: %s", why.c_str());
+    }
+    softStatus = "Soft particle shader packs unavailable";
+    if (!softParticlePack.Count(sl::kGroupModel)) return;
+    const auto& p = gx->m_projNative;
+    if (p.a3 || p.b3 || p.c3 != 1.0f || p.d3 || p.a2 || p.b2 ||
+        !std::isfinite(p.c2) || !std::isfinite(p.d2) || !(p.d2 < 0.0f)) return;
+    if (FAILED(device->GetViewport(&opaqueParticleViewport)) ||
+        !(opaqueParticleViewport.MaxZ > opaqueParticleViewport.MinZ)) return;
+    if (opaqueParticleSource != boundDepth) {
+        ReleaseParticleDepth();
+        const auto format = static_cast<D3DFORMAT>(MAKEFOURCC('I','N','T','Z'));
+        if (FAILED(device->CreateTexture(depthDescription.Width, depthDescription.Height, 1,
+                D3DUSAGE_DEPTHSTENCIL, format, D3DPOOL_DEFAULT, &opaqueParticleDepth, nullptr)) ||
+            !opaqueParticleCopy.Attach(depthCopy.Method(), boundDepth, opaqueParticleDepth)) {
+            ReleaseParticleDepth();
+            softStatus = "Soft particle depth allocation failed";
+            return;
+        }
+        opaqueParticleSource = boundDepth;
+        opaqueParticleExtent = depthDescription;
+    }
+    static const bool timing = WxlProfileEnabled("WXL_SOFT_PARTICLE_TIMING", false);
+    softParticleTiming = timing;
+    if (timing) particleResolveTimer.Begin(device);
+    const bool copied = opaqueParticleCopy.Copy(device);
+    if (timing) particleResolveTimer.End();
+    if (!copied) {
+        softStatus = "Soft particle depth copy failed";
+        return;
+    }
+    opaqueParticleProjection = p;
+    NativeVisualHooks::softParticleDraw = &DrawSoftParticle;
+    NativeVisualHooks::softParticleScene = World::s_m2Scene;
+    softStatus = "Soft particles available";
+}
+
+void WxlEndSoftParticles() {
+    if (NativeVisualHooks::softParticleScene && softParticleTiming && frameNumber % 300 == 1) {
+        char resolve[96], draw[96];
+        DescribeGpuTime(particleResolveTimer, device, resolve, sizeof(resolve));
+        DescribeGpuTime(particleDrawTimer, device, draw, sizeof(draw));
+        VF_LOG_INFO("native soft particles: %s; %s; %u draws this frame", resolve, draw, softDraws);
+    }
+    NativeVisualHooks::softParticleDraw = nullptr;
+    NativeVisualHooks::softParticleScene = nullptr;
+    NativeVisualHooks::softParticleMode = 0;
+    softLastDraws = softDraws;
+}
+
 void WxlReleaseModernVisuals() {
+    WxlEndSoftParticles();
+    ReleaseParticleDepth();
+    for (auto [key, shader] : softVertices) if (shader) shader->Release();
+    for (auto [key, shader] : softPixels) if (shader) shader->Release();
+    softVertices.clear();
+    softPixels.clear();
+    particleResolveTimer.Release();
+    particleDrawTimer.Release();
     nightGlow.Reset();
     NativeVisualHooks::weaponEffectScene = nullptr;
     corpseLights.count = 0;

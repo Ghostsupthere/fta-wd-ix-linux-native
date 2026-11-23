@@ -106,7 +106,8 @@ int32_t Script_Save(lua_State* L) {
 int32_t Script_AtmosphereStatus(lua_State* L) {
     lua_pushboolean(L, WxlAtmosphereSupported());
     lua_pushstring(L, WxlAtmosphereStatus());
-    return 2;
+    lua_pushstring(L, WxlSoftParticleStatus());
+    return 3;
 }
 
 int32_t Script_OptionDefault(lua_State* L) {

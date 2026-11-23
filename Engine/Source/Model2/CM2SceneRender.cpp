@@ -823,6 +823,33 @@ void CM2SceneRender::DrawRibbon() {
     world.m_mtx[world.m_level] = s_identity;
 }
 
+#if defined(WOWDECOMP_LINUX)
+static unsigned SoftParticleMode(const CM2Scene* scene, unsigned pass, const M2Element& element) {
+    if (scene != NativeVisualHooks::softParticleScene || pass == M2PASS_0 || (element.m_flags & 3)) return 0;
+    const auto* emitter = element.m_emitter;
+    if (emitter->m_params.m_hasModel || emitter->m_params.m_materialFlags & (1 | 4) ||
+        emitter->m_flags & 0x40000 || emitter->m_vertsPerParticle != 4 ||
+        !element.m_model->m_particleEmitters) return 0;
+    const unsigned blend = emitter->m_params.m_materialBlend;
+    if (blend != GxBlend_Alpha && blend != GxBlend_Add && blend != GxBlend_NoAlphaAdd) return 0;
+    const auto& particles = element.m_model->m_shared->m_data->m_particles;
+    for (unsigned i = 0; i < particles.m_count; ++i) {
+        if (element.m_model->m_particleEmitters[i] != emitter) continue;
+        // Only the native plane/sphere billboard implementations are admitted.
+        if (!dynamic_cast<const CPlaneParticleEmitter*>(emitter) &&
+            !dynamic_cast<const CSphereParticleEmitter*>(emitter)) return 0;
+        return blend == GxBlend_NoAlphaAdd ? 2 : 1;
+    }
+    return 0;
+}
+
+struct SoftParticleDrawScope {
+    unsigned previous = NativeVisualHooks::softParticleMode;
+    explicit SoftParticleDrawScope(unsigned mode) { NativeVisualHooks::softParticleMode = mode; }
+    ~SoftParticleDrawScope() { NativeVisualHooks::softParticleMode = previous; }
+};
+#endif
+
 // VERIFY: 693b5e5e manual
 // OFFSET: 0x00821040
 void CM2SceneRender::RenderBatchedParticle(CParticleEmitter2* emitter, CGxBuf* buf, EGxVertexBufferFormat format, uint32_t vertexCount, uint32_t indexCount) {
@@ -864,6 +891,9 @@ uint32_t CM2SceneRender::DrawBatchedParticle(uint32_t index, M2Element* elements
 
     uint32_t indexCount = live * emitter->m_indicesPerParticle;
     uint32_t batched = 1;
+#if defined(WOWDECOMP_LINUX)
+    const unsigned softMode = SoftParticleMode(this->m_scene, this->m_pass, *element);
+#endif
 
     for (uint32_t i = index + 1; i < count; i++) {
         M2Element* other = &elements[indices[i]];
@@ -872,6 +902,10 @@ uint32_t CM2SceneRender::DrawBatchedParticle(uint32_t index, M2Element* elements
             break;
         }
 
+#if defined(WOWDECOMP_LINUX)
+        if (NativeVisualHooks::softParticleScene &&
+            SoftParticleMode(this->m_scene, this->m_pass, *other) != softMode) break;
+#endif
         CParticleEmitter2* otherEmitter = other->m_emitter;
         uint32_t otherParticles = 0x4000 / otherEmitter->m_vertsPerParticle;
         uint32_t otherLive = otherEmitter->m_liveList.m_count;
@@ -942,6 +976,9 @@ uint32_t CM2SceneRender::DrawBatchedParticle(uint32_t index, M2Element* elements
     buf->m_hasData = 1;
 
     if (renderedVertices && renderedIndices) {
+#if defined(WOWDECOMP_LINUX)
+        const SoftParticleDrawScope soft(softMode);
+#endif
         this->RenderBatchedParticle(emitter, buf, format, renderedVertices, renderedIndices);
     }
 
@@ -994,7 +1031,12 @@ uint32_t CM2SceneRender::DrawParticle(uint32_t index, M2Element* elements, uint3
     this->SetupLighting();
     this->SetupMaterial();
     this->SetupBillboardView(*reinterpret_cast<const C3Vector*>(&this->m_scene->m_viewInv.d0));
-    emitter->Render(static_cast<const C44Matrix*>(this->m_curModel->m_frameOfReference), nullptr, 1);
+    {
+#if defined(WOWDECOMP_LINUX)
+        const SoftParticleDrawScope soft(SoftParticleMode(this->m_scene, this->m_pass, *this->m_curElement));
+#endif
+        emitter->Render(static_cast<const C44Matrix*>(this->m_curModel->m_frameOfReference), nullptr, 1);
+    }
     g_theGxDevicePtr->XformSetView(s_identity);
 
     CGxMatrixStack& world = g_theGxDevicePtr->m_xforms[GxXform_World];

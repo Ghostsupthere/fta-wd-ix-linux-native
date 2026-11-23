@@ -37,10 +37,11 @@ local function Read(key)
     return WarcraftXL_GetEnvironmentOption(key) or 0
 end
 local function UpdateStatus()
-    local supported, state = WXL_AtmosphereStatus()
+    local supported, state, particles = WXL_AtmosphereStatus()
     if WXL_RefreshAreaNames then WXL_RefreshAreaNames() end
     local lamps = Read("world.staticLamps") ~= 0 and
         (" Static lamp distance " .. Read("world.staticLampRange") .. " yd.") or ""
+    if Read("world.softParticles") ~= 0 and particles then lamps = lamps .. " " .. particles .. "." end
     status:SetText(saveFailed and "Settings could not be saved." or
         (supported and (state .. ". Changes are saved automatically." .. lamps) or
             "Native world effects are unavailable on this graphics device."))
@@ -207,6 +208,10 @@ Check("Lootable corpse lights", "atmosphere.corpseLights", 1, 0, nil,
 
 
 Group("Effects", "Effects & Physics", 2, 0)
+Section("Particles")
+Check("Soft particles", "world.softParticles", 1, 0, nil,
+    "Fades supported mist, smoke, and spell billboards where they meet solid surfaces.")
+Slider("Intersection fade distance", "world.softParticleDistance", 1, 0, .1, 3, .1, "world.softParticles", "%.1f yd")
 Section("Weapon effects")
 Check("Reduce weapon effects", "world.weaponEffects", 1, 0, nil,
     "Reduces particle emission and trail brightness for equipped weapons in the world.")

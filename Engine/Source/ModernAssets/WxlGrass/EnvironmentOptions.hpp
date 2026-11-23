@@ -101,6 +101,8 @@ namespace wxl::grass::environment
         {"text.tooltipItemIds", 0, 1, 0, true},
         {"addons.drakeishUI", 0, 1, 0, true},
         {"addons.questTracker", 0, 1, 0, true},
+        {"world.softParticles", 0, 1, 0, true},
+        {"world.softParticleDistance", 0.1, 3, 1, false},
         {"addons.resilience", 0, 1, 0, true},
     };
     constexpr size_t kCount = sizeof(kOptions) / sizeof(kOptions[0]);
@@ -134,7 +136,7 @@ namespace wxl::grass::environment
         kCharacterRim, kRimStrength, kRimWidth, kRimTint,
         kWeaponEffects, kWeaponEffectIntensity,
         kTooltipCreatureIds, kTooltipItemIds,
-        kDrakeishUI, kQuestTrackerAddon, kResilienceAddon,
+        kDrakeishUI, kQuestTrackerAddon, kSoftParticles, kSoftParticleDistance, kResilienceAddon,
     };
 
     struct Values

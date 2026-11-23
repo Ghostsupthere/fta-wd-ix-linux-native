@@ -25,6 +25,9 @@ void WxlTagModernWater(const Liquid::CMaterialSettings* settings);
 void WxlEndModernWater();
 void WxlReleaseModernVisuals();
 #if defined(WOWDECOMP_LINUX)
+void WxlBeginSoftParticles();
+void WxlEndSoftParticles();
+const char* WxlSoftParticleStatus();
 void WxlSetAtmosphereOptions(const wxl::grass::environment::Values& values);
 bool WxlAtmosphereSupported();
 // Floating unit names are drawn from each model's draw callback, inside the scene, so the night composite and

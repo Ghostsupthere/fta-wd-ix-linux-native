@@ -28,31 +28,47 @@ def main():
     parser.add_argument('--client', type=Path, default=ROOT.parent.parent / 'From_The_Ashes_Client')
     parser.add_argument('--storm', default=os.environ.get('STORMLIB'), help='path to the StormLib shared library (or set STORMLIB)')
     parser.add_argument('--out', type=Path)
-    parser.add_argument('--weather-only', action='store_true', help='build the optional terrain, M2 and WMO weather variants')
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--soft-particles', action='store_true', help='build scoped unlit billboard shader variants')
+    modes.add_argument('--weather-only', action='store_true', help='build the optional terrain, M2 and WMO weather variants')
     parser.add_argument('--compiler-dll', type=Path, default=ROOT / '.deps/visual-shader-tools/d3dcompiler_47.dll')
     args = parser.parse_args()
     if args.out is None:
-        pack = 'light_weather.pack' if args.weather_only else 'light_shaders.pack'
+        pack = 'soft_particles.pack' if args.soft_particles else ('light_weather.pack' if args.weather_only else 'light_shaders.pack')
         args.out = ROOT / 'bin/Linux/Utils/WarcraftXL/visuals' / pack
     if not args.storm: raise SystemExit('Give --storm /path/to/libstorm.so or set STORMLIB (the StormLib shared library)')
     expected = json.loads(wmopack.MANIFEST.read_text())['compiler_sha256']
     if not args.compiler_dll.is_file() or hashlib.sha256(args.compiler_dll.read_bytes()).hexdigest() != expected:
         raise SystemExit('Missing or mismatched offline compiler DLL (see Engine/Source/ModernAssets/WxlVisuals/SOURCE.md)')
-    mpq = wmopack.Mpq(args.storm, args.client / 'Data')
+    data = args.client / 'Data'
+    archives = sorted(path.name for path in data.iterdir() if path.suffix.lower() == '.mpq')
+    mpq = wmopack.Mpq(args.storm, data, archives if args.soft_particles else wmopack.ARCHIVES)
     if not mpq.archives: raise SystemExit('no client archives opened')
     work = ROOT / '.deps/light-shader-pack'
     shutil.rmtree(work / 'in', ignore_errors=True); (work / 'in').mkdir(parents=True)
     counts = {}
     jobs = [('tv', 'Vertex\\vs_3_0', 'vs', TERRAIN_VERTEX), ('tp', 'Pixel\\ps_3_0', 'ps', TERRAIN_PIXEL),
             ('m2', 'Vertex\\vs_3_0', 'vs', M2_VERTEX), ('wmo', 'Vertex\\vs_3_0', 'vs', WMO_VERTEX)]
+    if args.soft_particles:
+        jobs = [('softv', 'Vertex\\vs_3_0', 'vs', ['Color_T1']),
+                ('softp', 'Pixel\\ps_3_0', 'ps', ['Combiners_Mod'])]
     for group, profile, ext, names in jobs:
         for name in names:
-            blob = mpq.read(f'Shaders\\{profile}\\{name}.bls')
-            if blob is None:
-                print(f'note: {name}.bls not in the client archives'); continue
-            for index, code in enumerate(wmopack.permutations(blob)):
-                (work / 'in' / f'{group}__{name}__{index:03d}.{ext}').write_bytes(code)
-                counts[group] = counts.get(group, 0) + 1
+            path = f'Shaders\\{profile}\\{name}.bls'
+            blobs = mpq.read_variants(path) if args.soft_particles else [mpq.read(path)]
+            for revision, blob in enumerate(blobs):
+                if blob is None:
+                    print(f'note: {name}.bls not in the client archives')
+                    continue
+                if args.soft_particles and blob.startswith(b'SPXG'):
+                    # The native CGx loader only accepts GXSH containers.
+                    continue
+                for index, code in enumerate(wmopack.permutations(blob)):
+                    if args.soft_particles and group == 'softp' and index not in (0, 8):
+                        continue
+                    suffix = f'{revision:03d}_{index:03d}' if args.soft_particles else f'{index:03d}'
+                    (work / 'in' / f'{group}__{name}__{suffix}.{ext}').write_bytes(code)
+                    counts[group] = counts.get(group, 0) + 1
     print('extracted', counts)
     compiler = work / 'd3dcompiler_47.dll'; shutil.copy2(args.compiler_dll, compiler)
     exe = work / 'light_pack.exe'
@@ -63,7 +79,8 @@ def main():
     env = dict(os.environ, WINEPREFIX=str(work / 'wine'), WINEDEBUG='-all', WINEDLLOVERRIDES='d3dcompiler_47=n;mscoree,mshtml=')
     args.out.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.out.with_suffix('.pack.tmp')
-    subprocess.run(['wine', str(exe), '--lights', 'Z:' + str(work / 'in'), 'Z:' + str(temporary)], env=env, cwd=work, check=True)
+    mode = '--soft-particles' if args.soft_particles else '--lights'
+    subprocess.run(['wine', str(exe), mode, 'Z:' + str(work / 'in'), 'Z:' + str(temporary)], env=env, cwd=work, check=True)
     temporary.replace(args.out)
     print('wrote', args.out)
 

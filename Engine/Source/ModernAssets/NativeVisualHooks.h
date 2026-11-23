@@ -8,6 +8,9 @@ class CM2Model;
 class CM2Scene;
 namespace NativeVisualHooks {
 inline bool waterDepthWriteOverride=false;
+inline const CM2Scene* softParticleScene = nullptr;
+inline unsigned softParticleMode = 0; // 1 source-alpha, 2 one-plus-one
+inline bool (*softParticleDraw)(void* device,int type,int base,unsigned minimum,unsigned count,unsigned start,unsigned primitives)=nullptr;
 inline float weaponEffectIntensity=1;
 inline const CM2Scene* weaponEffectScene=nullptr;
 inline void (*deviceLost)()=nullptr;

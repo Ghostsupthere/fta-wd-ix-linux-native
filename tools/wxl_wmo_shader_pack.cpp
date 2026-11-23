@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstring>
 #include <set>
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -63,6 +64,49 @@ static bool Assemble(const std::string& source, const char* label, std::vector<u
     out.assign(p, p + blob->GetBufferSize() / 4); blob->Release(); return true;
 }
 
+static bool SoftParticleShader(std::string& src, bool pixel) {
+    const size_t header = src.find('\n');
+    if (header == std::string::npos) return false;
+    if (!pixel) {
+        static const std::regex projection(R"(dp4 o[0-9]+\.w, c5, (r[0-9]+))");
+        std::smatch match;
+        if (src.find("vs_3_0") == std::string::npos ||
+            src.find("dcl_texcoord7") != std::string::npos || src.find("o11") != std::string::npos ||
+            !std::regex_search(src, match, projection)) return false;
+        const std::string depth = "\n    dp4 o11.x, c5, " + match[1].str();
+        src.insert(match.position() + match.length(), depth);
+        src.insert(header + 1, "    dcl_texcoord7 o11.x\n");
+        return true;
+    }
+    static const std::regex reserved(R"(\b(v9|vPos|s15|r11|r12|c219|c220|c221|oDepth)\b)");
+    if (src.find("ps_3_0") == std::string::npos || src.find("dcl_2d s0") == std::string::npos ||
+        src.find("oC0.xyz") == std::string::npos || src.find("oC0.w") == std::string::npos ||
+        std::regex_search(src, reserved)) return false;
+    src = std::regex_replace(src, std::regex(R"(\boC0\.)"), "r11.");
+    src.insert(header + 1,
+        "    def c221, 0.5, 0, -0.000001, 1\n"
+        "    dcl_texcoord7 v9.x\n    dcl vPos.xy\n    dcl_2d s15\n");
+    const size_t end = src.find("//");
+    src.insert(end == std::string::npos ? src.size() : end, R"(
+    add r12.xy, vPos, c221.x
+    mul r12.xy, r12, c219
+    mov r12.zw, c221.y
+    texldl r12, r12, s15
+    add r12.x, r12.x, -c220.x
+    min r12.x, r12.x, c221.z
+    rcp r12.x, r12.x
+    mad r12.x, r12.x, c220.y, -v9.x
+    mul_sat r12.x, r12.x, c220.z
+    mul r11.w, r11.w, r12.x
+    add r12.y, r12.x, -c221.w
+    mov r12.w, c221.w
+    mad r12.x, c220.w, r12.y, r12.w
+    mul r11.xyz, r11, r12.x
+    mov oC0, r11
+)");
+    return true;
+}
+
 int main(int argc, char** argv) {
     if (argc < 3) { std::fprintf(stderr, "usage: wxl_wmo_shader_pack <input-dir> <output-pack>\n"); return 2; }
     HMODULE compiler = LoadLibraryA("d3dcompiler_47.dll");
@@ -74,6 +118,41 @@ int main(int argc, char** argv) {
         if (!ReadFile(argv[2], code)) return 1;
         std::fputs(Disassemble(code).c_str(), stdout);
         return 0;
+    }
+    if (std::strcmp(argv[1], "--soft-particles") == 0 && argc == 4) {
+        namespace sl = wxl::surfacelights;
+        std::vector<sl::LightPackEntry> entries;
+        std::set<std::pair<uint8_t, uint64_t>> seen;
+        unsigned stages[2]{};
+        for (const char* ext : {"vs", "ps"}) {
+            const uint8_t kind = ext[0] == 'p';
+            for (const auto& name : List(argv[2], ext)) {
+                std::vector<uint8_t> code;
+                if (!ReadFile(std::string(argv[2]) + "\\" + name, code) || code.size() < 8 ||
+                    code.size() > wxl::wmo::kMaxShaderBytes) continue;
+                std::string source = Disassemble(code);
+                sl::LightPackEntry entry;
+                entry.kind = kind;
+                entry.group = sl::kGroupModel;
+                entry.originalSize = static_cast<uint32_t>(code.size());
+                entry.originalHash = wxl::wmo::HashBytecode(code.data(), code.size());
+                if (!seen.emplace(kind, entry.originalHash).second) continue;
+                if (!SoftParticleShader(source, kind) || !Assemble(source, name.c_str(), entry.bytecode)) {
+                    std::fprintf(stderr, "Stock fallback for %s\n", name.c_str());
+                    continue;
+                }
+                ++stages[kind];
+                entries.push_back(std::move(entry));
+            }
+        }
+        if (!stages[0] || stages[1] < 2) return 1;
+        const auto bytes = sl::LightShaderPack::Serialize(entries);
+        FILE* file = std::fopen(argv[3], "wb");
+        if (!file) return 1;
+        const bool wrote = std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
+        const bool closed = std::fclose(file) == 0;
+        std::printf("Soft particles: %u vertex and %u pixel variants\n", stages[0], stages[1]);
+        return wrote && closed ? 0 : 1;
     }
     if (std::strcmp(argv[1], "--lights") == 0 && argc >= 4) {
         // Surface lights (wxl-living-azeroth): the client's terrain, M2 and WMO shaders with the supplied

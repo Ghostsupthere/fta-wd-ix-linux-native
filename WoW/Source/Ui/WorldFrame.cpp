@@ -1814,6 +1814,9 @@ void CGWorldFrame::OnWorldRender() {
     GxuSortDrawList(GxuCat_0, GxuSort_VtxStream, *World::GetCamPos());
     GxuFlushDrawList(GxuCat_0, *World::GetCamPos());
     CWorldScene::RenderDetailDoodads();
+#if defined(WOWDECOMP_LINUX)
+    WxlBeginSoftParticles();
+#endif
 
     if (World::SceneCamLiquidStatus(nullptr)) {
         CWorldScene::RenderBarriers(this->m_elapsedSec);
@@ -1831,6 +1834,10 @@ void CGWorldFrame::OnWorldRender() {
         CWorldScene::RenderBarriers(this->m_elapsedSec);
         scene->Draw(M2PASS_1);
     }
+
+#if defined(WOWDECOMP_LINUX)
+    WxlEndSoftParticles();
+#endif
 
     if (s_spellShadowStyle < NUM_SPELL_SHADOWS) {
         DrawSpellCursorShadow(0x20000);

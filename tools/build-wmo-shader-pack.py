@@ -25,7 +25,7 @@ ARCHIVES = ['patch-ZC.mpq', 'patch-ZB.mpq', 'Patch-ZA.mpq', 'patch-Z.mpq', 'Patc
             'common-2.MPQ', 'common.MPQ']
 
 class Mpq:
-    def __init__(self, storm, data_dir):
+    def __init__(self, storm, data_dir, names=ARCHIVES):
         self.lib = ctypes.CDLL(storm)
         lib = self.lib
         lib.SFileOpenArchive.argtypes = [ctypes.c_char_p, ctypes.c_uint, ctypes.c_uint, ctypes.POINTER(ctypes.c_void_p)]
@@ -33,20 +33,35 @@ class Mpq:
         lib.SFileGetFileSize.argtypes = [ctypes.c_void_p, ctypes.c_void_p]; lib.SFileGetFileSize.restype = ctypes.c_uint
         lib.SFileReadFile.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint, ctypes.POINTER(ctypes.c_uint), ctypes.c_void_p]
         self.archives = []
-        for name in ARCHIVES:
+        for name in names:
             path = Path(data_dir) / name
             handle = ctypes.c_void_p()
             if path.exists() and lib.SFileOpenArchive(str(path).encode(), 0, 0x100, ctypes.byref(handle)):
                 self.archives.append(handle)
-    def read(self, name):
-        for handle in self.archives:        # highest-priority archive first
+    def read_variants(self, name):
+        seen = set()
+        close = self.lib.SFileCloseFile
+        close.argtypes = [ctypes.c_void_p]
+        for handle in self.archives:
             file = ctypes.c_void_p()
-            if self.lib.SFileOpenFileEx(handle, name.encode(), 0, ctypes.byref(file)):
+            if not self.lib.SFileOpenFileEx(handle, name.encode(), 0, ctypes.byref(file)):
+                continue
+            try:
                 size = self.lib.SFileGetFileSize(file, None)
-                buffer = ctypes.create_string_buffer(size); read = ctypes.c_uint()
-                self.lib.SFileReadFile(file, buffer, size, ctypes.byref(read), None)
-                return buffer.raw[:read.value]
-        return None
+                if not 0 < size <= 16 << 20:
+                    continue
+                buffer = ctypes.create_string_buffer(size)
+                count = ctypes.c_uint()
+                if self.lib.SFileReadFile(file, buffer, size, ctypes.byref(count), None) and count.value == size:
+                    payload = buffer.raw
+                    if payload not in seen:
+                        seen.add(payload)
+                        yield payload
+            finally:
+                close(file)
+
+    def read(self, name):
+        return next(self.read_variants(name), None)
 
 def permutations(blob):
     magic, version, _ = struct.unpack('<III', blob[:12])
