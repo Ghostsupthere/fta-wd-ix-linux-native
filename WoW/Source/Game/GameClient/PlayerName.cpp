@@ -1,4 +1,7 @@
 #include "PlayerName.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/WorldClient/Linux/WxlModernVisuals.h"
+#endif
 #include <typeinfo>
 #include "Engine/Source/Base/CDataAllocator.h"
 #include "Engine/Source/Base/Handle.h"
@@ -488,6 +491,11 @@ void PLAYERNAMEDESC::RenderIfVisible(CM2Model* model, const CM2Lighting* lightin
     CGObject_C* object = ClntObjMgrObjectPtr(desc->m_guid, TYPE_OBJECT, __FILE__, __LINE__);
 
     if (object && object->m_worldModel->IsDrawable(0, 0)) {
+#if defined(WOWDECOMP_LINUX)
+        if (WxlDeferPlayerName(desc)) {
+            return;
+        }
+#endif
         desc->Render();
     }
 }

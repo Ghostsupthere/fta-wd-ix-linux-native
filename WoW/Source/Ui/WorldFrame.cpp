@@ -1845,6 +1845,7 @@ void CGWorldFrame::OnWorldRender() {
     GxuFlushDrawList(GxuCat_1, *World::GetCamPos());
 #if defined(WOWDECOMP_LINUX)
     WxlFinishVisualWorld();
+    WxlDrawDeferredPlayerNames();
     WxlDrawLootBeams();
     WxlDrawQuestTracker();
     WxlWmoFrame();

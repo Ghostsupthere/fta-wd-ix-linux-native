@@ -54,6 +54,8 @@
 #include "Engine/Source/ModernAssets/WxlVisuals/spell_light_list.h"
 #include "WoW/Source/Object/ObjectClient/Effect_C.h"
 #include "WoW/Source/Object/ObjectClient/Missile_C.h"
+#include "WoW/Source/Game/GameClient/PlayerName.h"
+#include <vector>
 #include "WoW/Source/Ui/GameUI.h"
 #include "WoW/Source/WorldClient/MapWeather.h"
 #include "WoW/Source/WorldClient/Map.h"
@@ -631,6 +633,37 @@ static wxl::atmosphere::PlayerLantern CapturePlayerLantern(CGPlayer_C& player) {
                                       shape ? shape->m_collisionWidth : 0.0f, strength);
 }
 
+namespace {
+bool deferNames = false;
+std::vector<PLAYERNAMEDESC*> deferredNames;
+}
+// The view matrix at the time the first name was queued. Inside the scene it carries the camera translation;
+// later in the frame the engine renders camera-relative with a zero translation, which would put names (positioned
+// in world coordinates) far off screen.
+C44Matrix deferredNameView;
+bool WxlDeferPlayerName(PLAYERNAMEDESC* desc) {
+    if (!deferNames || !desc || deferredNames.size() >= 512)
+        return false;
+    if (deferredNames.empty())
+        GxXformView(deferredNameView);
+    deferredNames.push_back(desc);
+    return true;
+}
+void WxlDrawDeferredPlayerNames() {
+    // Called straight after the night composite, in the same frame, so every queued descriptor is still alive.
+    if (deferredNames.empty())
+        return;
+    std::vector<PLAYERNAMEDESC*> names;
+    names.swap(deferredNames);
+    C44Matrix current;
+    GxXformView(current);
+    GxXformSetView(deferredNameView);
+    for (PLAYERNAMEDESC* desc : names)
+        desc->Render();
+    GxXformSetView(current);
+    deferredNames = std::move(names);
+    deferredNames.clear();
+}
 bool WxlBeginVisualWorld(bool underwater,const float* target) {
     Configure();worldActive=false;replacingFog=false;cameraCaptured=false;++frameNumber;
     DisarmTransparentFog();
@@ -649,6 +682,8 @@ bool WxlBeginVisualWorld(bool underwater,const float* target) {
     auto* player = ClntObjMgrGetActivePlayerObj();
     const bool previewLights = config.enable && config.hooks && player && !underwater &&
                                options.v[env::kAtmosphereOverride];
+    deferNames = previewLights && (options.v[env::kNight] || options.v[env::kGlow]);
+    deferredNames.clear();
     UpdateCorpseLights(previewLights && options.v[env::kCorpseLights]);
     UpdateSpellLights(previewLights && options.v[env::kSpellLights]);
     if(!config.enable||!config.hooks||underwater||!player){

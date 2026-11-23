@@ -25,5 +25,10 @@ void WxlReleaseModernVisuals();
 #if defined(WOWDECOMP_LINUX)
 void WxlSetAtmosphereOptions(const wxl::grass::environment::Values& values);
 bool WxlAtmosphereSupported();
+// Floating unit names are drawn from each model's draw callback, inside the scene, so the night composite and
+// its halo would read them. While night effects are on they are queued here and drawn after the composite.
+class PLAYERNAMEDESC;
+bool WxlDeferPlayerName(PLAYERNAMEDESC* desc);
+void WxlDrawDeferredPlayerNames();
 const char* WxlAtmosphereStatus();
 #endif

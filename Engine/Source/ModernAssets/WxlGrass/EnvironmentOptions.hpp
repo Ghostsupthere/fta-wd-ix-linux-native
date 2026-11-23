@@ -80,7 +80,7 @@ namespace wxl::grass::environment
         {"atmosphere.wetSurfaces", 0, 1, 0, true},
         {"atmosphere.cloudShadows", 0, 1, 0, true},
         {"atmosphere.spellLights", 0, 1, 0, true},
-        {"atmosphere.spellLightStrength", 0, 3, 1, false},
+        {"atmosphere.spellLightStrength", 1, 5, 1, false},
         {"atmosphere.spellLightRange", 2, 16, 5, false},
     };
     constexpr size_t kCount = sizeof(kOptions) / sizeof(kOptions[0]);
