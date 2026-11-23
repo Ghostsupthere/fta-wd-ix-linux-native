@@ -16,7 +16,8 @@ struct SpellLight
 
 struct SpellLightList
 {
-    std::array<SpellLight, 2> lights{};
+    static constexpr unsigned Capacity = 4;
+    std::array<SpellLight, Capacity> lights{};
     unsigned count = 0;
 
     bool Add(const float* position, const float* colour, const float* eye, float alpha)

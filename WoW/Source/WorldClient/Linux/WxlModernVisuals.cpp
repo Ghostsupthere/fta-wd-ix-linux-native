@@ -452,9 +452,11 @@ const float* WxlSurfaceCloud() { return surfaceCloud; }
 const wxl::atmosphere::SpellLightList& WxlFrameSpellLights() { return spellLights; }
 
 // Diagnostic counters, summed over the last logged interval: why effects and missiles are or are not accepted.
-static unsigned spellWhy[11];  // 0 no spell, 1 faint, 2 no model, 3 no asset, 4 authored lights, 5 emitters,
-                               // 6 not additive, 7 no colour, 8 refused by list, 9 accepted, 10 missiles seen
-static wxl::atmosphere::SpellLightList effectLights;  // rebuilt at 10 Hz; missiles are added on top every frame
+static unsigned spellWhy[13];  // 0 no spell, 1 faint, 2 no model, 3 no asset, 4 authored lights, 5 emitters,
+                               // 6 not additive, 7 no colour, 8 refused by list, 9 accepted, 10 missiles seen,
+                               // 11 refused: beyond 18 yd, 12 refused: all slots taken
+static wxl::atmosphere::SpellLightList effectLights;   // rebuilt at 10 Hz
+static wxl::atmosphere::SpellLightList missileLights;  // rebuilt every frame; these take the slots first
 
 // Turns one spell effect or missile model into a light when it has an additive particle emitter.
 static void AddSpellModelLight(const CM2Model* model, const float* world, const float* eye,
@@ -476,7 +478,10 @@ static void AddSpellModelLight(const CM2Model* model, const float* world, const 
         const auto& tint = emitter.m_colorTrack.m_values[0];
         const float colour[] = {tint.x, tint.y, tint.z};
         if (into.Add(world, colour, eye, fade)) { ++spellWhy[9]; return; }
-        ++spellWhy[8];
+        const float dx = world[0] - eye[0], dy = world[1] - eye[1], dz = world[2] - eye[2];
+        if (!(dx * dx + dy * dy + dz * dz < 18.0f * 18.0f)) ++spellWhy[11];
+        else if (into.count == into.lights.size()) ++spellWhy[12];
+        else ++spellWhy[8];
     }
 }
 
@@ -485,6 +490,7 @@ static void UpdateSpellLights(bool enabled) {
     if (!enabled || !camera) {
         spellLights.count = 0;
         effectLights.count = 0;
+        missileLights.count = 0;
         spellScanAt = -1;
         return;
     }
@@ -521,14 +527,29 @@ static void UpdateSpellLights(bool enabled) {
     }
 
     // Projectiles move quickly, so they are read every frame from the in-flight list (a handful of entries).
-    spellLights = effectLights;
+    missileLights.count = 0;
     unsigned missiles = 0;
     for (const CMissile* missile = CMissile::s_inFlightMissileList; missile && missiles < 16; missile = missile->m_next) {
         ++missiles;
         ++spellWhy[10];
         const float world[] = {missile->m_position.x, missile->m_position.y, missile->m_position.z};
         if (std::isfinite(world[0]) && std::isfinite(world[1]) && std::isfinite(world[2]))
-            AddSpellModelLight(missile->m_model, world, eye, spellLights);
+            AddSpellModelLight(missile->m_model, world, eye, missileLights);
+    }
+
+    // Projectiles first, then the lights from object effects, skipping any within a yard of one already taken.
+    spellLights = missileLights;
+    for (unsigned i = 0; i < effectLights.count && spellLights.count < spellLights.lights.size(); ++i) {
+        const auto& candidate = effectLights.lights[i];
+        bool duplicate = false;
+        for (unsigned j = 0; j < spellLights.count && !duplicate; ++j) {
+            const auto& taken = spellLights.lights[j];
+            const float x = candidate.position[0] - taken.position[0], y = candidate.position[1] - taken.position[1];
+            const float z = candidate.position[2] - taken.position[2];
+            duplicate = x * x + y * y + z * z < 1.0f;
+        }
+        if (!duplicate)
+            spellLights.lights[spellLights.count++] = candidate;
     }
 
     const float brightness = static_cast<float>(options.v[env::kSpellLightStrength]);
@@ -543,9 +564,9 @@ static void UpdateSpellLights(bool enabled) {
         VF_LOG_INFO("spell light prototype: %u/%zu sources, %u objects, %u effects, scan %.4f ms",
                     spellLights.count, spellLights.lights.size(), objects, effects, NowMs() - now);
         VF_LOG_INFO("spell light reasons: nospell=%u faint=%u nomodel=%u noasset=%u authored=%u emitters=%u "
-                    "notadd=%u nocolour=%u refused=%u accepted=%u missile-frames=%u", spellWhy[0], spellWhy[1],
-                    spellWhy[2], spellWhy[3], spellWhy[4], spellWhy[5], spellWhy[6], spellWhy[7], spellWhy[8],
-                    spellWhy[9], spellWhy[10]);
+                    "notadd=%u nocolour=%u refused=%u accepted=%u missile-frames=%u far=%u full=%u", spellWhy[0],
+                    spellWhy[1], spellWhy[2], spellWhy[3], spellWhy[4], spellWhy[5], spellWhy[6], spellWhy[7],
+                    spellWhy[8], spellWhy[9], spellWhy[10], spellWhy[11], spellWhy[12]);
         std::memset(spellWhy, 0, sizeof(spellWhy));
     }
 }

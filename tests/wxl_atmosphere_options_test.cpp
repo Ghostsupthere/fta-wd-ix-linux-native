@@ -96,8 +96,12 @@ int main()
     const float first[] = {4, 0, 0}, second[] = {2, 0, 0}, nearest[] = {0, 0, 0};
     assert(!spells.Add(farAway, gold, eye, 1));
     assert(spells.Add(first, gold, eye, 1) && spells.Add(first, gold, eye, 1) && spells.count == 1);
-    assert(spells.Add(second, gold, eye, 1) && spells.Add(nearest, gold, eye, 1) && spells.count == 2);
+    assert(spells.Add(second, gold, eye, 1) && spells.Add(nearest, gold, eye, 1) && spells.count == 3);
     assert(spells.lights[1].distanceSquared == 4 && spells.lights[0].colour[1] == 0.275f);
+    const float sixth[] = {6, 0, 0}, eighth[] = {8, 0, 0}, ninth[] = {9, 0, 0};
+    assert(spells.Add(sixth, gold, eye, 1) && spells.count == 4);
+    assert(spells.Add(eighth, gold, eye, 1) == false && spells.count == 4);   // full, and farther than every light
+    assert(spells.Add(ninth, gold, eye, 1) == false);
 
     const float cloud[] = {0.24f, 0, 0, 0.5f};
     assert(wxl::atmosphere::CloudShade(cloud, 0, 1) == 1.0f);

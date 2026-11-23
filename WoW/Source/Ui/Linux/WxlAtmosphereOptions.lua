@@ -163,7 +163,7 @@ Check("Cloud shadows", "atmosphere.cloudShadows", 1, 0, nil,
     "Moves soft cloud shade across outdoor terrain and dims nearby fog light.")
 
 Check("Spell effect lights (experimental)", "atmosphere.spellLights", 1, 0, nil,
-    "Adds up to two small lights from nearby additive spell particles.")
+    "Adds up to four small lights from nearby spell effects and projectiles.")
 Slider("Spell light brightness", "atmosphere.spellLightStrength", 1, 0, 0, 3, .05, "atmosphere.spellLights", nil,
     "Multiplies the light from spell effects. 1 is the default; raise it if walls stay dark.")
 Slider("Spell light distance (yards)", "atmosphere.spellLightRange", 1, 0, 2, 16, .5, "atmosphere.spellLights", "%.1f",
