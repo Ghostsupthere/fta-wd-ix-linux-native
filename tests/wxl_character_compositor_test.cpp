@@ -35,4 +35,15 @@ int main()
     const uint8_t alpha[] = {0b10, 127};
     assert(ReadAlpha(alpha, 0, 1) == 0 && ReadAlpha(alpha, 1, 1) == 255);
     assert(ReadAlpha(alpha, 1, 8) == 127);
+
+    C4Pixel mip8[64]{}, mip4[16]{};
+    mip8[0] = {12, 24, 36, 255};
+    mip8[1] = {24, 36, 48, 255};
+    mip8[8] = {36, 48, 60, 255};
+    mip8[9] = {48, 60, 72, 255};
+    mip8[63] = {4, 8, 12, 255};
+    DownsampleFinalBlock(mip8, mip4);
+    assert(mip4[0].m_b == 30 && mip4[0].m_g == 42 && mip4[0].m_r == 54);
+    assert(mip4[15].m_b == 1 && mip4[15].m_g == 2 && mip4[15].m_r == 3);
+
 }

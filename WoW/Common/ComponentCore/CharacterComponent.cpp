@@ -1811,6 +1811,15 @@ static void CompressBlock(const uint8_t* src, uint32_t stride, uint8_t* out) {
 // OFFSET: 0x004E9BA0
 static void ComputeMipLevels(MipBits* src, MipBits* dst) {
     int32_t size = s_textureSize;
+#if defined(WOWDECOMP_LINUX)
+    if (CCharacterComponent::s_mipLevels == wxl::compositor::MaximumLevel) {
+        // Rectangular face layers can stop before the final 4x4 DXT block.
+        // At that size the atlas is already combined, so downsample the
+        // complete 8x8 mip without sampling missing layer data.
+        constexpr unsigned lastBlockMip = wxl::compositor::MaximumLevel - 2;
+        wxl::compositor::DownsampleFinalBlock(src->m_mip[lastBlockMip - 1], src->m_mip[lastBlockMip]);
+    }
+#endif
 
     if ((OsGetProcessorFeatures() & 0x14) == 0x14) {
         for (uint32_t level = 0; level < CCharacterComponent::s_mipLevels; level++, size >>= 1) {
@@ -4432,22 +4441,43 @@ void CCharacterComponent::SetShieldItemDisplay(int32_t displayID) {
 }
 
 #if defined(WOWDECOMP_LINUX)
-static bool ValidCompositorSource(HTEXTURECACHE texture, const TCTEXTUREINFO& info) {
+static bool RejectCompositorSource(HTEXTURECACHE texture, const char* reason) {
+    WxlNativeDiagnostic("character compositor 1024: skipped %s (%s)", texture ? texture->m_fileName : "(missing texture)", reason);
+    return false;
+}
+
+static bool ReadCompositorMipCount(HTEXTURECACHE texture, TCTEXTUREINFO& info) {
     if (!texture || texture->m_loadFailed || !texture->m_data || texture->m_size < sizeof(BLPHeader) ||
         !info.m_width || !info.m_height || !info.m_mipCount || info.m_mipCount > BLP_MIP_SLOTS)
-        return false;
+        return RejectCompositorSource(texture, "missing texture or invalid header");
+
     const BLPHeader& blp = *texture->m_data;
     const unsigned bits = blp.m_alphaSize;
-    if (blp.m_colorEncoding != COLOR_PAL || blp.m_width != info.m_width || blp.m_height != info.m_height ||
+    if (blp.m_magic != BLP_MAGIC_BLP2 || blp.m_formatVersion != 1 || blp.m_colorEncoding != COLOR_PAL ||
+        blp.m_width != info.m_width || blp.m_height != info.m_height ||
         (info.m_alphaSize && info.m_alphaSize != bits) || (bits != 0 && bits != 1 && bits != 4 && bits != 8))
-        return false;
+        return RejectCompositorSource(texture, "unsupported palette format or dimensions");
+
+    unsigned authored = 0;
     for (unsigned mip = 0; mip < info.m_mipCount; ++mip) {
-        const uint64_t pixels = uint64_t(std::max(1u, blp.m_width >> mip)) * std::max(1u, blp.m_height >> mip);
         const uint32_t offset = blp.m_mipOffsets[mip], length = blp.m_mipSizes[mip];
+        if (!offset && !length) continue;
+        if (authored != mip)
+            return RejectCompositorSource(texture, "gap in mip chain");
+
+        const uint64_t pixels = uint64_t(std::max(1u, blp.m_width >> mip)) * std::max(1u, blp.m_height >> mip);
         if (offset < sizeof(BLPHeader) || offset > texture->m_size || length > texture->m_size - offset ||
             length < pixels + (pixels * bits + 7) / 8)
-            return false;
+            return RejectCompositorSource(texture, "mip payload outside cache span");
+        ++authored;
     }
+    // Authored rectangular face layers stop when their short edge reaches
+    // one texel. This is a valid mip prefix; the unwritten tail is never read.
+    if (!authored || (authored < info.m_mipCount &&
+                      std::min(blp.m_width, blp.m_height) >> (authored - 1) > 1))
+        return RejectCompositorSource(texture, "missing mip before short edge reached one texel");
+
+    info.m_mipCount = authored;
     return true;
 }
 #endif
@@ -4462,10 +4492,12 @@ void CCharacterComponent::PasteScale(HTEXTURECACHE texture, MipBits* dstMips, co
 
 #if defined(WOWDECOMP_LINUX)
     if (s_mipLevels == wxl::compositor::MaximumLevel) {
-        if (!ValidCompositorSource(texture, srcInfo) || !dstMips || pos.x < 0 || pos.y < 0 ||
-            src.x < 0 || src.y < 0 || size.x <= 0 || size.y <= 0 ||
-            pos.x + size.x > int(s_textureSize) || pos.y + size.y > int(s_textureSize))
+        if (!ReadCompositorMipCount(texture, srcInfo)) return;
+        if (!dstMips || pos.x < 0 || pos.y < 0 || src.x < 0 || src.y < 0 || size.x <= 0 || size.y <= 0 ||
+            pos.x + size.x > int(s_textureSize) || pos.y + size.y > int(s_textureSize)) {
+            RejectCompositorSource(texture, "invalid atlas section");
             return;
+        }
         // Base skin uses atlas coordinates for both origins. Loose sections use
         // source-local coordinates and the destination section's dimensions.
         const unsigned targetWidth = &dstPos == &srcPos ? s_textureSize : size.x;
@@ -4474,15 +4506,23 @@ void CCharacterComponent::PasteScale(HTEXTURECACHE texture, MipBits* dstMips, co
         while ((unsigned(srcInfo.m_width) << shift) < targetWidth) ++shift;
         if ((unsigned(srcInfo.m_width) << shift) != targetWidth ||
             (unsigned(srcInfo.m_height) << shift) != targetHeight ||
-            shift == 0 || srcInfo.m_mipCount + shift > s_mipLevels + 1)
+            shift == 0 || srcInfo.m_mipCount + shift > s_mipLevels + 1) {
+            RejectCompositorSource(texture, "unsupported atlas scale");
             return;
+        }
 
         const unsigned x = unsigned(src.x) >> shift, y = unsigned(src.y) >> shift;
         const unsigned width = unsigned(size.x) >> shift, height = unsigned(size.y) >> shift;
-        if (!width || !height || x + width > srcInfo.m_width || y + height > srcInfo.m_height)
+        if (!width || !height || x + width > srcInfo.m_width || y + height > srcInfo.m_height) {
+            RejectCompositorSource(texture, "scaled section outside source");
             return;
-        for (unsigned mip = 0; mip < srcInfo.m_mipCount + shift; ++mip)
-            if (!dstMips->m_mip[mip]) return;
+        }
+        for (unsigned mip = 0; mip < srcInfo.m_mipCount + shift; ++mip) {
+            if (!dstMips->m_mip[mip]) {
+                RejectCompositorSource(texture, "missing destination mip");
+                return;
+            }
+        }
 
         const auto* pixels = static_cast<const uint8_t*>(TextureCacheGetMip(texture, 0));
         const auto* palette = TextureCacheGetPal(texture);
@@ -5092,7 +5132,7 @@ void CCharacterComponent::PasteFromSkin(COMPONENT_SECTIONS section, HTEXTURECACH
     info.m_opaque = 1;
     if (!TextureCacheGetInfo(texture, info, 1) || !info.m_width || !info.m_height) return;
 #if defined(WOWDECOMP_LINUX)
-    if (s_mipLevels == wxl::compositor::MaximumLevel && !ValidCompositorSource(texture, info)) return;
+    if (s_mipLevels == wxl::compositor::MaximumLevel && !ReadCompositorMipCount(texture, info)) return;
 #endif
     uint32_t width = info.m_width;
     info.m_alphaSize = 0;
@@ -5108,7 +5148,12 @@ void CCharacterComponent::PasteFromSkin(COMPONENT_SECTIONS section, HTEXTURECACH
         width >>= 1;
         mipLevel++;
     }
-    if (width != s_textureSize) return;
+    if (width != s_textureSize) {
+#if defined(WOWDECOMP_LINUX)
+        if (s_mipLevels == wxl::compositor::MaximumLevel) RejectCompositorSource(texture, "no atlas-sized source mip");
+#endif
+        return;
+    }
 
     CCharacterComponent::Paste(texture, dstMips, s_sectionInfo[section].m_pos, s_sectionInfo[section].m_pos, s_sectionInfo[section].m_size, info, mipLevel);
 }
@@ -5128,7 +5173,7 @@ void CCharacterComponent::PasteToSection(COMPONENT_SECTIONS section, HTEXTURECAC
     info.m_opaque = 1;
     if (!TextureCacheGetInfo(texture, info, 1) || !info.m_width || !info.m_height) return;
 #if defined(WOWDECOMP_LINUX)
-    if (s_mipLevels == wxl::compositor::MaximumLevel && !ValidCompositorSource(texture, info)) return;
+    if (s_mipLevels == wxl::compositor::MaximumLevel && !ReadCompositorMipCount(texture, info)) return;
 #endif
     uint32_t width = info.m_width;
     uint32_t sectionWidth = s_sectionInfo[section].m_size.x;
@@ -5147,7 +5192,12 @@ void CCharacterComponent::PasteToSection(COMPONENT_SECTIONS section, HTEXTURECAC
         width >>= 1;
         mipLevel++;
     }
-    if (width != sectionWidth) return;
+    if (width != sectionWidth) {
+#if defined(WOWDECOMP_LINUX)
+        if (s_mipLevels == wxl::compositor::MaximumLevel) RejectCompositorSource(texture, "no section-sized source mip");
+#endif
+        return;
+    }
 
     srcPos.x = 0;
     srcPos.y = 0;

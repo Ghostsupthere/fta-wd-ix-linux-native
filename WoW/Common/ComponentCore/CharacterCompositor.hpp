@@ -67,4 +67,19 @@ inline void ScaleSection(const uint8_t* pixels, const BlpPalPixel* palette,
     }
 }
 
+inline void DownsampleFinalBlock(const C4Pixel* source, C4Pixel* destination)
+{
+    for (unsigned y = 0; y < 4; ++y) {
+        for (unsigned x = 0; x < 4; ++x) {
+            const auto* top = source + y * 16 + x * 2;
+            const auto* bottom = top + 8;
+            const auto average = [&](uint8_t C4Pixel::*channel) {
+                return static_cast<uint8_t>((top[0].*channel + top[1].*channel +
+                                             bottom[0].*channel + bottom[1].*channel + 2) / 4);
+            };
+            destination[y * 4 + x] = {average(&C4Pixel::m_b), average(&C4Pixel::m_g), average(&C4Pixel::m_r), 255};
+        }
+    }
+}
+
 }
