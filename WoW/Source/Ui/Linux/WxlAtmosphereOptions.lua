@@ -458,6 +458,84 @@ if GameTooltip and GameTooltip.HookScript then
     end
 end
 
+if InterfaceOptions_AddCategory and not WaystoneInterfaceStylePanel then
+    local style = CreateFrame("Frame", "WaystoneInterfaceStylePanel", UIParent)
+    style.name = "Interface style"
+    style:Hide()
+    local heading = style:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    heading:SetPoint("TOPLEFT", 16, -16)
+    heading:SetText(style.name)
+    local toggle = CreateFrame("CheckButton", "WaystoneUseModernInterface", style, "InterfaceOptionsCheckButtonTemplate")
+    toggle:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", -2, -18)
+    _G[toggle:GetName() .. "Text"]:SetText("Use DrakeishUI after interface reload")
+    local pending
+    local function refresh()
+        local value = pending
+        if value == nil then value = Read("addons.drakeishUI") end
+        toggle:SetChecked(value ~= 0)
+    end
+    toggle:SetScript("OnClick", function(self) pending = self:GetChecked() and 1 or 0 end)
+    style.refresh = refresh
+    style.cancel = function() pending = nil; refresh() end
+    style.default = function() pending = 0; refresh() end
+    style.okay = function()
+        if pending ~= nil and WarcraftXL_SetEnvironmentOption("addons.drakeishUI", pending) then
+            WarcraftXL_SaveEnvironmentOptions()
+        end
+        pending = nil
+        refresh()
+    end
+    style:SetScript("OnShow", refresh)
+    InterfaceOptions_AddCategory(style)
+end
+
+-- Optional DrakeishUI hook for the Linux client's stock bag packer.
+-- The slot and button owners remain the stock ContainerFrame implementation.
+local stockBagAnchors = updateContainerFrameAnchors
+if type(stockBagAnchors) == "function" then
+    function updateContainerFrameAnchors()
+        if not DrakeishUI_GetBagLayoutOptions or (InCombatLockdown and InCombatLockdown()) then return stockBagAnchors() end
+        local names = ContainerFrame1 and ContainerFrame1.bags
+        if not names or #names == 0 then return stockBagAnchors() end
+        local requested, gap = securecall(DrakeishUI_GetBagLayoutOptions)
+        local scale = math.max(.5, math.min(1.5, tonumber(requested) or 1))
+        gap = math.max(4, tonumber(gap) or 4)
+        local left = BankFrame and BankFrame:IsShown() and math.max(0, (BankFrame:GetRight() or 0) + 8) or 8
+        local right = UIParent:GetWidth() - (CONTAINER_OFFSET_X or 8)
+        local bottom = (CONTAINER_OFFSET_Y or 68) + 8
+        local top = UIParent:GetHeight() - 24
+        local placements = {}
+        local function fit(s)
+            local x, y, columnWidth = right, bottom, 0
+            for i, name in ipairs(names) do
+                local frame = _G[name]
+                if not frame then return false end
+                local insets = frame._duiBagInsets or {}
+                local r, b = insets.right or 0, insets.bottom or 0
+                local w = (frame:GetWidth() + (insets.left or 0) + r) * s
+                local h = (frame:GetHeight() + (insets.top or 0) + b) * s
+                if h > top - bottom then return false end
+                if y + h > top then
+                    x, y, columnWidth = x - columnWidth - gap, bottom, 0
+                end
+                if x - w < left then return false end
+                placements[i] = { (x-r*s)/s, (y+b*s)/s }
+                y = y + h + gap
+                columnWidth = math.max(columnWidth, w)
+            end
+            return true
+        end
+        while scale > .1 and not fit(scale) do scale = scale - .01 end
+        if not fit(scale) then return stockBagAnchors() end
+        for i, name in ipairs(names) do
+            local frame = _G[name]
+            frame:SetScale(scale)
+            frame:ClearAllPoints()
+            frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMLEFT", unpack(placements[i]))
+        end
+    end
+end
+
 local function LoadRequestedAddons()
     if not IsAddOnLoaded or not IsAddOnLoadOnDemand or not LoadAddOn then return end
     local function LoadOne(key, name)

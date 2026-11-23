@@ -7,6 +7,8 @@ local frameMethods = {
     GetHeight = function(self) return rawget(self, "height") or 20 end,
     SetHeight = function(self, height) self.height = height end,
     GetParent = function(self) return self.parentFrame end,
+    SetChecked = function(self, value) self.checked = value end,
+    GetChecked = function(self) return self.checked end,
     CreateFontString = function()
         return {SetPoint = noop, SetText = noop, SetWidth = noop, SetWordWrap = noop,
                 SetJustifyH = noop, SetJustifyV = noop, SetSpacing = noop, GetStringWidth = function() return 40 end}
@@ -21,6 +23,8 @@ function CreateFrame(kind, name, parent, template)
         for _, suffix in ipairs({"Text", "Low", "High"}) do
             _G[name .. suffix] = {SetText = noop}
         end
+    elseif template == "InterfaceOptionsCheckButtonTemplate" then
+        _G[name .. "Text"] = {SetText = noop}
     end
     return frame
 end
@@ -81,11 +85,46 @@ else
         end
     end
 end
-function WarcraftXL_GetEnvironmentOption() return 0 end
+local settings = {}
+function WarcraftXL_GetEnvironmentOption(key) return settings[key] or 0 end
+function WarcraftXL_SetEnvironmentOption(key, value) settings[key] = value; return true end
+local saves = 0
+function WarcraftXL_SaveEnvironmentOptions() saves = saves + 1; return true end
 function WarcraftXL_GetEnvironmentOptionDefault() return 0 end
 function WXL_AtmosphereStatus() return true, "" end
+function InterfaceOptions_AddCategory(category) assert(category.name == "Interface style") end
+local installed, loaded = {}, 0
+function IsAddOnLoaded(name) return installed[name] end
+function IsAddOnLoadOnDemand(name) return name == "DrakeishUI" end
+function LoadAddOn(name) assert(name == "DrakeishUI"); loaded = loaded + 1 end
+local stockCalls, combat = 0, false
+function updateContainerFrameAnchors() stockCalls = stockCalls + 1 end
+function InCombatLockdown() return combat end
+UIParent = {GetWidth = function() return 600 end, GetHeight = function() return 400 end}
+for i = 1, 2 do
+    local bag = CreateFrame("Frame", "ContainerFrame" .. i)
+    function bag:GetWidth() return 200 end
+    bag:SetHeight(170)
+    function bag:SetScale(value) self.scale = value end
+    function bag:SetPoint(...) self.point = {...} end
+    bag.stockSlot = {}
+    bag._duiBagInsets = {}
+end
+ContainerFrame1.bags = {"ContainerFrame1", "ContainerFrame2"}
 
 dofile("WoW/Source/Ui/Linux/WxlAtmosphereOptions.lua")
+updateContainerFrameAnchors()
+assert(stockCalls == 1)
+function DrakeishUI_GetBagLayoutOptions() return 1, 18 end
+local stockSlot = ContainerFrame1.stockSlot
+updateContainerFrameAnchors()
+assert(ContainerFrame1.scale == 1 and ContainerFrame2.scale == 1)
+assert(ContainerFrame1.point[4] - ContainerFrame2.point[4] == 218)
+assert(ContainerFrame1.stockSlot == stockSlot and stockCalls == 1)
+combat = true
+updateContainerFrameAnchors()
+assert(stockCalls == 2)
+combat = false
 local panel = WXLNativeAtmospherePanel
 local function verifySelection()
     assert(VideoOptionsFrame:IsShown())
@@ -101,3 +140,24 @@ GameMenuButtonWXLVisuals.scripts.OnClick()
 verifySelection()
 assert(not GameMenuFrame.shown and VideoOptionsFrame.lastFrame == GameMenuFrame)
 print("Verified Visuals & Guidance category and panel from /visuals and the game menu")
+
+local style, toggle = WaystoneInterfaceStylePanel, WaystoneUseModernInterface
+style.refresh()
+assert(not toggle:GetChecked() and loaded == 0)
+toggle:SetChecked(true)
+toggle.scripts.OnClick(toggle)
+style.cancel()
+assert(not toggle:GetChecked() and saves == 0)
+toggle:SetChecked(true)
+toggle.scripts.OnClick(toggle)
+style.okay()
+assert(toggle:GetChecked() and saves == 1 and loaded == 0)
+installed.ElvUI = true
+WXLNativeAtmospherePanel = nil
+dofile("WoW/Source/Ui/Linux/WxlAtmosphereOptions.lua")
+assert(loaded == 0)
+installed.ElvUI = nil
+WXLNativeAtmospherePanel = nil
+dofile("WoW/Source/Ui/Linux/WxlAtmosphereOptions.lua")
+assert(loaded == 1)
+print("Verified Interface style, addon ownership, and stock bag layout")
