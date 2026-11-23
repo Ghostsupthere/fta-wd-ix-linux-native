@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstring>
+#include "Engine/Source/Base/Profiler.h"
 #include "Engine/Source/BlizzardCore/SFile2-Core.h"
 #include "Engine/Source/BLPFile/blp.h"
 #include "Engine/Source/Gx/Blit.h"
@@ -781,6 +782,7 @@ int32_t CBLPFile::Lock(PIXEL_FORMAT format, uint32_t mipLevel, uint8_t*& data, u
 // VERIFY: 8029449e manual
 // OFFSET: 0x006AFB70
 int32_t CBLPFile::LockChain(PIXEL_FORMAT format, MipBits*& images, uint32_t mipLevel) {
+    Profiler::Scope scope(Profiler::SpikeZone(Profiler::TextureDecode));
     if (!this->IsValidMip(mipLevel)) {
         return 0;
     }
@@ -924,6 +926,7 @@ int32_t CBLPFile::Open(const char* fileName, int32_t flags) {
 // VERIFY: 3d8e87b0 manual
 // OFFSET: 0x006AFFD0
 int32_t CBLPFile::LockChain2(const char* fileName, PIXEL_FORMAT format, MipBits*& images, uint32_t mipLevel, int32_t inPlace) {
+    Profiler::Scope scope(Profiler::SpikeZone(Profiler::TextureDecode));
     if (!this->IsValidMip(mipLevel)) {
         return 0;
     }

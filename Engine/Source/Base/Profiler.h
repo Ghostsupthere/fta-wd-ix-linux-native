@@ -71,6 +71,12 @@ enum Id : uint32_t {
     CameraUpdateCollision,
     CameraUpdateLiquid,
     MapPrepareAreaReplay,
+    AsyncLoadPoll,
+    AsyncLoadWait,
+    CharacterCompose,
+    CharacterTexturePublish,
+    TextureDecode,
+    LuaGcStep,
     Count
 };
 
@@ -124,6 +130,8 @@ private:
     M2DrawType m_previous;
 };
 
+// Main-thread diagnostics for WXL_PROFILE_SPIKES=1. Returns an inactive zone when off.
+Id SpikeZone(Id zone);
 bool M2DiagnosticsEnabled();
 bool UiDetailEnabled();
 Id UiDetailZone(Id detail, Id parent);

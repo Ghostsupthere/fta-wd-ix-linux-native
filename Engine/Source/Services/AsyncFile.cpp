@@ -2,6 +2,7 @@
 #include <cstdint>
 #include "Engine/Source/Services/AsyncFile.h"
 #include "Engine/Source/Base/Prop.h"
+#include "Engine/Source/Base/Profiler.h"
 #include "Engine/Source/BlizzardCore/SFile2-Core.h"
 #include "Engine/Source/Event/Event.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
@@ -143,7 +144,10 @@ int32_t AsyncFileReadPollHandler(const void* data, void* param) {
 
         object->m_isProcessed = 1;
         g_queueLock.Leave();
-        reinterpret_cast<void (*)(void*)>(object->m_userPostloadCallback)(object->m_userArg);
+        {
+            Profiler::Scope scope(Profiler::SpikeZone(Profiler::AsyncLoadPoll));
+            reinterpret_cast<void (*)(void*)>(object->m_userPostloadCallback)(object->m_userArg);
+        }
         s_progressCount--;
 
         if (OsGetAsyncTimeMs() - start > s_handlerTimeout) {
@@ -320,6 +324,7 @@ void AsyncFileReadWait(CAsyncObject* object) {
             break;
         }
 
+        Profiler::Scope scope(Profiler::SpikeZone(Profiler::AsyncLoadWait));
         OsSleep(1);
     } while (true);
 

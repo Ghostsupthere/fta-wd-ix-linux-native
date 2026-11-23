@@ -2038,6 +2038,7 @@ int32_t CGGameUI::Idle(const void* data, void* param) {
     CGPlayer_C* player = static_cast<CGPlayer_C*>(ClntObjMgrObjectPtr(ClntObjMgrGetActivePlayer(), TYPE_PLAYER, __FILE__, __LINE__));
 
     if (player && !(player->m_unit->m_unitFieldFlags & 0x80000)) {
+        Profiler::Scope scope(Profiler::SpikeZone(Profiler::LuaGcStep));
         lua_gc(L, LUA_GCSTEP, 1);
     }
 

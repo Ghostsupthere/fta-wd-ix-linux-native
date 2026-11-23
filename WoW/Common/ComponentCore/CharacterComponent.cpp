@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #endif
+#include "Engine/Source/Base/Profiler.h"
 #include <cstddef>
 #include <algorithm>
 #include <cstdint>
@@ -3867,6 +3868,7 @@ void CCharacterComponent::GeosRenderPrep() {
 // VERIFY: f3bbc113 manual
 // OFFSET: 0x004EE0D0
 void CCharacterComponent::PrepSections() {
+    Profiler::Scope scope(Profiler::SpikeZone(Profiler::CharacterCompose));
     for (int32_t section = 0; section < NUM_COMPONENT_SECTIONS; section++) {
         if (!((1 << section) & this->m_dirtySections)) {
             continue;
@@ -3920,6 +3922,7 @@ CComponentMipBits* CCharacterComponent::AllocComponentMipBits(EGxTexFormat forma
 // VERIFY: 7bf610ab manual
 // OFFSET: 0x004EE2A0
 void CCharacterComponent::RenderPrepAll() {
+    Profiler::Scope scope(Profiler::SpikeZone(Profiler::CharacterCompose));
     this->SetTexturesDirty();
     this->m_dirtySections = 0xFFFFFFFF;
 
@@ -5385,6 +5388,7 @@ void CCharacterComponent::RenderPrepFO() {
 // VERIFY: 3f0fe5f0 auto
 // OFFSET: 0x004F0E80
 void CCharacterComponent::ProcessFinishedRequest() {
+    Profiler::Scope scope(Profiler::SpikeZone(Profiler::CharacterTexturePublish));
     CCharacterComponent::s_bInRenderPrep = 1;
 
     if (this->m_flags & 0x4) {

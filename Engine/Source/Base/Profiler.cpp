@@ -1,5 +1,6 @@
 #include "Engine/Source/Base/Profiler.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -35,7 +36,8 @@ constexpr const char* kNames[Count] = {
     "Map prepare WMO resources", "Map prepare areas", "Map prepare area queues", "Map prepare area traversal",
     "Map prepare barriers", "Map prepare WMO instances", "Map prepare doodads", "Map prepare entities", "Map prepare preload",
     "Camera update vehicles", "Camera update target", "Camera update collision", "Camera update liquid",
-    "Map prepare area replay"
+    "Map prepare area replay", "Async load callbacks", "Async load wait",
+    "Character composition", "Character texture publication", "Texture decode", "Lua GC step"
 };
 
 constexpr uint32_t kM2DrawTypes = static_cast<uint32_t>(M2DrawType::Count);
@@ -82,6 +84,57 @@ uint64_t g_frameId = 1;
 uint64_t g_logIntervalNs = 0;
 uint64_t g_lastLog = 0;
 bool g_logResolved = false;
+
+constexpr uint32_t kSpikeHistoryFrames = 63;
+constexpr uint32_t kSpikeWarmupFrames = 9;
+constexpr uint64_t kSpikeLogIntervalNs = 250'000'000;
+uint64_t g_lastSpikeLog = 0;
+uint32_t g_suppressedSpikes = 0;
+
+bool SpikeLoggingEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_PROFILE_SPIKES");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+
+uint64_t SpikeBaseline() {
+    if (g_count < kSpikeWarmupFrames) return 0;
+    // Use an odd number of prior frames so the median is an observed frame time.
+    uint32_t count = std::min(g_count, kSpikeHistoryFrames);
+    if (count % 2 == 0) --count;
+    uint64_t times[kSpikeHistoryFrames];
+    for (uint32_t i = 0; i < count; ++i) {
+        times[i] = g_ring[(g_next + kKeptFrames - 1 - i) % kKeptFrames].frameNs;
+    }
+    std::nth_element(times, times + count / 2, times + count);
+    return times[count / 2];
+}
+
+void LogSpike(const FrameRecord& frame, uint64_t medianNs) {
+    // Bound the cost when a loading screen or scheduler stall yields a burst.
+    if (g_lastSpikeLog && g_lastFrameEnd - g_lastSpikeLog < kSpikeLogIntervalNs) {
+        ++g_suppressedSpikes;
+        return;
+    }
+    g_lastSpikeLog = g_lastFrameEnd;
+    const uint64_t start = NowNs();
+    char line[128 * (Count + 2)];
+    int used = std::snprintf(line, sizeof(line),
+        "WarcraftXL frame spike: frame=%llu %.3f ms, median=%.3f ms, draws=%u, suppressed=%u | self/total ms (calls)",
+        static_cast<unsigned long long>(frame.frameId), frame.frameNs * 1.0e-6, medianNs * 1.0e-6,
+        frame.draws, g_suppressedSpikes);
+    for (uint32_t i = 0; i < Count && used > 0 && static_cast<size_t>(used) < sizeof(line) - 2; ++i) {
+        if (!frame.calls[i]) continue;
+        used += std::snprintf(line + used, sizeof(line) - used, " | %s %.3f/%.3f (%u)",
+            kNames[i], frame.self[i] * 1.0e-6, frame.total[i] * 1.0e-6, frame.calls[i]);
+    }
+    std::fprintf(stderr, "%s\n", line);
+    // Keep this synchronous write from triggering a spike on the next frame.
+    g_lastFrameEnd += NowNs() - start;
+    g_suppressedSpikes = 0;
+}
 
 bool OnOwnerThread() {
     if (!g_haveOwner) {
@@ -267,6 +320,10 @@ Id UiDetailZone(Id detail, Id parent) {
     return Count;
 }
 
+Id SpikeZone(Id zone) {
+    return SpikeLoggingEnabled() ? zone : Count;
+}
+
 bool M2DiagnosticsEnabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("WXL_PROFILE_M2_DRAWS");
@@ -296,13 +353,16 @@ void EndFrame() {
     if (!g_enabled.load(std::memory_order_relaxed) || !OnOwnerThread()) return;
     const uint64_t now = NowNs();
     g_open.frameId = g_frameId++;
+    uint64_t medianNs = 0;
     if (g_lastFrameEnd) {
         g_open.frameNs = now - g_lastFrameEnd;
+        if (SpikeLoggingEnabled()) medianNs = SpikeBaseline();
         g_ring[g_next] = g_open;
         g_next = (g_next + 1) % kKeptFrames;
         if (g_count < kKeptFrames) ++g_count;
     }
     g_lastFrameEnd = now;
+    if (medianNs && g_open.frameNs > 2.5 * medianNs) LogSpike(g_open, medianNs);
     std::memset(&g_open, 0, sizeof(g_open));
     if (!g_logResolved) ResolveLog();
 #if defined(WOWDECOMP_LINUX)
@@ -396,6 +456,8 @@ void Reset() {
     g_count = 0;
     g_next = 0;
     g_lastFrameEnd = 0;
+    g_lastSpikeLog = 0;
+    g_suppressedSpikes = 0;
     ++g_frameId;
     std::memset(&g_open, 0, sizeof(g_open));
     g_current = nullptr;
