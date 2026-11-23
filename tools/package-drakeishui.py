@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+from xml.etree import ElementTree
 
 UPSTREAM = "ac56f1765e1daf92627e7ad88f69fb0551e97b84"
 TOC = "DrakeishUI.toc"
@@ -20,6 +21,7 @@ MEDIA_ALIASES = {
     "assets/Dark_UI/uiactionbar2x_new_dark.blp": "assets/uiactionbar2x_new.blp",
     "assets/Dark_UI/uimicromenu2x_dark.blp": "assets/uimicromenu2x.blp",
 }
+TEXTURES = (".blp", ".tga", ".dds")
 MEDIA = {".blp", ".tga", ".dds", ".ttf", ".otf", ".wav", ".mp3", ".ogg"}
 # Texture trees outside assets/ that the Windows load graph references by path or builds names from.
 UPSTREAM_TREES = ("modules/dragonflightui/textures/", "libs/classicapi/texture/")
@@ -75,6 +77,17 @@ def closure(files):
     return selected
 
 
+def xml_texture_references(file):
+    for element in ElementTree.parse(file).iter():
+        tag = element.tag.rsplit("}", 1)[-1].casefold()
+        if tag in {"script", "include"}:
+            continue
+        value = key(element.get("file", ""))
+        prefix = "interface/addons/drakeishui/"
+        if value.startswith(prefix):
+            yield value.removeprefix(prefix)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--windows", type=Path, required=True)
@@ -113,7 +126,26 @@ def main():
     for prefix in prefixes:
         if not any(name.startswith(prefix) for name in selected):
             missing.add(f"media folder missing: {prefix}")
-    present = set(selected) | {key(alias) for alias in MEDIA_ALIASES}
+    available = {**upstream, **windows}
+    fallbacks = {key(alias): upstream[original] for alias, original in MEDIA_ALIASES.items()
+                 if original in upstream}
+    missing_xml = set()
+    for name, source in tuple(selected.items()):
+        if source.suffix.lower() != ".xml":
+            continue
+        for reference in xml_texture_references(source):
+            paths = [reference] if Path(reference).suffix else [reference + ext for ext in TEXTURES]
+            media = next((path for path in paths if path in available or path in fallbacks), None)
+            if media is None:
+                missing_xml.add(f"{name}: XML texture {reference}")
+            elif media in available:
+                selected[media] = available[media]
+    if missing_xml:
+        for path in sorted(missing_xml):
+            print(f"unresolved reference: {path}")
+        raise SystemExit(f"{len(missing_xml)} missing XML texture reference(s)")
+
+    present = set(selected) | set(fallbacks)
     folders = {"/".join(name.split("/")[:i]) for name in present for i in range(1, name.count("/") + 1)}
     for name, source in tuple(selected.items()):
         if source.suffix.lower() not in {".lua", ".xml"}:
