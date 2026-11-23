@@ -426,11 +426,10 @@ bool CCharacterComponent::Initialize() {
 
     uint32_t mipLevels = CCharacterComponent::g_componentTextureLevelVar->m_intValue;
 #if defined(WOWDECOMP_LINUX)
-    // Level 10 (the 1024 atlas) needs its own switch. A value above 9 in an older Config.wtf was always clamped
-    // to 9, so it must keep meaning 9 unless WXL_COMPOSITOR_1024=1 is set.
+    // Level 10 selects the 1024 atlas. WXL_COMPOSITOR_1024=0 falls back to the old clamp of 9.
     if (mipLevels > 9) {
-        const char* optIn = std::getenv("WXL_COMPOSITOR_1024");
-        if (!optIn || std::strcmp(optIn, "1") != 0) mipLevels = 9;
+        const char* optOut = std::getenv("WXL_COMPOSITOR_1024");
+        if (optOut && std::strcmp(optOut, "0") == 0) mipLevels = 9;
     }
 #endif
     int32_t useThread = CCharacterComponent::g_componentThreadVar->m_intValue;
