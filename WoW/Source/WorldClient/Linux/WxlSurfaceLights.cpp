@@ -3,6 +3,7 @@
 #include <d3d9.h>
 #include "WxlSurfaceLights.h"
 #include "WxlModernVisuals.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/engine.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/player_lantern.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/corpse_light_list.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/spell_light_list.h"
@@ -932,6 +933,35 @@ void WxlSurfaceLightsInitialize() { (void)registered; }
 bool WxlSurfaceLightsAvailable() {
     EnsurePack();
     return ShadersActive();
+}
+
+void WxlSelectWaterLamps(const float* eye, WaterLamp (&lamps)[2]) {
+    const auto& lantern = WxlFrameLantern();
+    unsigned first = 0;
+    if (lantern.strength > 0) {
+        std::copy_n(lantern.position, 3, lamps[0].position);
+        for (unsigned i = 0; i < 3; ++i) lamps[0].color[i] = lantern.Color[i] * lantern.strength;
+        lamps[0].radius = lantern.SurfaceRadius;
+        first = 1;
+    }
+    if (!staticLampsEnabled || !settings.enabled || !terrainLightsOn) return;
+    float nearest[] = {32.0f * 32.0f, 32.0f * 32.0f};
+    for (const auto& light : pool.active) {
+        if (!light.staticLamp || light.indoor) continue;
+        const float x = light.pos[0] - eye[0], y = light.pos[1] - eye[1], z = light.pos[2] - eye[2];
+        const float distance = x*x + y*y + z*z;
+        if (!(distance < nearest[1])) continue;
+        const unsigned slot = first == 0 && distance < nearest[0] ? 0 : 1;
+        if (slot == 0) {
+            lamps[1] = lamps[0];
+            nearest[1] = nearest[0];
+        }
+        nearest[slot] = distance;
+        const float fade = std::clamp((32.0f - std::sqrt(distance)) / 8.0f, 0.0f, 1.0f);
+        std::copy_n(light.pos, 3, lamps[slot].position);
+        for (unsigned i = 0; i < 3; ++i) lamps[slot].color[i] = light.color[i] * fade;
+        lamps[slot].radius = light.radius;
+    }
 }
 
 void WxlSurfaceLightsApply(const double* values, size_t count) {

@@ -43,6 +43,13 @@ struct FrameInputs
 constexpr int kSkyColorCount = 6;
 constexpr int kWaterColorPair = 2;
 
+struct WaterLamp
+{
+    float position[3] = {};
+    float radius = 0;
+    float color[3] = {};
+};
+
 struct WaterInputs
 {
     uint32_t skyColors[kSkyColorCount];
@@ -51,6 +58,7 @@ struct WaterInputs
     bool stockFogApplies;
     WaterContactFrame contacts;
     float rain = 0;
+    WaterLamp lamps[2];
     bool (*residentWater)(int map, float x, float y) = nullptr;
 };
 

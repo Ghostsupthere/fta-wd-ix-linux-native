@@ -183,6 +183,8 @@ Slider("Water quality", "water.quality", 2, 711, 1, 3, 1, "water.modern", "%.0f"
 Check("Water waves", "water.waves", 1, 744, "water.modern")
 Check("Movement ripples", "water.ripples", 2, 744, "water.modern")
 Check("Rain rings", "water.rainRings", 1, 0, "water.modern")
+Check("Lamp reflections", "water.lampGlints", 1, 0, "water.modern",
+    "Adds glints from nearby static lamps and the player lantern at night.")
 Slider("Wave strength", "water.waveStrength", 1, 798, 0, 2, .05, "water.waves")
 Slider("Ripple strength", "water.rippleStrength", 2, 798, 0, 2, .05, "water.ripples")
 Slider("Shore foam", "water.foam", 1, 849, 0, 2, .05, "water.modern")

@@ -85,6 +85,7 @@ namespace wxl::grass::environment
         {"atmosphere.terrainShadows", 0, 1, 0, true},
         {"world.staticLamps", 0, 1, 0, true},
         {"world.staticLampStrength", 0, 2, 1, false},
+        {"water.lampGlints", 0, 1, 0, true},
     };
     constexpr size_t kCount = sizeof(kOptions) / sizeof(kOptions[0]);
 
@@ -111,6 +112,7 @@ namespace wxl::grass::environment
         kSpellLightRange,
         kTerrainShadows,
         kStaticLamps, kStaticLampStrength,
+        kWaterLampGlints,
     };
 
     struct Values

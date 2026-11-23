@@ -1286,6 +1286,13 @@ void WaterRenderer::FillClassConstants(ShadingConstants& c, const WaterPreset& p
     c.rippleWindow = m_rippleWindow;
     c.rippleShape = m_rippleShape;
     c.rippleFade = m_rippleFade;
+    if (!noSun) {
+        for (unsigned i = 0; i < 2; ++i) {
+            const auto& lamp = m_water.lamps[i];
+            c.lampData[2 * i] = {lamp.position[0], lamp.position[1], lamp.position[2], lamp.radius};
+            c.lampData[2 * i + 1] = {lamp.color[0], lamp.color[1], lamp.color[2], 0};
+        }
+    }
     for (int slot = 0; slot < kWaterShadedMaskSlots; ++slot)
     {
         const int32_t mask = preset.masks[slot];

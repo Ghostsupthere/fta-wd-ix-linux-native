@@ -40,6 +40,22 @@ float3 DebugColour(float3 N, float4 foamAlbedo, float3 transmittance, float3 ref
     return RippleColour(ripples);
 }
 
+float3 LocalLampGlint(WaterPixel w, float3 N, float3 V, float4 lamp, float3 colour)
+{
+    float3 toLamp = lamp.xyz - w.position;
+    float distanceSquared = max(dot(toLamp, toLamp), 0.05);
+    float inverseDistance = rsqrt(distanceSquared);
+    float rangeFade = saturate(1 - distanceSquared / max(lamp.w * lamp.w, 0.1));
+    float3 direction = toLamp * inverseDistance;
+    float3 halfway = normalize(V + direction + float3(0, 0, 0.001));
+    float highlight = saturate(dot(N, halfway));
+    highlight *= highlight;
+    highlight *= highlight;
+    highlight *= highlight;
+    highlight *= highlight;
+    return colour * (highlight * rangeFade * rangeFade * saturate(toLamp.z) / (1 + 0.10 * distanceSquared));
+}
+
 float4 main(float2 pixelIndex : VPOS) : COLOR0
 {
     float2 pixel = pixelIndex + 0.5;
@@ -78,6 +94,10 @@ float4 main(float2 pixelIndex : VPOS) : COLOR0
     float environmentAttenuation = 1 - FresnelSchlick(dot(H, V)) * SunVisibility();
     float3 sunSpecular = SunVisibility() * SunColour() * SpecularStrength() * SunGlint(sunRoughness, N, V, L);
     colour += sunSpecular + environmentAttenuation * environment;
+    [branch] if (cWaterLamps[0].w > 0)
+        colour += LocalLampGlint(w, N, V, cWaterLamps[0], cWaterLamps[1].rgb) * (1 - foamAlbedo.a);
+    [branch] if (cWaterLamps[2].w > 0)
+        colour += LocalLampGlint(w, N, V, cWaterLamps[2], cWaterLamps[3].rgb) * (1 - foamAlbedo.a);
 
     [branch] if (WaterDebugView() > 0.5)
         return float4(DebugColour(N, foamAlbedo, transmittance, reflected, ripples), 1);

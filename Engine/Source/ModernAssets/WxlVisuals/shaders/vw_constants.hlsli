@@ -29,6 +29,7 @@ float4 cReflectionFogRange : register(c64);
 float4 cRippleWindow : register(c65);
 float4 cRippleShape : register(c66);
 float4 cRippleFade : register(c67);
+float4 cWaterLamps[4] : register(c68);
 
 sampler2D sSceneColour : register(s0);
 sampler2D sSceneDepth : register(s1);

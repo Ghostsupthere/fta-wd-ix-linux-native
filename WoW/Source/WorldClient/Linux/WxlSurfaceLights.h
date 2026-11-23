@@ -26,6 +26,8 @@ bool WxlSurfaceLightsAvailable();
 void WxlSurfaceLightsApply(const double* values, size_t count);
 // Top of CWorldScene::RenderChunks: updates the light list and fills and binds the light texture.
 void WxlSurfaceLightsBeforeTerrain();
+struct WaterLamp;
+void WxlSelectWaterLamps(const float* eye, WaterLamp (&lamps)[2]);
 // Set the weather mask for the current WMO group and return the previous mask.
 bool WxlSetWmoWeatherExterior(bool exterior);
 // Once per rendered frame, after the world: puts the header back to "stock lighting only".

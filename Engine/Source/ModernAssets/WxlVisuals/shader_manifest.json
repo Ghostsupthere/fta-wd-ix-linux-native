@@ -26,7 +26,7 @@
     "vf_silhouette_mask.hlsl": "3ab1e6005f1e3f48e59f460c53616761c806a030bf8fbafb64f85a2cda50ccf7",
     "vf_temporal.hlsl": "d23010218a9767f99f8f2be61cfd0da545a08b5d75cae476acf156ca97f595c2",
     "vp_grade.hlsl": "968d5dace634645a4be4b1800c802a4007bcb1cbc46d8efa460265df37d50948",
-    "vw_constants.hlsli": "2cddd23e6e575896d3b43a9e59258f228963a2ed936708402b6081da0ba76c7c",
+    "vw_constants.hlsli": "291a5bd18c69a6cb04072d1254f0754ed423dafc0068f716b053e8f9c499ee70",
     "vw_fft_butterfly.hlsl": "c653d5ba490c71c427b58eb3f0d4182137b5134c59d28d96f441edbbb09503b9",
     "vw_fft_common.hlsli": "314dad36fd27a4ffc275707b663729b2ed348e6283a5f0fd1ceefafdece6d1c7",
     "vw_fft_evolve.hlsl": "82be2e7f17e6d96b83566204e91245eff07d45ddb1a39d83edcf5488cb74ae55",
@@ -37,7 +37,7 @@
     "vw_reflection.hlsli": "f48f39b641e79f7d2e5f2392e450b48f765618759494ddb0f18bbe0ce6eabc2f",
     "vw_ripple_step.hlsl": "d816323bb2df462b4932b870338fe2370874bfa5bff708c8f30b575c0dca14bc",
     "vw_surface.hlsli": "f6bc4167094bfcd429835da14c9a6f328e97e541874f83ac00646e68c81f3528",
-    "vw_water.hlsl": "fb80e448e88033b7e10d23e2112fd1066a2954cbb8542aa57ec28f6bc66cfc33"
+    "vw_water.hlsl": "8a3d844b47b792f9487f2b83c3076cf5d791529a4dbb3d6e300e8e88cb13a564"
   },
   "shaders": {
     "ps_composite_high": {
@@ -554,8 +554,8 @@
       "defines": [
         "SSR_STEPS=32"
       ],
-      "bytecode_sha256": "5be704632353698dd540497e41b57666fe7dbc9bcbcdc5f616f1f281f9e7392b",
-      "bytecode_bytes": 29712
+      "bytecode_sha256": "a723c11b669613a579dc4fd4ac2beb8a7c50ceffd5e5fb93497f6b289d1e12aa",
+      "bytecode_bytes": 30804
     },
     "ps_vw_shade_low": {
       "source": "vw_water.hlsl",
@@ -563,8 +563,8 @@
       "defines": [
         "SSR_STEPS=0"
       ],
-      "bytecode_sha256": "cc8e2c877d956b36d7cbab3b58e6e12355ac2f7568a2c3aa4afa90bfbcac162f",
-      "bytecode_bytes": 19096
+      "bytecode_sha256": "bc2b25e41e0148c47e70259796ca8669fee271c324badee5cba28777ce473390",
+      "bytecode_bytes": 20172
     },
     "ps_vw_shade_mid": {
       "source": "vw_water.hlsl",
@@ -572,8 +572,8 @@
       "defines": [
         "SSR_STEPS=16"
       ],
-      "bytecode_sha256": "966100f7479a599dce95accac0606af6c920974d165eca347bf29ad3b7639fb3",
-      "bytecode_bytes": 29712
+      "bytecode_sha256": "550c48e9b7b77d0735f866033ec0ef74ac5f1a862c0f6a5e6790f1491aae03dd",
+      "bytecode_bytes": 30804
     },
     "vs_fullscreen": {
       "source": "vf_fullscreen_vs.hlsl",

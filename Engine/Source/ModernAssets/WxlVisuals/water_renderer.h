@@ -120,6 +120,7 @@ private:
         Float4 rippleWindow;
         Float4 rippleShape;
         Float4 rippleFade;
+        Float4 lampData[4];
     };
 
     struct FoamMaskTexture
