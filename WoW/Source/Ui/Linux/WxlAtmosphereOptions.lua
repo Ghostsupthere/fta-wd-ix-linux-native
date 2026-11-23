@@ -166,6 +166,10 @@ Check("Cloud shadows", "atmosphere.cloudShadows", 1, 0, nil,
 Check("Terrain shadows", "atmosphere.terrainShadows", 1, 0, nil,
     "Shades nearby ground behind hills when the sun is low.")
 
+Check("Static lamps", "world.staticLamps", 1, 0, "lights.enabled",
+    "Lights eligible nearby lamp models. Requires Dynamic lights and the lamp catalog.")
+Slider("Static lamp strength", "world.staticLampStrength", 1, 0, 0, 2, .05, "world.staticLamps")
+
 Check("Spell effect lights (experimental)", "atmosphere.spellLights", 1, 0, nil,
     "Adds up to four small lights from nearby spell effects and projectiles.")
 Slider("Spell light brightness", "atmosphere.spellLightStrength", 1, 0, 1, 5, .1, "atmosphere.spellLights", nil,

@@ -21,6 +21,7 @@
 #include "Engine/Source/ModernAssets/NativeShaderReplace.h"
 #include "Engine/Source/ModernAssets/NativeVisualHooks.h"
 #include "Engine/Source/ModernAssets/WxlGrass/EnvironmentOptions.hpp"
+#include "Engine/Source/ModernAssets/WxlSurfaceLights/StaticLampCatalog.hpp"
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/DoodadLightTables.hpp"
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/LightPool.hpp"
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/LightShaderPack.hpp"
@@ -142,6 +143,10 @@ bool ShadersActive() { return packLoaded && replaced[sl::kGroupTerrain] > 0; }
 sl::Settings settings;
 sl::LightTables tables;
 bool tablesLoaded = false;
+bool staticLampsEnabled = false, lampCatalogTried = false;
+float staticLampStrength = 1;
+sl::StaticLampCatalog lampCatalog;
+constexpr unsigned kStaticLampLimit = 24;
 std::string tableStatus = "not loaded yet";
 
 struct Source {
@@ -164,6 +169,7 @@ struct Source {
     float localPos[3] = {}, localDir[3] = {0.0f, 0.0f, -1.0f};
     const CM2Model* model = nullptr;
     bool bake = false;
+    bool staticLamp = false;
 };
 std::vector<Source> sources;
 std::unordered_set<const CM2Model*> liveModels;   // models seen by the last scan, minus those destroyed since
@@ -182,6 +188,7 @@ bool haveLastUpdate = false;
 struct Stats {
     unsigned models = 0, modelsInRange = 0, modelLights = 0, fromClient = 0, fromWorld = 0, fileColor = 0, merged = 0,
              inRange = 0, active = 0, tableLights = 0, suppressedModels = 0, attachFallbacks = 0, attached = 0;
+    unsigned staticLamps = 0, staticDuplicates = 0;
     unsigned bakeWanted = 0, bakeDone = 0, bakeRays = 0, bakeCached = 0, indoor = 0, indoorTests = 0;
 };
 Stats stats;
@@ -386,10 +393,16 @@ void AddTableLight(const sl::Assignment& a, const SceneModel& m, Stats& st) {
 }
 
 void ScanModels(const float center[3]) {
+    if (staticLampsEnabled && !lampCatalogTried) {
+        lampCatalogTried = true;
+        std::ifstream file(ClientDirectory() / "Utils/WarcraftXL/visuals/lamp_models.csv");
+        if (file) lampCatalog = sl::ReadStaticLampCatalog(file);
+        std::fprintf(stderr, "WarcraftXL: static lamp catalog: %zu models\n", lampCatalog.size());
+    }
     sources.clear();
     liveModels.clear();
     Stats st = stats;
-    st.tableLights = st.suppressedModels = st.attachFallbacks = st.modelLights = 0;
+    st.tableLights = st.suppressedModels = st.attachFallbacks = st.modelLights = st.staticLamps = 0;
     static std::vector<SceneModel> models;
     unsigned attached = 0;
     st.models = SceneModels(center, settings.range, models, attached);
@@ -399,14 +412,34 @@ void ScanModels(const float center[3]) {
     for (const SceneModel& m : models) {
         if (!m.data) continue;
         bool suppress = false;
-        if (haveTable)
-            for (const sl::Assignment* a : RowsFor(m.path)) {
+        const auto* rows = haveTable ? &RowsFor(m.path) : nullptr;
+        if (rows)
+            for (const sl::Assignment* a : *rows) {
                 if (a->flags & sl::kSuppressModelLights) suppress = true;
                 if (a->lightId) AddTableLight(*a, m, st);
             }
         if (suppress) { ++st.suppressedModels; continue; }
         // The model's own lights: point lights only.
         const uint32_t count = m.data->m_lights.m_count;
+        if (!count && !m.parent && staticLampsEnabled && st.staticLamps < kStaticLampLimit &&
+            (!rows || rows->empty()) && !lampCatalog.empty()) {
+            const auto catalog = lampCatalog.find(sl::NormalizePath(m.path));
+            if (catalog != lampCatalog.end()) {
+                const auto& lamp = catalog->second;
+                Source s;
+                s.table = true;
+                s.staticLamp = true;
+                s.model = m.model;
+                s.radius = lamp.radius;
+                s.falloff = 2;
+                s.scale = sl::MatrixScale(m.world);
+                s.flickerMode = sl::kFlickerSmooth;
+                sl::MulPoint(lamp.offset, m.world, s.worldPos);
+                for (unsigned i = 0; i < 3; ++i) s.color[i] = lamp.color[i] * lamp.strength;
+                sources.push_back(s);
+                ++st.staticLamps;
+            }
+        }
         if (!count || count > 64) continue;
         for (uint32_t l = 0; l < count; ++l) {
             const M2Light& file = m.data->m_lights[l];
@@ -493,6 +526,8 @@ void UpdateLights(float dt, const float eye[3]) {
     }
     lightTime += dt;
     std::vector<sl::Candidate> cands;
+    std::array<sl::Candidate, kStaticLampLimit> lamps;
+    unsigned lampCount = 0;
     unsigned fromClient = 0, fromWorld = 0, fileColor = 0;
     const float range = settings.range;
     for (const Source& s : sources) {
@@ -549,7 +584,15 @@ void UpdateLights(float dt, const float eye[3]) {
         if (!valid) continue;
         const float dx = c.pos[0] - eye[0], dy = c.pos[1] - eye[1], dz = c.pos[2] - eye[2];
         if (dx * dx + dy * dy + dz * dz > range * range) continue;
-        cands.push_back(c);
+        if (s.staticLamp) {
+            if (!staticLampsEnabled || staticLampStrength <= 0 || lampCount >= lamps.size()) continue;
+            for (float& channel : c.color) channel *= staticLampStrength;
+            c.supplemental = true;
+            c.staticLamp = true;
+            lamps[lampCount++] = c;
+        } else {
+            cands.push_back(c);
+        }
     }
     stats.fromClient = fromClient; stats.fromWorld = fromWorld; stats.fileColor = fileColor;
     stats.inRange = static_cast<unsigned>(cands.size());
@@ -596,6 +639,22 @@ void UpdateLights(float dt, const float eye[3]) {
         light.moving = true;
         light.supplemental = true;
         cands.push_back(light);
+    }
+    stats.staticDuplicates = 0;
+    for (unsigned i = 0; i < lampCount && cands.size() < sl::kMaxPool; ++i) {
+        const auto& lamp = lamps[i];
+        bool duplicate = false;
+        // Ignore entries retired by MergeCandidates; survivors retain their
+        // original slots, so inspect the original authored range.
+        for (unsigned j = 0; j < stats.inRange && !duplicate; ++j) {
+            const auto& native = cands[j];
+            if (native.weight <= 0) continue;
+            const float x = lamp.pos[0] - native.pos[0], y = lamp.pos[1] - native.pos[1];
+            const float z = lamp.pos[2] - native.pos[2];
+            duplicate = x*x + y*y + z*z < 4.0f;
+        }
+        if (duplicate) ++stats.staticDuplicates;
+        else cands.push_back(lamp);
     }
     indoorTestsThisFrame = 0;
     pool = sl::ChooseActive(cands, settings, eye, lightTime, [](const float* p) { return IsIndoor(p); });
@@ -889,6 +948,10 @@ void WxlSurfaceLightsApply(const double* values, size_t count) {
     settings.bakeRaysPerFrame = static_cast<int>(values[env::kLightsRaysPerFrame]);
     settings.indoorSkipsTerrain = static_cast<int>(values[env::kLightsIndoorIsolation]);
     settings.modelStockOff = 1;
+    const bool enableLamps = values[env::kAtmosphereOverride] && values[env::kStaticLamps];
+    if (staticLampsEnabled != enableLamps) scanTimer = 0.25f;
+    staticLampsEnabled = enableLamps;
+    staticLampStrength = static_cast<float>(values[env::kStaticLampStrength]);
 }
 
 void WxlSurfaceLightsBeforeTerrain() {
@@ -1064,6 +1127,13 @@ std::string WxlSurfaceLightsStatus() {
                   terrainLightsOn ? "on" : "off", replaced[sl::kGroupTerrain], replaced[sl::kGroupModel], replaced[sl::kGroupWmo],
                   wmoLights ? "" : " (buildings not lit: WMO lights are off, the WMO layered-material pack has no light variants)",
                   stats.bakeDone, stats.bakeWanted, stats.bakeCached, stats.indoor);
-    return text;
+    std::string status = text;
+    if (staticLampsEnabled) {
+        char lamps[176];
+        std::snprintf(lamps, sizeof(lamps), "\nStatic lamps: %zu catalog models, %u nearby matches, %u near authored lights. Requires Dynamic lights.",
+                      lampCatalog.size(), stats.staticLamps, stats.staticDuplicates);
+        status += lamps;
+    }
+    return status;
 }
 #endif

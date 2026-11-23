@@ -59,6 +59,7 @@ namespace wxl::surfacelights
         const void* model = nullptr;
         const float* occlusion = nullptr;
         bool supplemental = false;
+        bool staticLamp = false;
     };
 
     // A light this frame, before merging and choosing.
@@ -77,6 +78,7 @@ namespace wxl::surfacelights
         bool bake = false;
         bool moving = false;
         bool supplemental = false;
+        bool staticLamp = false;
     };
 
     struct Grid
@@ -301,6 +303,7 @@ namespace wxl::surfacelights
             l.dip = 1.0f - flicker;
             l.model = c.model;
             l.supplemental = c.supplemental;
+            l.staticLamp = c.staticLamp;
             l.indoor = settings.indoorSkipsTerrain && indoor && indoor(l.pos);
             out.indoor += l.indoor ? 1 : 0;
             out.active.push_back(l);
