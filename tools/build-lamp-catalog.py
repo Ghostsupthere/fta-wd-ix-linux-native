@@ -59,6 +59,32 @@ def entry(data, modern=False):
     return None
 
 
+def inside_bounds(name, data, light):
+    """Keep an emitter offset that lies far outside its model's bounding box on the model.
+
+    Some torches store the emitter at its bone pivot, which for ``torch.m2`` is
+    17 yards above a 1.4 yard model; the flame is drawn at the top of the mesh.
+    Offsets farther than half the model height (at least one yard) outside the
+    box are replaced by the box centre in x and y and a point 80 percent of the
+    way up (centre for lanterns).
+    """
+    if data[:4] == b"MD21":
+        data = data[8:]
+    if data[:4] != b"MD20" or len(data) < 0xB8:
+        return light
+    box = struct.unpack_from("<6f", data, 0xA0)
+    low, high = box[:3], box[3:]
+    if not all(math.isfinite(v) for v in box) or any(high[i] < low[i] for i in range(3)):
+        return light
+    x, y, z, *rest = light
+    margin = max(1.0, 0.5 * (high[2] - low[2]))
+    if all(low[i] - margin <= value <= high[i] + margin for i, value in enumerate((x, y, z))):
+        return light
+    centre = [(low[i] + high[i]) / 2 for i in range(3)]
+    height = 0.5 if b"lantern" in name else 0.8
+    return (centre[0], centre[1], low[2] + (high[2] - low[2]) * height, *rest)
+
+
 STORMWIND = b"world\\wmo\\azeroth\\buildings\\stormwind\\stormwind"
 STORMWIND_GLASS = b"dungeons\\textures\\doodads\\stormwindlampglass.blp"
 
@@ -208,6 +234,8 @@ def main():
             elif data and data[:8] == b"MD20\x08\x01\0\0" and len(data) >= 0x130:
                 if not struct.unpack_from("<I", data, 0x108)[0]:
                     light = MESH_LAMPS.get(name)
+            if light is not None and data:
+                light = inside_bounds(name, data, light)
             if light is not None:
                 catalog.append(name.decode("ascii") + "," + ",".join(f"{v:.5g}" for v in light))
         mesh = list(stormwind_mesh_lamps(read_effective))
