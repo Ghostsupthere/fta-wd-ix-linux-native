@@ -153,6 +153,14 @@ bool staticLampsEnabled = false, lampCatalogTried = false;
 float staticLampStrength = 1;
 sl::StaticLampCatalog lampCatalog;
 constexpr unsigned kStaticLampLimit = 24;
+struct LampDebug {
+    std::string path;
+    const char* stage;
+    float pos[3], color[3], radius, intensity, distance;
+    unsigned cells = 0;
+    bool indoor = false;
+};
+std::vector<LampDebug> lampDebug;
 std::string tableStatus = "not loaded yet";
 
 struct Source {
@@ -176,6 +184,7 @@ struct Source {
     const CM2Model* model = nullptr;
     bool bake = false;
     bool staticLamp = false;
+    int lampDebugIndex = -1;
 };
 std::vector<Source> sources;
 std::unordered_set<const CM2Model*> liveModels;   // models seen by the last scan, minus those destroyed since
@@ -407,7 +416,9 @@ void ScanModels(const float center[3]) {
     }
     sources.clear();
     liveModels.clear();
+    lampDebug.clear();
     Stats st = stats;
+    unsigned selectedLamps = 0;
     st.tableLights = st.suppressedModels = st.attachFallbacks = st.modelLights = st.staticLamps = 0;
     static std::vector<SceneModel> models;
     unsigned attached = 0;
@@ -424,28 +435,42 @@ void ScanModels(const float center[3]) {
                 if (a->flags & sl::kSuppressModelLights) suppress = true;
                 if (a->lightId) AddTableLight(*a, m, st);
             }
-        if (suppress) { ++st.suppressedModels; continue; }
-        // The model's own lights: point lights only.
         const uint32_t count = m.data->m_lights.m_count;
-        if (!count && !m.parent && staticLampsEnabled && st.staticLamps < kStaticLampLimit &&
-            (!rows || rows->empty()) && !lampCatalog.empty()) {
-            const auto catalog = lampCatalog.find(sl::NormalizePath(m.path));
+        if (staticLampsEnabled && !lampCatalog.empty() && m.path && *m.path) {
+            auto path = sl::NormalizeLampPath(m.path);
+            const auto catalog = lampCatalog.find(path);
             if (catalog != lampCatalog.end()) {
+                ++st.staticLamps;
                 const auto& lamp = catalog->second;
+                const char* rejected = suppress || (rows && !rows->empty()) ? "authored assignment" :
+                    count ? "native model lights" : m.parent ? "attached model" :
+                    selectedLamps >= kStaticLampLimit ? "selection limit" : nullptr;
+                const auto placement = sl::PlaceStaticLamp(lamp, m.world);
                 Source s;
                 s.table = true;
                 s.staticLamp = true;
                 s.model = m.model;
-                s.radius = lamp.radius;
-                s.falloff = 2;
-                s.scale = sl::MatrixScale(m.world);
+                s.radius = placement.radius;
+                s.falloff = 1;
                 s.flickerMode = sl::kFlickerSmooth;
-                sl::MulPoint(lamp.offset, m.world, s.worldPos);
-                for (unsigned i = 0; i < 3; ++i) s.color[i] = lamp.color[i] * lamp.strength;
-                sources.push_back(s);
-                ++st.staticLamps;
+                std::copy_n(placement.pos, 3, s.worldPos);
+                for (unsigned i = 0; i < 3; ++i) s.color[i] = lamp.color[i] * placement.strength;
+                if (lampDebug.size() < kStaticLampLimit) {
+                    LampDebug debug{std::move(path), rejected ? rejected : "selected", {}, {},
+                                    s.radius, placement.strength, m.distance};
+                    std::copy_n(s.worldPos, 3, debug.pos);
+                    std::copy_n(lamp.color, 3, debug.color);
+                    s.lampDebugIndex = static_cast<int>(lampDebug.size());
+                    lampDebug.push_back(std::move(debug));
+                }
+                if (!rejected) {
+                    sources.push_back(s);
+                    ++selectedLamps;
+                }
             }
         }
+        if (suppress) { ++st.suppressedModels; continue; }
+        // The model's own lights: point lights only.
         if (!count || count > 64) continue;
         for (uint32_t l = 0; l < count; ++l) {
             const M2Light& file = m.data->m_lights[l];
@@ -532,11 +557,18 @@ void UpdateLights(float dt, const float eye[3]) {
     }
     lightTime += dt;
     std::vector<sl::Candidate> cands;
-    std::array<sl::Candidate, kStaticLampLimit> lamps;
+    struct PendingLamp { sl::Candidate candidate; LampDebug* debug; };
+    std::array<PendingLamp, kStaticLampLimit> lamps;
     unsigned lampCount = 0;
     unsigned fromClient = 0, fromWorld = 0, fileColor = 0;
     const float range = settings.range;
     for (const Source& s : sources) {
+        LampDebug* debug = s.lampDebugIndex >= 0 ? &lampDebug[s.lampDebugIndex] : nullptr;
+        if (debug) {
+            debug->stage = "model no longer resident";
+            debug->cells = 0;
+            debug->indoor = false;
+        }
         sl::Candidate c;
         c.radius = s.radius; c.falloff = s.falloff;
         std::memcpy(c.spotDir, s.spotDir, sizeof(c.spotDir));
@@ -587,15 +619,22 @@ void UpdateLights(float dt, const float eye[3]) {
         for (unsigned axis = 0; axis < 3; ++axis)
             valid = valid && std::isfinite(c.pos[axis]) && std::fabs(c.pos[axis]) < 100000.0f &&
                     std::isfinite(c.color[axis]) && c.color[axis] >= 0.0f;
+        if (debug) debug->stage = "invalid light";
         if (!valid) continue;
         const float dx = c.pos[0] - eye[0], dy = c.pos[1] - eye[1], dz = c.pos[2] - eye[2];
-        if (dx * dx + dy * dy + dz * dz > range * range) continue;
+        const float distanceSquared = dx * dx + dy * dy + dz * dz;
+        if (debug) {
+            debug->distance = std::sqrt(distanceSquared);
+            debug->stage = "outside light range";
+        }
+        if (distanceSquared > range * range) continue;
         if (s.staticLamp) {
-            if (!staticLampsEnabled || staticLampStrength <= 0 || lampCount >= lamps.size()) continue;
+            if (debug) debug->stage = "zero strength";
+            if (!staticLampsEnabled || staticLampStrength <= 0) continue;
             for (float& channel : c.color) channel *= staticLampStrength;
             c.supplemental = true;
             c.staticLamp = true;
-            lamps[lampCount++] = c;
+            lamps[lampCount++] = {c, debug};
         } else {
             cands.push_back(c);
         }
@@ -647,8 +686,10 @@ void UpdateLights(float dt, const float eye[3]) {
         cands.push_back(light);
     }
     stats.staticDuplicates = 0;
-    for (unsigned i = 0; i < lampCount && cands.size() < sl::kMaxPool; ++i) {
-        const auto& lamp = lamps[i];
+    size_t poolSlotsUsed = lampCount ? std::count_if(cands.begin(), cands.end(),
+        [](const auto& light) { return light.weight > 0; }) : 0;
+    for (unsigned i = 0; i < lampCount; ++i) {
+        const auto& [lamp, debug] = lamps[i];
         bool duplicate = false;
         // Ignore entries retired by MergeCandidates; survivors retain their
         // original slots, so inspect the original authored range.
@@ -659,8 +700,16 @@ void UpdateLights(float dt, const float eye[3]) {
             const float z = lamp.pos[2] - native.pos[2];
             duplicate = x*x + y*y + z*z < 4.0f;
         }
-        if (duplicate) ++stats.staticDuplicates;
-        else cands.push_back(lamp);
+        if (duplicate) {
+            ++stats.staticDuplicates;
+            if (debug) debug->stage = "near authored light";
+        } else {
+            if (debug) debug->stage = "pool limit";
+            if (poolSlotsUsed < sl::kMaxPool) {
+                cands.push_back(lamp);
+                ++poolSlotsUsed;
+            }
+        }
     }
     indoorTestsThisFrame = 0;
     pool = sl::ChooseActive(cands, settings, eye, lightTime, [](const float* p) { return IsIndoor(p); });
@@ -670,10 +719,26 @@ void UpdateLights(float dt, const float eye[3]) {
     const auto bake = occlusion.Update(pool.active, pool.wantBake, eye, settings, &TraceFraction);
     stats.bakeWanted = bake.wanted; stats.bakeDone = bake.done; stats.bakeRays = bake.rays; stats.bakeCached = bake.cached;
     gridBuilder.Build(pool.active, pool.baseLuminance, eye, settings, grid, gridStats);
+    if (lampCount) {
+        for (size_t i = 0; i < pool.active.size(); ++i) {
+            const auto& light = pool.active[i];
+            if (!light.staticLamp) continue;
+            for (unsigned j = 0; j < lampCount; ++j) {
+                auto* debug = lamps[j].debug;
+                if (lamps[j].candidate.model != light.model || !debug) continue;
+                debug->stage = "no grid slots";
+                debug->indoor = light.indoor;
+                debug->cells = sl::CountGridCells(grid, static_cast<uint16_t>(i), light);
+                if (debug->cells) debug->stage = "submitted";
+                break;
+            }
+        }
+    }
 }
 
 void ClearLights() {
     sources.clear();
+    lampDebug.clear();
     liveModels.clear();
     pool = sl::ChosenPool();
     grid = sl::Grid{};
@@ -1265,5 +1330,25 @@ std::string WxlSurfaceLightsStatus() {
         status += lamps;
     }
     return status;
+}
+std::string WxlStaticLampDebug() {
+    if (!staticLampsEnabled) return "Static lamps: off.";
+    if (!settings.enabled) return "Static lamps: enable Dynamic lights.";
+    if (lampDebug.empty()) return "Static lamps: no matches captured.";
+    std::string result;
+    for (const auto& lamp : lampDebug) {
+        char values[256];
+        const float intensity = lamp.intensity * staticLampStrength * settings.brightness;
+        std::snprintf(values, sizeof(values),
+            " %.1f yd @ (%.2f, %.2f, %.2f) radius %.1f intensity %.2f RGB %.2f/%.2f/%.2f | %s, %u cells%s",
+            lamp.distance, lamp.pos[0], lamp.pos[1], lamp.pos[2],
+            sl::StaticLampRadius(lamp.radius, settings), intensity,
+            lamp.color[0] * intensity, lamp.color[1] * intensity, lamp.color[2] * intensity, lamp.stage, lamp.cells,
+            lamp.indoor ? ", indoor (terrain excluded)" : "");
+        if (!result.empty()) result += '\n';
+        result += lamp.path;
+        result += values;
+    }
+    return result;
 }
 #endif

@@ -38,5 +38,6 @@ void WxlSurfaceLightsRelease();
 void WxlSurfaceLightsWorldLeave();
 // The Environment page's lighting readout.
 std::string WxlSurfaceLightsStatus();
+std::string WxlStaticLampDebug();
 
 #endif

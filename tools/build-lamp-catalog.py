@@ -10,6 +10,12 @@ import struct
 LAMP = re.compile(r"lamp|lantern|torch|brazier|campfire|candle|chandelier|streetlight|lightpost|firepit|forge|sconce")
 EXCLUDED = re.compile(r"broken|unlit|extinguished|weapon|spell|projectile|burning|invisible")
 ADDITIVE = {3, 4, 7}
+# This fixture illuminates its glass with a mesh material and has no emitter.
+# The offset is at the centre of the lantern head in its legacy model geometry.
+MESH_LAMPS = {
+    b"world\\generic\\human\\passive doodads\\lamps\\stormwindstreetlamp01.m2":
+        (0, 0, 4.25, 1, 0.73, 0.38, 15, 1.0),
+}
 
 
 def entry(data):
@@ -84,16 +90,20 @@ def main():
                 if LAMP.search(base) and not EXCLUDED.search(base):
                     names.add(name)
     try:
-        for name in sorted(names):
+        for name in sorted(names | MESH_LAMPS.keys()):
             if not name.isascii() or b"," in name:
                 continue
             data = next((data for archive in opened if (data := read(archive, name, 4 << 20))), None)
             light = entry(data) if data else None
-            if light is None:
-                continue
-            base = name.rsplit(b"\\", 1)[-1]
-            radius, strength = (5, 0.5) if b"candle" in base else (13, 0.85)
-            catalog.append(name.decode("ascii") + "," + ",".join(f"{v:.5g}" for v in (*light, radius, strength)))
+            if light is not None:
+                base = name.rsplit(b"\\", 1)[-1]
+                radius, strength = (5, 0.5) if b"candle" in base else (13, 0.85)
+                light = (*light, radius, strength)
+            elif data and data[:8] == b"MD20\x08\x01\0\0" and len(data) >= 0x130:
+                if not struct.unpack_from("<I", data, 0x108)[0]:
+                    light = MESH_LAMPS.get(name)
+            if light is not None:
+                catalog.append(name.decode("ascii") + "," + ",".join(f"{v:.5g}" for v in light))
     finally:
         for archive in opened:
             lib.SFileCloseArchive(archive)

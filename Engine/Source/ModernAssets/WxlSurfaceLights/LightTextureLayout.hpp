@@ -91,8 +91,10 @@ namespace wxl::surfacelights::texture
             o[3] = l.radius > 0.0f ? 1.0f / l.radius : 0.0f;
             o[4] = l.color[0]; o[5] = l.color[1]; o[6] = l.color[2]; o[7] = l.falloff;
             o[8] = l.spotDir[0]; o[9] = l.spotDir[1]; o[10] = l.spotDir[2]; o[11] = l.cosOuter;
-            o[12] = l.spotScale; o[14] = l.dip;
+            o[12] = l.spotScale;
             o[13] = l.occlusion ? static_cast<float>(count) / kTilesPerRow : -1.0f;
+            // Negative dips mark the independent addition in baked WMO shaders.
+            o[14] = l.staticLamp ? -1.0f - l.dip : l.dip;
             o[15] = l.indoor ? 1.0f : 0.0f;
             ++count;
         }
