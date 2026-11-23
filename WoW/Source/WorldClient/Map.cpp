@@ -5924,7 +5924,7 @@ void CMap::VectorIntersectMapObjs(CMapChunk* chunk, const C3Vector& start, const
     }
 }
 
-bool CMap::QueryResidentFloor(int32_t map, float x, float y, float& height, int32_t& waterType) {
+bool CMap::QueryResidentFloor(int32_t map, float x, float y, float& height, int32_t& waterType, bool includeWater) {
     if (!bActive || bDungeon || map != s_mapId ||
         !(std::abs(x) < HALF_WORLD_SIZE - 1.0f) || !(std::abs(y) < HALF_WORLD_SIZE - 1.0f))
         return false;
@@ -5948,6 +5948,7 @@ bool CMap::QueryResidentFloor(int32_t map, float x, float y, float& height, int3
     C3Vector position(x, y, 0);
     bool found = GetHeightTerrain(chunk, position, column, row, &height) && std::isfinite(height);
     waterType = 0;
+    if (!includeWater) return found;
     const C2iVector tile{column & 7, row & 7};
     const C2Vector fraction(gridY - column, gridX - row);
     unsigned layers = 0;

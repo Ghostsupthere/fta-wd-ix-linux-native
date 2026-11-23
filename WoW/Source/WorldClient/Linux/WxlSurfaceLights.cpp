@@ -6,6 +6,7 @@
 #include "Engine/Source/ModernAssets/WxlVisuals/player_lantern.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/corpse_light_list.h"
 #include "Engine/Source/ModernAssets/WxlVisuals/spell_light_list.h"
+#include "Engine/Source/ModernAssets/WxlVisuals/terrain_occlusion.h"
 #include "WxlVisualEnvironment.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
 #include "Engine/Source/Gx/CGxDeviceD3d9Ex/CGxDeviceD3d9Ex.h"
@@ -25,6 +26,8 @@
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/LightShaderPack.hpp"
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/LightTextureLayout.hpp"
 #include "WoW/Source/WorldClient/Map.h"
+#include "WoW/Source/WorldClient/DayNight.h"
+#include "WoW/Source/WorldClient/DayNight__DNInfo.h"
 #include "WoW/Source/WorldClient/MapObj.h"
 #include "WoW/Source/WorldClient/MapObjDef.h"
 #include "WoW/Source/WorldClient/World.h"
@@ -742,6 +745,102 @@ bool FillHeader(bool active, const float view[16], const float camera[3]) {
     return true;
 }
 
+constexpr DWORD kTerrainShadowSampler = 14;
+constexpr UINT kTerrainShadowConstant = 218;
+wxl::atmosphere::GroundFloor terrainHeights;
+IDirect3DTexture9* terrainShadow = nullptr;
+double terrainShadowAt = 0;
+int terrainShadowMap = -1;
+float terrainShadowParams[4] = {};
+float terrainShadowCenter[2] = {};
+unsigned terrainShadowFrames = 0;
+double terrainShadowMs = 0;
+
+bool SampleTerrain(int map, float x, float y, wxl::atmosphere::FloorSample& out) {
+    int32_t water;
+    return CMap::QueryResidentFloor(map, x, y, out.height, water, false);
+}
+
+void ResetTerrainShadow() {
+    if (terrainShadow) {
+        if (auto* gx = Backend(); gx && gx->m_d3dDevice)
+            gx->m_d3dDevice->SetTexture(kTerrainShadowSampler, nullptr);
+        terrainShadow->Release();
+        terrainShadow = nullptr;
+    }
+    terrainHeights.Reset();
+    terrainShadowMap = -1;
+    terrainShadowParams[3] = 0;
+    terrainShadowAt = 0;
+}
+
+void UpdateTerrainShadow(IDirect3DDevice9* d, const float* camera, bool enabled, double now) {
+    using wxl::atmosphere::GroundFloor;
+    constexpr int side = GroundFloor::Side;
+    const float size = side * GroundFloor::CellYards;
+    const auto* sky = DayNight::GetInfo();
+    const auto& sun = DayNight::g_planets.m_sun.m_position;
+    const auto direction = sky ? sun - sky->m_cameraPos : C3Vector(0, 0, 0);
+    const float horizontal = std::hypot(direction.x, direction.y);
+    const int map = World::QueryMapId();
+    if (!enabled || map < 0 || CMap::bDungeon || !sky || !std::isfinite(horizontal) || horizontal < 0.001f ||
+        !(direction.z > horizontal * 0.02f && direction.z < horizontal) ||
+        sky->m_dayProgression < 0.2013889f || sky->m_dayProgression > 0.9236111f) {
+        if (terrainShadow || terrainHeights.HasGrid()) ResetTerrainShadow();
+        d->SetPixelShaderConstantF(kTerrainShadowConstant, terrainShadowParams, 1);
+        return;
+    }
+    const double began = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    // Reset a far-away field immediately on a teleport, even on the same map.
+    if (map != terrainShadowMap || std::abs(camera[0] - terrainShadowCenter[0]) >= size * 0.5f ||
+        std::abs(camera[1] - terrainShadowCenter[1]) >= size * 0.5f)
+        terrainShadowParams[3] = 0;
+    terrainHeights.Update(map, camera, now, SampleTerrain);
+    if (now >= terrainShadowAt && terrainHeights.Known() > 0) {
+        terrainShadowAt = now + 0.12;
+        if (!terrainShadow)
+            d->CreateTexture(side, side, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &terrainShadow, nullptr);
+        D3DLOCKED_RECT lock{};
+        if (terrainShadow && SUCCEEDED(terrainShadow->LockRect(0, &lock, nullptr, 0))) {
+            wxl::atmosphere::TerrainShade shade;
+            wxl::atmosphere::BuildTerrainShade(terrainHeights.Texels(), direction.x, direction.y, direction.z, shade);
+            for (int y = 0; y < side; ++y)
+                std::memcpy(static_cast<char*>(lock.pBits) + y * lock.Pitch, shade.data() + y * side, side * sizeof(uint32_t));
+            if (SUCCEEDED(terrainShadow->UnlockRect(0))) {
+                float uv[2];
+                terrainHeights.CameraUV(camera, uv);
+                terrainShadowParams[0] = camera[0] - size * uv[0];
+                terrainShadowParams[1] = camera[1] - size * uv[1];
+                terrainShadowParams[2] = 1.0f / size;
+                terrainShadowParams[3] = 0.38f;
+                terrainShadowMap = map;
+                terrainShadowCenter[0] = camera[0];
+                terrainShadowCenter[1] = camera[1];
+            } else {
+                ResetTerrainShadow();
+            }
+        }
+    }
+    if (terrainShadowParams[3] > 0) {
+        d->SetTexture(kTerrainShadowSampler, terrainShadow);
+        d->SetSamplerState(kTerrainShadowSampler, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+        d->SetSamplerState(kTerrainShadowSampler, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+        d->SetSamplerState(kTerrainShadowSampler, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+        d->SetSamplerState(kTerrainShadowSampler, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+        d->SetSamplerState(kTerrainShadowSampler, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+    }
+    d->SetPixelShaderConstantF(kTerrainShadowConstant, terrainShadowParams, 1);
+    const double end = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    terrainShadowMs += end - began;
+    if (++terrainShadowFrames == 300) {
+        if (WxlProfileEnabled("WXL_PROFILER", false))
+            std::fprintf(stderr, "WarcraftXL: terrain shadows %.4f ms CPU average, %u/1024 terrain samples\n",
+                         terrainShadowMs / terrainShadowFrames, terrainHeights.Known());
+        terrainShadowMs = 0;
+        terrainShadowFrames = 0;
+    }
+}
+
 void ResetGpu() {
     ReleaseTexture();
     gridOn = false;
@@ -868,6 +967,7 @@ void WxlSurfaceLightsBeforeTerrain() {
             }
         }
     }
+    if (weatherPackLoaded) UpdateTerrainShadow(d, camera, viewOk && WxlTerrainShadows(), std::chrono::duration<double>(now.time_since_epoch()).count());
     const bool lightsOn = viewOk && settings.enabled && Scene();
     if (lightsOn) UpdateLights(std::min(dt, 0.25f), camera);
     else if (grid.cells) { ClearLights(); }
@@ -904,6 +1004,7 @@ void WxlSurfaceLightsFrame() {
             const float dry[4] = {};
             gx->m_d3dDevice->SetPixelShaderConstantF(215, dry, 1);
             gx->m_d3dDevice->SetPixelShaderConstantF(217, dry, 1);
+            gx->m_d3dDevice->SetPixelShaderConstantF(kTerrainShadowConstant, dry, 1);
             gx->m_d3dDevice->SetVertexShaderConstantF(kWetVertex, dry, 1);
             if (wmoWeatherSelected) gx->m_d3dDevice->SetVertexShaderConstantF(kWmoCloud, dry, 1);
         }
@@ -926,6 +1027,7 @@ void WxlSurfaceLightsFrame() {
 }
 
 void WxlSurfaceLightsRelease() {
+    ResetTerrainShadow();
     wmoWeatherVisible = false;
     wmoWeatherExterior = false;
     ResetGpu();

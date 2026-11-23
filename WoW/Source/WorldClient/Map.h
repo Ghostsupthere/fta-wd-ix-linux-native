@@ -361,7 +361,7 @@ class CMap {
     static bool GetHeightTerrain(CMapChunk* chunk, C3Vector& pos, int32_t cellX, int32_t cellY, float* outHeight);
     static void QueryDoodadDefHitTests(TSList<CMapBaseObjLink, TSGetExplicitLink<CMapBaseObjLink> >* list, const C3Vector& start, const C3Vector& end);
     static void VectorIntersectMapObjs(CMapChunk* chunk, const C3Vector& start, const C3Vector& end, float* t);
-    static bool QueryResidentFloor(int32_t map, float x, float y, float& height, int32_t& waterType);
+    static bool QueryResidentFloor(int32_t map, float x, float y, float& height, int32_t& waterType, bool includeWater = true);
     static bool QueryHeight(const C3Vector& position, float range, float* height);
     static bool LinkStaticEntityGetChunk(C3Vector& pos, float* outHeight, CMapChunk** outChunk);
     static void ClassifyStaticEntityLink(CMapStaticEntity* entity, CMapObjDef* mapObjDef, CMapObjDefGroup* mapObjDefGroup, uint32_t faceInfo, C3Vector* pos);

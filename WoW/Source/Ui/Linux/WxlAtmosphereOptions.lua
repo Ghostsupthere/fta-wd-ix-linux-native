@@ -162,7 +162,9 @@ Check("Rain-wet surfaces", "atmosphere.wetSurfaces", 1, 0, nil,
     "Adds damp terrain and model lighting outdoors during rain.")
 
 Check("Cloud shadows", "atmosphere.cloudShadows", 1, 0, nil,
-    "Moves soft cloud shade across outdoor terrain and dims nearby fog light.")
+    "Moves soft cloud shade across outdoor terrain and buildings and dims nearby fog light.")
+Check("Terrain shadows", "atmosphere.terrainShadows", 1, 0, nil,
+    "Shades nearby ground behind hills when the sun is low.")
 
 Check("Spell effect lights (experimental)", "atmosphere.spellLights", 1, 0, nil,
     "Adds up to four small lights from nearby spell effects and projectiles.")

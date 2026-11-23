@@ -9,6 +9,7 @@ namespace wxl::atmosphere { struct PlayerLantern; struct CorpseLightList; struct
 const wxl::atmosphere::PlayerLantern& WxlFrameLantern();
 const wxl::atmosphere::CorpseLightList& WxlFrameCorpseLights();
 float WxlSurfaceWetness();
+bool WxlTerrainShadows();
 const float* WxlSurfaceCloud();
 const wxl::atmosphere::SpellLightList& WxlFrameSpellLights();
 #endif

@@ -86,6 +86,7 @@ wxl::atmosphere::CorpseLightList corpseLights;
 double corpseScanAt = -1;
 int corpseMap = -1;
 float surfaceWetness = 0;
+bool terrainShadows = false;
 float surfaceCloud[4] = {};
 wxl::atmosphere::SpellLightList spellLights;
 double spellScanAt = -1;
@@ -451,6 +452,7 @@ static wxl::atmosphere::AreaPath ReadRegionPath(int map) {
 const wxl::atmosphere::PlayerLantern& WxlFrameLantern() { return frameLantern; }
 const wxl::atmosphere::CorpseLightList& WxlFrameCorpseLights() { return corpseLights; }
 float WxlSurfaceWetness() { return surfaceWetness; }
+bool WxlTerrainShadows() { return terrainShadows; }
 const float* WxlSurfaceCloud() { return surfaceCloud; }
 const wxl::atmosphere::SpellLightList& WxlFrameSpellLights() { return spellLights; }
 
@@ -713,6 +715,7 @@ bool WxlBeginVisualWorld(bool underwater,const float* target) {
     DisarmTransparentFog();
     worldDepthReady = false;
     surfaceWetness = 0;
+    terrainShadows = false;
     surfaceCloud[0] = 0;
     frameLantern = {};
     if (optionsChanged) {
@@ -747,6 +750,7 @@ bool WxlBeginVisualWorld(bool underwater,const float* target) {
     } else {
         regionalFog.Reset();
     }
+    terrainShadows = previewLights && options.v[env::kTerrainShadows] && player->IsOutdoors();
     if (options.v[env::kAtmosphereOverride] && options.v[env::kWetSurfaces] && player->IsOutdoors()) {
         const auto* weather = World::s_weather;
         if (weather && weather->m_rain && std::isfinite(weather->m_intensity))
