@@ -268,7 +268,7 @@ Check("Item IDs", "text.tooltipItemIds", 1, 0, nil,
     "Shows item IDs when neither IdTip nor ElvUI owns the tooltip.", true)
 Section("Optional addons")
 Check("Load DrakeishUI on login", "addons.drakeishUI", 1, 0, nil,
-    "Requires a complete installed DrakeishUI package. Skips loading while ElvUI or Tukui is active. Reload to apply.", true)
+    "The default interface. Requires the installed DrakeishUI package. While it is on, ElvUI and Tukui stay off; turn it off to use them again. Reload to apply.", true)
 Check("Load FTA Quest Tracker on login", "addons.questTracker", 1, 0, nil,
     "Loads the optional tracker without Questie. Uses stock quest data when native APIs are unavailable. Reload to apply.", true)
 Check("Load FTA Resilience on login", "addons.resilience", 1, 0, nil,
@@ -468,6 +468,11 @@ if InterfaceOptions_AddCategory and not WaystoneInterfaceStylePanel then
     local toggle = CreateFrame("CheckButton", "WaystoneUseModernInterface", style, "InterfaceOptionsCheckButtonTemplate")
     toggle:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", -2, -18)
     _G[toggle:GetName() .. "Text"]:SetText("Use DrakeishUI after interface reload")
+    local note = style:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    note:SetPoint("TOPLEFT", toggle, "BOTTOMLEFT", 4, -8)
+    note:SetWidth(520)
+    note:SetJustifyH("LEFT")
+    note:SetText("DrakeishUI is the default interface. While it is on, ElvUI and Tukui are not loaded, whatever a character's addon list says. Turn it off, then reload, to use ElvUI or Tukui again.")
     local pending
     local function refresh()
         local value = pending
@@ -477,7 +482,7 @@ if InterfaceOptions_AddCategory and not WaystoneInterfaceStylePanel then
     toggle:SetScript("OnClick", function(self) pending = self:GetChecked() and 1 or 0 end)
     style.refresh = refresh
     style.cancel = function() pending = nil; refresh() end
-    style.default = function() pending = 0; refresh() end
+    style.default = function() pending = 1; refresh() end
     style.okay = function()
         if pending ~= nil and WarcraftXL_SetEnvironmentOption("addons.drakeishUI", pending) then
             WarcraftXL_SaveEnvironmentOptions()

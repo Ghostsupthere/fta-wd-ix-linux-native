@@ -213,6 +213,11 @@ void WxlEnvironmentOptionsLoad() {
     Apply();
 }
 
+bool WxlInterfaceStyleDrakeish() {
+    WxlEnvironmentOptionsLoad();
+    return values.v[env::kDrakeishUI] != 0.0;
+}
+
 void WxlEnvironmentOptionsFrame() {
     if (!sampling) return;
     const auto now = std::chrono::steady_clock::now();

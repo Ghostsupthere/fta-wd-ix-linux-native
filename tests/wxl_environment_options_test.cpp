@@ -13,9 +13,10 @@ static void Require(bool ok, const char* what) { if (!ok) { std::fprintf(stderr,
 int main() {
     Values defaults;
     Require(kCount == kResilienceAddon + 1, "option indices match the table");
-    for (const auto option : {kWeatherDrift, kShaftEdges, kCorpseLights, kRainRings, kWetSurfaces, kCloudShadows, kSpellLights, kTerrainShadows, kStaticLamps, kWaterLampGlints, kCompactAreaNames, kHideAreaNames, kCosmeticFootprints, kCharacterRim, kWeaponEffects, kTooltipCreatureIds, kTooltipItemIds, kDrakeishUI, kQuestTrackerAddon, kResilienceAddon})
+    for (const auto option : {kWeatherDrift, kShaftEdges, kCorpseLights, kRainRings, kWetSurfaces, kCloudShadows, kSpellLights, kTerrainShadows, kStaticLamps, kWaterLampGlints, kCompactAreaNames, kHideAreaNames, kCosmeticFootprints, kCharacterRim, kWeaponEffects, kTooltipCreatureIds, kTooltipItemIds, kQuestTrackerAddon, kResilienceAddon})
         Require(defaults.v[option] == 0, "new visual controls default off");
     Require(defaults.v[kLightsEnabled] == 1 && defaults.v[kLightsModels] == 1 && defaults.v[kGrassMemoryMB] == 64, "defaults (surface lights on)");
+    Require(defaults.v[kDrakeishUI] == 1, "DrakeishUI is the default interface");
 
     // Clamping, integer rounding, non-finite input.
     Require(Normalize(kGrassWindStrength, 9) == 2, "clamp high");

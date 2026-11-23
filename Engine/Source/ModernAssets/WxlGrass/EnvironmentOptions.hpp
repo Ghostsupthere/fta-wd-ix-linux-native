@@ -99,7 +99,7 @@ namespace wxl::grass::environment
         {"world.weaponEffectIntensity", 0, 1, 0.7, false},
         {"text.tooltipCreatureIds", 0, 1, 0, true},
         {"text.tooltipItemIds", 0, 1, 0, true},
-        {"addons.drakeishUI", 0, 1, 0, true},
+        {"addons.drakeishUI", 0, 1, 1, true},
         {"addons.questTracker", 0, 1, 0, true},
         {"world.softParticles", 0, 1, 0, true},
         {"world.softParticleDistance", 0.1, 3, 1, false},

@@ -14,5 +14,8 @@ void WxlEnvironmentOptionsLoad();
 // Once per rendered frame: feeds the performance sample.
 void WxlEnvironmentOptionsFrame();
 void WxlRegisterEnvironmentLua();
+// True while DrakeishUI is the selected interface ("addons.drakeishUI", on by default). The addon loader keeps ElvUI and Tukui out
+// of the load list for as long as it is true and DrakeishUI is installed. Safe to call before the Lua functions are registered.
+bool WxlInterfaceStyleDrakeish();
 
 #endif

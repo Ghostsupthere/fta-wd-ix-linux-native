@@ -19,6 +19,9 @@
 #include "WoW/Source/WowSvcs/WowSvcsClient/ClientServices.h"
 #include "ThirdParty/zlib/zlib.h"
 #include "WoW/Source/Ui/Types.h"
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/WorldClient/Linux/WxlEnvironmentOptions.h"
+#endif
 #include "WoW/Source/Ui/UIBindings.h"
 
 // STATIC: 0x00AD17B4
@@ -856,6 +859,17 @@ bool IsAddOnLoadable(const char* name, bool demandLoad, UIADDON_LOADABLE_REASON&
         reason = UIADDON_DISABLED;
         return false;
     }
+
+#if defined(WOWDECOMP_LINUX)
+    // DrakeishUI is the default interface. While it is the selected style and installed, ElvUI and Tukui (and so everything that
+    // requires them) stay out of the load list, whatever a character's AddOns.txt says; turning the style off in
+    // Interface > Game > Interface style brings them back. Nothing is written to any file.
+    if ((!SStrCmpI(name, "ElvUI", STORM_MAX_STR) || !SStrCmpI(name, "Tukui", STORM_MAX_STR))
+        && s_addons.Ptr("DrakeishUI") && WxlInterfaceStyleDrakeish()) {
+        reason = UIADDON_DISABLED;
+        return false;
+    }
+#endif
 
     if (addon->m_status == 2) {
         reason = UIADDON_BANNED;
