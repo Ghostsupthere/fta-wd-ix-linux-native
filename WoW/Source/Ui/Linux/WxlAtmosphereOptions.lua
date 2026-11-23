@@ -23,6 +23,7 @@ status:SetJustifyH("LEFT")
 
 local controls, before = {}, {}
 local syncing, dirty, saveFailed
+local saveDue  -- seconds until the settings are written to disk; any change re-arms it
 local preview = "atmosphere.preview"
 local parents = {
     ["atmosphere.mist"] = "atmosphere.fog",
@@ -38,7 +39,7 @@ end
 local function UpdateStatus()
     local supported, state = WXL_AtmosphereStatus()
     status:SetText(saveFailed and "Settings could not be saved." or
-        (supported and (state .. ". Use Okay to save or Cancel to undo.") or
+        (supported and (state .. ". Changes are saved automatically.") or
             "Native world effects are unavailable on this graphics device."))
 end
 local function Synchronize()
@@ -67,6 +68,7 @@ local function Change(key, value)
     if WarcraftXL_SetEnvironmentOption(key, value) then
         dirty = true
         saveFailed = false
+        saveDue = 1.0
     end
     Synchronize()
 end
@@ -191,6 +193,7 @@ local function Defaults()
         WarcraftXL_SetEnvironmentOption(entry.key, WarcraftXL_GetEnvironmentOptionDefault(entry.key))
     end
     dirty = true
+    saveDue = 1.0
     Synchronize()
 end
 restore:SetScript("OnClick", Defaults)
@@ -210,6 +213,7 @@ panel.okay = function()
     UpdateStatus()
 end
 panel.cancel = function()
+    saveDue = nil
     if not dirty then return end
     for _, entry in ipairs(controls) do
         if before[entry.key] ~= nil then WarcraftXL_SetEnvironmentOption(entry.key, before[entry.key]) end
@@ -219,6 +223,18 @@ panel.cancel = function()
 end
 
 Remember()
+-- Save a moment after the last change, so the settings survive a restart even when the window is closed with
+-- Escape instead of Okay. This runs on its own frame because the page stops updating once it is hidden.
+local saver = CreateFrame("Frame", nil, UIParent)
+saver:SetScript("OnUpdate", function(_, elapsed)
+    if not saveDue then return end
+    saveDue = saveDue - elapsed
+    if saveDue > 0 then return end
+    saveDue = nil
+    saveFailed = not WarcraftXL_SaveEnvironmentOptions()
+    if not saveFailed then dirty = false; Remember() end
+    UpdateStatus()
+end)
 OptionsFrame_AddCategory(VideoOptionsFrame, panel)
 -- Show the sub-page under Effects without making the player expand the list first.
 if VideoOptionsEffectsPanel and VideoOptionsEffectsPanel.name == panel.parent then
