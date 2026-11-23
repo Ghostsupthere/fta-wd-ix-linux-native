@@ -29,9 +29,11 @@
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/LightShaderPack.hpp"
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/LightTextureLayout.hpp"
 #include "WoW/Source/WorldClient/Map.h"
+#include "WoW/Source/WorldClient/MapDoodadDef.h"
 #include "WoW/Source/WorldClient/DayNight.h"
 #include "WoW/Source/WorldClient/DayNight__DNInfo.h"
 #include "WoW/Source/WorldClient/MapObj.h"
+#include "WoW/Source/WorldClient/MapObjGroup.h"
 #include "WoW/Source/WorldClient/MapObjDef.h"
 #include "WoW/Source/WorldClient/World.h"
 #include "WoW/Source/DB/Rec/SpellVisualKitRec.h"
@@ -152,7 +154,10 @@ bool tablesLoaded = false;
 bool staticLampsEnabled = false, lampCatalogTried = false;
 float staticLampStrength = 1;
 sl::StaticLampCatalog lampCatalog;
+sl::StaticWmoLampCatalog meshLampCatalog;
 constexpr unsigned kStaticLampLimit = 24;
+constexpr unsigned kMaxSceneModels = 100000;
+constexpr unsigned kMaxMapPlacements = 100000;
 struct LampDebug {
     std::string path;
     const char* stage;
@@ -184,6 +189,7 @@ struct Source {
     const CM2Model* model = nullptr;
     bool bake = false;
     bool staticLamp = false;
+    int8_t indoorOverride = -1;
     int lampDebugIndex = -1;
 };
 std::vector<Source> sources;
@@ -203,7 +209,7 @@ bool haveLastUpdate = false;
 struct Stats {
     unsigned models = 0, modelsInRange = 0, modelLights = 0, fromClient = 0, fromWorld = 0, fileColor = 0, merged = 0,
              inRange = 0, active = 0, tableLights = 0, suppressedModels = 0, attachFallbacks = 0, attached = 0;
-    unsigned staticLamps = 0, staticDuplicates = 0;
+    unsigned staticLamps = 0, staticDuplicates = 0, staticWmoMatches = 0, wmoPlacements = 0, meshLamps = 0;
     unsigned bakeWanted = 0, bakeDone = 0, bakeRays = 0, bakeCached = 0, indoor = 0, indoorTests = 0;
 };
 Stats stats;
@@ -317,6 +323,9 @@ struct SceneModel {
     float distance = 0.0f;
     const CM2Model* parent = nullptr;
     bool animated = true;
+    bool wmoDoodad = false;
+    int8_t indoorOverride = -1;
+    bool disabled = false;
 };
 
 void Describe(const CM2Model* model, SceneModel& out) {
@@ -340,18 +349,18 @@ void AddChildren(const CM2Model* parent, const float center[3], float range, std
     }
 }
 
-// Every model the M2 scene holds near a point: map doodads, WMO doodads, game objects, creatures; not
-// culled by the camera. Attached models hang off their parents' chains.
-unsigned SceneModels(const float center[3], float range, std::vector<SceneModel>& out, unsigned& attached) {
-    constexpr unsigned kMaxModels = 100000;
+// Scene models are independent of map placement ownership. The map also
+// maintains the stable world transform for terrain and WMO doodads.
+unsigned SceneModels(const float center[3], float range, std::vector<SceneModel>& out, unsigned& attached,
+                     std::unordered_set<const CM2Model*>* resident = nullptr) {
     constexpr float kChildReach = 30.0f;
     out.clear();
     attached = 0;
     CM2Scene* scene = Scene();
     if (!scene) return 0;
     unsigned total = 0;
-    for (const CM2Model* m = scene->m_modelList; m && total < kMaxModels; m = m->m_sceneNext, ++total) {
-        liveModels.insert(m);
+    for (const CM2Model* m = scene->m_modelList; m && total < kMaxSceneModels; m = m->m_sceneNext, ++total) {
+        if (resident) resident->insert(m);
         if (m->m_attachParent) continue;
         SceneModel sm;
         sm.model = m;
@@ -361,9 +370,41 @@ unsigned SceneModels(const float center[3], float range, std::vector<SceneModel>
         if (sm.distance <= range) { Describe(m, sm); out.push_back(sm); }
         if (sm.distance <= range + kChildReach) AddChildren(m, center, range, out, 1, attached);
     }
-    for (const SceneModel& sm : out) liveModels.insert(sm.model);
+    if (resident)
+        for (const SceneModel& sm : out) resident->insert(sm.model);
     std::sort(out.begin(), out.end(), [](const SceneModel& a, const SceneModel& b) { return a.distance < b.distance; });
     return total;
+}
+
+unsigned MapDoodadModels(const float center[3], float range, std::vector<SceneModel>& out) {
+    out.clear();
+    unsigned visited = 0;
+    auto& placements = CMap::doodadDefHash.m_fulllist;
+    for (auto* doodad = placements.Head(); doodad && visited < kMaxMapPlacements;
+         doodad = placements.Next(doodad), ++visited) {
+        const CM2Model* model = doodad->m_model;
+        if (!model || model->m_scene != Scene()) continue;
+        const float* world = Floats(doodad->m_mat);
+        const float dx = world[12] - center[0], dy = world[13] - center[1], dz = world[14] - center[2];
+        const float d2 = dx*dx + dy*dy + dz*dz;
+        if (!(d2 <= range * range)) continue;
+        SceneModel info;
+        info.model = model;
+        info.parent = model->m_attachParent;
+        info.disabled = (doodad->m_flags & MAPOBJ_FLAG_DISABLED) != 0;
+        info.distance = std::sqrt(d2);
+        std::copy_n(world, 16, info.world);
+        for (auto* link = doodad->m_parentLinkList.Head(); link; link = doodad->m_parentLinkList.Next(link)) {
+            if (link->m_ref && (link->m_ref->m_type & CMapBaseObj::Type_MapObjDefGroup)) {
+                info.wmoDoodad = true;
+                break;
+            }
+        }
+        if (info.wmoDoodad) info.indoorOverride = (doodad->m_flags & MAPOBJ_FLAG_INTERIOR) != 0;
+        Describe(model, info);
+        out.push_back(info);
+    }
+    return visited;
 }
 
 // ---- the table rows per model file ----------------------------------------------------------------
@@ -407,25 +448,122 @@ void AddTableLight(const sl::Assignment& a, const SceneModel& m, Stats& st) {
     ++st.tableLights;
 }
 
-void ScanModels(const float center[3]) {
-    if (staticLampsEnabled && !lampCatalogTried) {
-        lampCatalogTried = true;
-        std::ifstream file(ClientDirectory() / "Utils/WarcraftXL/visuals/lamp_models.csv");
-        if (file) lampCatalog = sl::ReadStaticLampCatalog(file);
-        std::fprintf(stderr, "WarcraftXL: static lamp catalog: %zu models\n", lampCatalog.size());
+void LoadLampCatalog() {
+    if (lampCatalogTried) return;
+    lampCatalogTried = true;
+    std::ifstream file(ClientDirectory() / "Utils/WarcraftXL/visuals/lamp_models.csv");
+    if (file) lampCatalog = sl::ReadStaticLampCatalog(file, &meshLampCatalog);
+    std::fprintf(stderr, "WarcraftXL: static lamp catalog: %zu models\n", lampCatalog.size());
+}
+
+void ScanStaticLamps(const float center[3], const float forward[3], const std::vector<SceneModel>& sceneModels,
+                     bool haveTable, Stats& st) {
+    static std::vector<SceneModel> mapModels;
+    MapDoodadModels(center, settings.range, mapModels);
+    st.wmoPlacements = std::count_if(mapModels.begin(), mapModels.end(), [](const auto& m) { return m.wmoDoodad; });
+
+    struct Match {
+        const CM2Model* model;
+        LampDebug debug;
+        sl::StaticLampRank rank;
+        int8_t indoorOverride;
+    };
+    static std::vector<Match> matches;
+    matches.clear();
+    sl::VisitStaticPlacements(mapModels, sceneModels, [&](const SceneModel& m) {
+        if (!m.path || !*m.path) return;
+        auto path = sl::NormalizeLampPath(m.path);
+        const auto catalog = lampCatalog.find(path);
+        if (catalog == lampCatalog.end()) return;
+        ++st.staticLamps;
+        st.staticWmoMatches += m.wmoDoodad;
+        const auto* rows = haveTable ? &RowsFor(m.path) : nullptr;
+        const auto& lamp = catalog->second;
+        const auto placement = sl::PlaceStaticLamp(lamp, m.world);
+        const float score = sl::StaticLampScore(placement, center, forward);
+        const char* rejected = m.disabled ? "disabled doodad" : !m.data ? "model loading" :
+            rows && !rows->empty() ? "authored assignment" :
+            m.data->m_lights.m_count ? "native model lights" : m.parent ? "attached model" :
+            !(score > 0) ? "invalid light" : nullptr;
+        LampDebug debug{std::move(path), rejected, {}, {}, placement.radius, placement.strength, m.distance};
+        std::copy_n(placement.pos, 3, debug.pos);
+        std::copy_n(lamp.color, 3, debug.color);
+        matches.push_back({m.model, std::move(debug), {score, m.distance, !rejected}, m.indoorOverride});
+    });
+    if (!meshLampCatalog.empty()) {
+        auto& owners = CMap::mapObjDefHash.m_fulllist;
+        unsigned visited = 0;
+        for (auto* def = owners.Head(); def && visited < kMaxMapPlacements; def = owners.Next(def), ++visited) {
+            const auto* wmo = def->m_owner;
+            if (!wmo || !wmo->m_isGroupLoaded || (def->m_flags & MAPOBJ_FLAG_DISABLED)) continue;
+            const auto path = sl::NormalizePath(wmo->m_wmoName);
+            const auto catalog = meshLampCatalog.find(path);
+            if (catalog == meshLampCatalog.end()) continue;
+            for (const auto& row : catalog->second) {
+                if (row.group >= std::size(wmo->m_mapObjGroupArray) ||
+                    static_cast<int>(row.group) >= wmo->m_mapObjGroupCount) continue;
+                const auto* group = wmo->m_mapObjGroupArray[row.group];
+                if (!group || !(group->m_unkLoadedFlag & 1)) continue;
+                const auto placement = sl::PlaceStaticLamp(row.lamp, Floats(def->m_mat));
+                const float dx = placement.pos[0] - center[0], dy = placement.pos[1] - center[1], dz = placement.pos[2] - center[2];
+                const float d2 = dx*dx + dy*dy + dz*dz;
+                if (!(d2 <= settings.range * settings.range)) continue;
+                const float score = sl::StaticLampScore(placement, center, forward);
+                if (!(score > 0)) continue;
+                const float distance = std::sqrt(d2);
+                const int8_t indoor = (def->m_owner->GetGroupFlags(static_cast<int>(row.group)) & 0x48u) ? 0 : 1;
+                LampDebug debug{path + "#" + std::to_string(row.group), nullptr, {}, {},
+                                placement.radius, placement.strength, distance};
+                std::copy_n(placement.pos, 3, debug.pos);
+                std::copy_n(row.lamp.color, 3, debug.color);
+                matches.push_back({nullptr, std::move(debug), {score, distance, true}, indoor});
+                ++st.meshLamps;
+            }
+        }
     }
+    const size_t shown = std::min<size_t>(matches.size(), kStaticLampLimit);
+    std::partial_sort(matches.begin(), matches.begin() + shown, matches.end(), [](const Match& a, const Match& b) {
+        return a.rank < b.rank;
+    });
+    for (size_t i = 0; i < shown; ++i) {
+        auto& match = matches[i];
+        auto& debug = match.debug;
+        if (!debug.stage) {
+            debug.stage = "selected";
+            Source s;
+            s.table = true;
+            s.staticLamp = true;
+            s.indoorOverride = match.indoorOverride;
+            s.model = match.model;
+            s.radius = debug.radius;
+            s.falloff = 1;
+            s.flickerMode = sl::kFlickerSmooth;
+            s.lampDebugIndex = static_cast<int>(i);
+            std::copy_n(debug.pos, 3, s.worldPos);
+            for (unsigned channel = 0; channel < 3; ++channel)
+                s.color[channel] = debug.color[channel] * debug.intensity;
+            sources.push_back(s);
+            if (s.model) liveModels.insert(s.model);
+        }
+        lampDebug.push_back(std::move(debug));
+    }
+}
+
+void ScanModels(const float center[3], const float forward[3]) {
+    if (staticLampsEnabled) LoadLampCatalog();
     sources.clear();
     liveModels.clear();
     lampDebug.clear();
     Stats st = stats;
-    unsigned selectedLamps = 0;
-    st.tableLights = st.suppressedModels = st.attachFallbacks = st.modelLights = st.staticLamps = 0;
+    st.tableLights = st.suppressedModels = st.attachFallbacks = st.modelLights = 0;
+    st.staticLamps = st.staticWmoMatches = st.wmoPlacements = st.meshLamps = 0;
     static std::vector<SceneModel> models;
     unsigned attached = 0;
-    st.models = SceneModels(center, settings.range, models, attached);
+    st.models = SceneModels(center, settings.range, models, attached, &liveModels);
     st.modelsInRange = static_cast<unsigned>(models.size());
     st.attached = attached;
     const bool haveTable = !tables.AllAssignments().empty();
+    if (staticLampsEnabled && (!lampCatalog.empty() || !meshLampCatalog.empty())) ScanStaticLamps(center, forward, models, haveTable, st);
     for (const SceneModel& m : models) {
         if (!m.data) continue;
         bool suppress = false;
@@ -436,39 +574,6 @@ void ScanModels(const float center[3]) {
                 if (a->lightId) AddTableLight(*a, m, st);
             }
         const uint32_t count = m.data->m_lights.m_count;
-        if (staticLampsEnabled && !lampCatalog.empty() && m.path && *m.path) {
-            auto path = sl::NormalizeLampPath(m.path);
-            const auto catalog = lampCatalog.find(path);
-            if (catalog != lampCatalog.end()) {
-                ++st.staticLamps;
-                const auto& lamp = catalog->second;
-                const char* rejected = suppress || (rows && !rows->empty()) ? "authored assignment" :
-                    count ? "native model lights" : m.parent ? "attached model" :
-                    selectedLamps >= kStaticLampLimit ? "selection limit" : nullptr;
-                const auto placement = sl::PlaceStaticLamp(lamp, m.world);
-                Source s;
-                s.table = true;
-                s.staticLamp = true;
-                s.model = m.model;
-                s.radius = placement.radius;
-                s.falloff = 1;
-                s.flickerMode = sl::kFlickerSmooth;
-                std::copy_n(placement.pos, 3, s.worldPos);
-                for (unsigned i = 0; i < 3; ++i) s.color[i] = lamp.color[i] * placement.strength;
-                if (lampDebug.size() < kStaticLampLimit) {
-                    LampDebug debug{std::move(path), rejected ? rejected : "selected", {}, {},
-                                    s.radius, placement.strength, m.distance};
-                    std::copy_n(s.worldPos, 3, debug.pos);
-                    std::copy_n(lamp.color, 3, debug.color);
-                    s.lampDebugIndex = static_cast<int>(lampDebug.size());
-                    lampDebug.push_back(std::move(debug));
-                }
-                if (!rejected) {
-                    sources.push_back(s);
-                    ++selectedLamps;
-                }
-            }
-        }
         if (suppress) { ++st.suppressedModels; continue; }
         // The model's own lights: point lights only.
         if (!count || count > 64) continue;
@@ -548,12 +653,12 @@ float TraceFraction(const float* a, const float* b) {
 }
 
 // ---- the per-frame light list ---------------------------------------------------------------------
-void UpdateLights(float dt, const float eye[3]) {
+void UpdateLights(float dt, const float eye[3], const float forward[3]) {
     scanTimer += dt;
     if (scanTimer >= 0.25f || scanGeneration != tables.Generation()) {
         scanTimer = 0.0f;
         scanGeneration = tables.Generation();
-        ScanModels(eye);
+        ScanModels(eye, forward);
     }
     lightTime += dt;
     std::vector<sl::Candidate> cands;
@@ -634,6 +739,7 @@ void UpdateLights(float dt, const float eye[3]) {
             for (float& channel : c.color) channel *= staticLampStrength;
             c.supplemental = true;
             c.staticLamp = true;
+            c.indoorOverride = s.indoorOverride;
             lamps[lampCount++] = {c, debug};
         } else {
             cands.push_back(c);
@@ -686,6 +792,8 @@ void UpdateLights(float dt, const float eye[3]) {
         cands.push_back(light);
     }
     stats.staticDuplicates = 0;
+    std::array<LampDebug*, kStaticLampLimit> submittedLamps{};
+    unsigned submitted = 0;
     size_t poolSlotsUsed = lampCount ? std::count_if(cands.begin(), cands.end(),
         [](const auto& light) { return light.weight > 0; }) : 0;
     for (unsigned i = 0; i < lampCount; ++i) {
@@ -707,6 +815,7 @@ void UpdateLights(float dt, const float eye[3]) {
             if (debug) debug->stage = "pool limit";
             if (poolSlotsUsed < sl::kMaxPool) {
                 cands.push_back(lamp);
+                submittedLamps[submitted++] = debug;
                 ++poolSlotsUsed;
             }
         }
@@ -719,19 +828,17 @@ void UpdateLights(float dt, const float eye[3]) {
     const auto bake = occlusion.Update(pool.active, pool.wantBake, eye, settings, &TraceFraction);
     stats.bakeWanted = bake.wanted; stats.bakeDone = bake.done; stats.bakeRays = bake.rays; stats.bakeCached = bake.cached;
     gridBuilder.Build(pool.active, pool.baseLuminance, eye, settings, grid, gridStats);
-    if (lampCount) {
+    if (submitted) {
+        // Static entries were appended in order with room in the global pool.
+        unsigned slot = 0;
         for (size_t i = 0; i < pool.active.size(); ++i) {
             const auto& light = pool.active[i];
             if (!light.staticLamp) continue;
-            for (unsigned j = 0; j < lampCount; ++j) {
-                auto* debug = lamps[j].debug;
-                if (lamps[j].candidate.model != light.model || !debug) continue;
-                debug->stage = "no grid slots";
-                debug->indoor = light.indoor;
-                debug->cells = sl::CountGridCells(grid, static_cast<uint16_t>(i), light);
-                if (debug->cells) debug->stage = "submitted";
-                break;
-            }
+            auto* debug = submittedLamps[slot++];
+            if (!debug) continue;
+            debug->indoor = light.indoor;
+            debug->cells = sl::CountGridCells(grid, static_cast<uint16_t>(i), light);
+            debug->stage = debug->cells ? "submitted" : "no grid slots";
         }
     }
 }
@@ -1217,7 +1324,17 @@ void WxlSurfaceLightsBeforeTerrain() {
     }
     if (weatherPackLoaded) UpdateTerrainShadow(d, camera, viewOk && WxlTerrainShadows(), std::chrono::duration<double>(now.time_since_epoch()).count());
     const bool lightsOn = viewOk && settings.enabled && Scene();
-    if (lightsOn) UpdateLights(std::min(dt, 0.25f), camera);
+    if (lightsOn) {
+        const auto& direction = DayNight::GetInfo()->m_cameraDir;
+        float forward[3] = {direction.x, direction.y, direction.z};
+        const float length = std::sqrt(direction.SquaredMag());
+        if (std::isfinite(length) && length > 0) {
+            for (float& axis : forward) axis /= length;
+        } else {
+            std::fill_n(forward, 3, 0.0f);
+        }
+        UpdateLights(std::min(dt, 0.25f), camera, forward);
+    }
     else if (grid.cells) { ClearLights(); }
     UpdateCharacterRim(view, viewOk);
     const bool ready = Prepare(d, lightsOn, view, camera);
@@ -1324,9 +1441,9 @@ std::string WxlSurfaceLightsStatus() {
                   stats.bakeDone, stats.bakeWanted, stats.bakeCached, stats.indoor);
     std::string status = text;
     if (staticLampsEnabled) {
-        char lamps[176];
-        std::snprintf(lamps, sizeof(lamps), "\nStatic lamps: %zu catalog models, %u nearby matches, %u near authored lights. Requires Dynamic lights.",
-                      lampCatalog.size(), stats.staticLamps, stats.staticDuplicates);
+        char lamps[256];
+        std::snprintf(lamps, sizeof(lamps), "\nStatic lamps: %zu catalog models, %u nearby matches (%u across %u WMO placements), %u embedded WMO lamps, %u near authored lights. Requires Dynamic lights.",
+                      lampCatalog.size(), stats.staticLamps, stats.staticWmoMatches, stats.wmoPlacements, stats.meshLamps, stats.staticDuplicates);
         status += lamps;
     }
     return status;
@@ -1351,4 +1468,51 @@ std::string WxlStaticLampDebug() {
     }
     return result;
 }
+std::string WxlNearbyModelDebug(float maxYards) {
+    if (!Scene()) return "Nearby models: enter the world.";
+    const auto* player = ClntObjMgrGetActivePlayerObj();
+    const C3Vector position = player ? player->GetPosition() : *World::GetCamPos();
+    const float center[3] = {position.x, position.y, position.z};
+    if (!Finite3(center)) return "Nearby models: position unavailable.";
+    const float range = std::clamp(std::isfinite(maxYards) ? maxYards : 12.0f, 1.0f, 256.0f);
+    std::vector<SceneModel> map, scene;
+    unsigned attached = 0;
+    const unsigned sceneVisited = SceneModels(center, range, scene, attached);
+    const unsigned mapVisited = MapDoodadModels(center, range, map);
+    LoadLampCatalog();
+
+    std::unordered_set<const CM2Model*> inSceneRange;
+    for (const SceneModel& m : scene) inSceneRange.insert(m.model);
+    std::vector<const SceneModel*> nearest;
+    unsigned wmo = 0, wmoOutsideSceneRange = 0;
+    sl::VisitStaticPlacements(map, scene, [&](const SceneModel& m) {
+        nearest.push_back(&m);
+        wmo += m.wmoDoodad;
+        wmoOutsideSceneRange += m.wmoDoodad && inSceneRange.find(m.model) == inSceneRange.end();
+    });
+    const size_t shown = std::min<size_t>(nearest.size(), kStaticLampLimit);
+    std::partial_sort(nearest.begin(), nearest.begin() + shown, nearest.end(),
+        [](const SceneModel* a, const SceneModel* b) { return a->distance < b->distance; });
+    char line[256];
+    std::snprintf(line, sizeof(line),
+        "Nearby models within %.1f yd of %s (%.2f, %.2f, %.2f): %zu models, %u WMO (%u map-only in range). Scene %u/%u, map %u/%u visited.",
+        range, player ? "player" : "camera", center[0], center[1], center[2],
+        nearest.size(), wmo, wmoOutsideSceneRange, sceneVisited, kMaxSceneModels, mapVisited, kMaxMapPlacements);
+    std::string result = line;
+    for (size_t i = 0; i < shown; ++i) {
+        const auto& m = *nearest[i];
+        const auto path = sl::NormalizeLampPath(m.path);
+        std::snprintf(line, sizeof(line),
+            " %.1f yd @ (%.2f, %.2f, %.2f) parent=%s WMO=%s scene=%s lights=%s catalog=%s%s",
+            m.distance, m.world[12], m.world[13], m.world[14], m.parent ? "yes" : "no", m.wmoDoodad ? "yes" : "no",
+            inSceneRange.find(m.model) != inSceneRange.end() ? "yes" : "no",
+            m.data ? std::to_string(m.data->m_lights.m_count).c_str() : "loading",
+            lampCatalog.find(path) != lampCatalog.end() ? "yes" : "no", m.disabled ? " disabled" : "");
+        result += '\n';
+        result += path.empty() ? "(unnamed)" : path;
+        result += line;
+    }
+    return result;
+}
+
 #endif

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a conservative static lamp catalog from readable legacy M2 archive entries."""
+"""Build a conservative static lamp catalog from qualified M2 archive entries."""
 import argparse
 import ctypes as c
 import math
@@ -18,16 +18,32 @@ MESH_LAMPS = {
 }
 
 
-def entry(data):
-    if data[:4] != b"MD20" or len(data) < 0x130 or struct.unpack_from("<I", data, 4)[0] != 264:
+# The Razor Hill replacement has the converter's extended 0x1ec emitter
+# records. Other wrapped models still need asset-specific qualification.
+MODERN_LAMPS = {
+    b"world\\generic\\orc\\passive doodads\\lampposts\\orcbrazier_lightpostbarrens.m2",
+}
+
+
+def entry(data, modern=False):
+    stride = 0x1dc
+    version = 264
+    if modern and data[:4] == b"MD21" and len(data) >= 8:
+        length = struct.unpack_from("<I", data, 4)[0]
+        if length > len(data) - 8:
+            return None
+        data = data[8:8 + length]
+        stride = 0x1ec
+        version = 272
+    if data[:4] != b"MD20" or len(data) < 0x130 or struct.unpack_from("<I", data, 4)[0] != version:
         return None
     if struct.unpack_from("<I", data, 0x108)[0]:
         return None
     count, offset = struct.unpack_from("<II", data, 0x128)
-    if not 0 < count <= 32 or offset < 0x130 or offset + count * 476 > len(data):
+    if not 0 < count <= 32 or offset < 0x130 or offset + count * stride > len(data):
         return None
     for index in range(count):
-        start = offset + index * 476
+        start = offset + index * stride
         if data[start + 0x28] not in ADDITIVE:
             continue
         x, y, z = struct.unpack_from("<3f", data, start + 8)
@@ -39,6 +55,85 @@ def entry(data):
             if all(math.isfinite(n) and abs(n) < 100 for n in (x, y, z)) and 0 < peak <= 255 and min(r, g, b) >= 0:
                 return x, y, z, r / peak, g / peak, b / peak
     return None
+
+
+STORMWIND = b"world\\wmo\\azeroth\\buildings\\stormwind\\stormwind"
+STORMWIND_GLASS = b"dungeons\\textures\\doodads\\stormwindlampglass.blp"
+
+
+def chunks(data):
+    result = {}
+    cursor = 0
+    while cursor + 8 <= len(data):
+        tag, size = struct.unpack_from("<4sI", data, cursor)
+        cursor += 8
+        if size > len(data) - cursor:
+            return {}
+        result[tag[::-1]] = data[cursor:cursor + size]
+        cursor += size
+    return result
+
+
+def glass_centers(group, glass):
+    if not group or len(group.get(b"MOGP", b"")) < 68:
+        return
+    data = chunks(group[b"MOGP"][68:])
+    positions, elements, batches = (data.get(tag, b"") for tag in (b"MOVT", b"MOVI", b"MOBA"))
+    if len(positions) % 12 or len(elements) % 2 or len(batches) % 24:
+        return
+    vertices = list(struct.iter_unpack("<3f", positions))
+    indices = [index for (index,) in struct.iter_unpack("<H", elements)]
+    parents = {}
+
+    def find(point):
+        parents.setdefault(point, point)
+        while parents[point] != point:
+            point = parents[point]
+        return point
+
+    for _, _, _, _, _, _, start, count, _, _, flags, material in struct.iter_unpack(
+            "<6hIHHHBB", batches):
+        if material not in glass or flags & 2 or start + count > len(indices) or count % 3:
+            continue
+        for i in range(start, start + count, 3):
+            triangle = indices[i:i + 3]
+            if any(index >= len(vertices) for index in triangle):
+                continue
+            if any(not math.isfinite(axis) for index in triangle for axis in vertices[index]):
+                continue
+            points = [tuple(round(axis, 3) for axis in vertices[index]) for index in triangle]
+            for point in points[1:]:
+                parents[find(point)] = find(points[0])
+    components = {}
+    for point in parents:
+        components.setdefault(find(point), []).append(point)
+    for points in components.values():
+        # The stock lantern has two four-corner rings. Reject shared scenery
+        # material where it does not describe a separate lantern-sized fixture.
+        if len(points) != 8:
+            continue
+        bounds = [(min(axis), max(axis)) for axis in zip(*points)]
+        if all(0.25 < hi - lo < 2.0 for lo, hi in bounds):
+            yield tuple((lo + hi) * 0.5 for lo, hi in bounds)
+
+
+def stormwind_mesh_lamps(read_effective):
+    root = chunks(read_effective(STORMWIND + b".wmo") or b"")
+    textures = root.get(b"MOTX", b"")
+    materials = root.get(b"MOMT", b"")
+    glass = set()
+    for index in range(len(materials) // 64):
+        offset = struct.unpack_from("<I", materials, index * 64 + 12)[0]
+        if textures[offset:].split(b"\0", 1)[0].lower() == STORMWIND_GLASS:
+            glass.add(index)
+    if not glass:
+        return
+    for index in range(min(len(root.get(b"MOGI", b"")) // 32, 512)):
+        path = STORMWIND + f"_{index:03d}.wmo".encode("ascii")
+        group = chunks(read_effective(path) or b"")
+        for center in glass_centers(group, glass):
+            key = (STORMWIND + f".wmo#{index}".encode("ascii")).decode("ascii")
+            yield key + "," + ",".join(f"{v:.6g}" for v in (*center, 1, 0.73, 0.38, 15, 1.0))
 
 
 def main():
@@ -89,28 +184,33 @@ def main():
                 base = name.rsplit(b"\\", 1)[-1].decode("ascii", errors="ignore")
                 if LAMP.search(base) and not EXCLUDED.search(base):
                     names.add(name)
+    def read_effective(name, limit=32 << 20):
+        return next((data for archive in opened if (data := read(archive, name, limit))), None)
+
     try:
-        for name in sorted(names | MESH_LAMPS.keys()):
+        for name in sorted(names | MESH_LAMPS.keys() | MODERN_LAMPS):
             if not name.isascii() or b"," in name:
                 continue
-            data = next((data for archive in opened if (data := read(archive, name, 4 << 20))), None)
-            light = entry(data) if data else None
+            data = read_effective(name, 4 << 20)
+            light = entry(data, modern=name in MODERN_LAMPS) if data else None
             if light is not None:
                 base = name.rsplit(b"\\", 1)[-1]
-                radius, strength = (5, 0.5) if b"candle" in base else (13, 0.85)
+                radius, strength = (2.5, 0.5) if b"candle" in base else (13, 0.85)
                 light = (*light, radius, strength)
             elif data and data[:8] == b"MD20\x08\x01\0\0" and len(data) >= 0x130:
                 if not struct.unpack_from("<I", data, 0x108)[0]:
                     light = MESH_LAMPS.get(name)
             if light is not None:
                 catalog.append(name.decode("ascii") + "," + ",".join(f"{v:.5g}" for v in light))
+        mesh = list(stormwind_mesh_lamps(read_effective))
     finally:
         for archive in opened:
             lib.SFileCloseArchive(archive)
     if not catalog:
         raise SystemExit("no supported lamps found")
-    args.out.write_text("# model,x,y,z,red,green,blue,radius,intensity\n" + "\n".join(catalog) + "\n")
-    print(f"{len(opened)} archives, {len(names)} candidate names, {len(catalog)} catalog entries")
+    args.out.write_text("# model or WMO#group,x,y,z,red,green,blue,radius,intensity\n" +
+                        "\n".join(catalog + mesh) + "\n")
+    print(f"{len(opened)} archives, {len(names)} candidate names, {len(catalog)} models, {len(mesh)} embedded WMO lamps")
 
 
 if __name__ == "__main__":

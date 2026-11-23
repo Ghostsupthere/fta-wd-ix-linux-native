@@ -168,6 +168,13 @@ std::string GrassStatus() {
     return out;
 }
 
+int32_t Script_NearbyModelDebug(lua_State* L) {
+    const float range = lua_type(L, 1) == LUA_TNUMBER ? static_cast<float>(lua_tonumber(L, 1)) : 12.0f;
+    const std::string debug = WxlNearbyModelDebug(range);
+    lua_pushlstring(L, debug.data(), debug.size());
+    return 1;
+}
+
 int32_t Script_StaticLampDebug(lua_State* L) {
     const std::string debug = WxlStaticLampDebug();
     lua_pushlstring(L, debug.data(), debug.size());
@@ -227,6 +234,7 @@ void WxlRegisterEnvironmentLua() {
     FrameScript_RegisterFunction("WarcraftXL_ResetEnvironmentOptions", &Script_Reset);
     FrameScript_RegisterFunction("WarcraftXL_GetEnvironmentStatus", &Script_Status);
     FrameScript_RegisterFunction("WarcraftXL_GetStaticLampDebug", &Script_StaticLampDebug);
+    FrameScript_RegisterFunction("WarcraftXL_GetNearbyModelDebug", &Script_NearbyModelDebug);
     FrameScript_RegisterFunction("WarcraftXL_VerifyGrassPlacement", &Script_VerifyPlacement);
     FrameScript_RegisterFunction("WarcraftXL_ResetEnvironmentTiming", &Script_ResetTiming);
 }

@@ -2,11 +2,13 @@
 
 #include "LightPool.hpp"
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <istream>
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace wxl::surfacelights {
 
@@ -18,6 +20,11 @@ struct StaticLamp {
 };
 
 using StaticLampCatalog = std::unordered_map<std::string, StaticLamp>;
+struct WmoLamp {
+    unsigned group;
+    StaticLamp lamp;
+};
+using StaticWmoLampCatalog = std::unordered_map<std::string, std::vector<WmoLamp>>;
 
 inline std::string NormalizeLampPath(std::string_view path) {
     auto name = NormalizePath(path);
@@ -43,6 +50,38 @@ inline StaticLampPlacement PlaceStaticLamp(const StaticLamp& lamp, const float w
     return placement;
 }
 
+// Map placements carry the authored transform. Visit them first so that a
+// model found in both owner lists can only submit one light.
+template <class Model, class Visit>
+void VisitStaticPlacements(const std::vector<Model>& map, const std::vector<Model>& scene, Visit visit) {
+    std::unordered_set<const void*> mapped;
+    mapped.reserve(map.size());
+    for (const auto& model : map)
+        if (mapped.insert(model.model).second) visit(model);
+    for (const auto& model : scene)
+        if (mapped.find(model.model) == mapped.end()) visit(model);
+}
+
+inline float StaticLampScore(const StaticLampPlacement& lamp, const float eye[3], const float forward[3]) {
+    const float x = lamp.pos[0] - eye[0], y = lamp.pos[1] - eye[1], z = lamp.pos[2] - eye[2];
+    const float d2 = x*x + y*y + z*z;
+    if (!std::isfinite(d2) || !(lamp.radius > 0) || !std::isfinite(lamp.radius)) return 0;
+    const float toward = (x*forward[0] + y*forward[1] + z*forward[2]) / std::sqrt(std::max(d2, 1.0f));
+    return lamp.strength * lamp.radius * (1.0f + 0.5f * std::clamp(toward, 0.0f, 1.0f)) / std::max(d2, 4.0f);
+}
+
+struct StaticLampRank {
+    float score;
+    float distance;
+    bool eligible;
+
+    bool operator<(const StaticLampRank& other) const {
+        if (eligible != other.eligible) return eligible;
+        if (score != other.score) return score > other.score;
+        return distance < other.distance;
+    }
+};
+
 inline float StaticLampRadius(float radius, const Settings& settings) {
     return std::clamp(radius * settings.radius / 16.0f, 0.01f, 128.0f);
 }
@@ -62,15 +101,27 @@ inline unsigned CountGridCells(const Grid& grid, uint16_t index, const ActiveLig
     return cells;
 }
 
-inline StaticLampCatalog ReadStaticLampCatalog(std::istream& input) {
+inline StaticLampCatalog ReadStaticLampCatalog(std::istream& input, StaticWmoLampCatalog* mesh = nullptr) {
     StaticLampCatalog result;
     unsigned lines = 0;
     for (std::string line; lines < 2048 && std::getline(input, line); ++lines) {
         if (line.empty() || line.front() == '#' || line.size() > 512) continue;
         const size_t comma = line.find(',');
         if (comma == std::string::npos) continue;
-        const auto name = NormalizeLampPath(std::string_view(line).substr(0, comma));
-        if (name.compare(0, 6, "world\\") || name.size() < 10 || name.compare(name.size() - 3, 3, ".m2")) continue;
+        const auto key = std::string_view(line).substr(0, comma);
+        const size_t hash = key.find('#');
+        const bool isMesh = hash != std::string_view::npos;
+        auto name = NormalizeLampPath(key.substr(0, hash));
+        if (name.compare(0, 6, "world\\") || name.size() < 10) continue;
+        unsigned group = 0;
+        if (isMesh) {
+            if (!mesh || name.compare(name.size() - 4, 4, ".wmo")) continue;
+            const auto id = key.substr(hash + 1);
+            const auto parsed = std::from_chars(id.data(), id.data() + id.size(), group);
+            if (parsed.ec != std::errc{} || parsed.ptr != id.data() + id.size() || group >= 512) continue;
+        } else if (name.compare(name.size() - 3, 3, ".m2")) {
+            continue;
+        }
         std::istringstream values(line.substr(comma + 1));
         StaticLamp lamp{};
         std::array<float*, 8> fields{&lamp.offset[0], &lamp.offset[1], &lamp.offset[2],
@@ -88,8 +139,9 @@ inline StaticLampCatalog ReadStaticLampCatalog(std::istream& input) {
         if (!valid || !values.eof() || !(lamp.radius >= 1 && lamp.radius <= 32) ||
             !(lamp.strength > 0 && lamp.strength <= 2)) continue;
         for (unsigned axis = 0; axis < 3; ++axis)
-            valid &= std::abs(lamp.offset[axis]) < 100 && lamp.color[axis] >= 0 && lamp.color[axis] <= 1;
-        if (valid) result.try_emplace(name, lamp);
+            valid &= std::abs(lamp.offset[axis]) < (isMesh ? 10000 : 100) && lamp.color[axis] >= 0 && lamp.color[axis] <= 1;
+        if (valid && isMesh) (*mesh)[std::move(name)].push_back({group, lamp});
+        else if (valid) result.try_emplace(std::move(name), lamp);
     }
     return result;
 }

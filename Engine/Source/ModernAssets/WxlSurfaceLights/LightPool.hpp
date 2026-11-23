@@ -79,6 +79,7 @@ namespace wxl::surfacelights
         bool moving = false;
         bool supplemental = false;
         bool staticLamp = false;
+        int8_t indoorOverride = -1;
     };
 
     struct Grid
@@ -304,7 +305,7 @@ namespace wxl::surfacelights
             l.model = c.model;
             l.supplemental = c.supplemental;
             l.staticLamp = c.staticLamp;
-            l.indoor = settings.indoorSkipsTerrain && indoor && indoor(l.pos);
+            l.indoor = settings.indoorSkipsTerrain && (c.indoorOverride >= 0 ? c.indoorOverride != 0 : (indoor && indoor(l.pos)));
             out.indoor += l.indoor ? 1 : 0;
             out.active.push_back(l);
             out.baseLuminance.push_back((c.color[0] + c.color[1] + c.color[2]) * settings.brightness);
