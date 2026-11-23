@@ -411,6 +411,7 @@ void RestoreWaterDepthWrite() {
 }
 void WxlReleaseModernVisuals() {
     nightGlow.Reset();
+    NativeVisualHooks::weaponEffectScene = nullptr;
     corpseLights.count = 0;
     corpseScanAt = -1;
     spellScanAt = -1;
@@ -428,6 +429,9 @@ void WxlReleaseModernVisuals() {
 }
 void WxlSetAtmosphereOptions(const env::Values& values) {
     options = values;
+    NativeVisualHooks::weaponEffectIntensity =
+        options.v[env::kAtmosphereOverride] && options.v[env::kWeaponEffects] ?
+        static_cast<float>(options.v[env::kWeaponEffectIntensity]) : 1.0f;
     optionsChanged = true;
 }
 bool WxlAtmosphereSupported() { return Backend() != nullptr; }
@@ -715,6 +719,7 @@ void WxlDrawDeferredPlayerNames() {
     deferredNames.clear();
 }
 bool WxlBeginVisualWorld(bool underwater,const float* target) {
+    NativeVisualHooks::weaponEffectScene = World::s_m2Scene;
     Configure();worldActive=false;replacingFog=false;cameraCaptured=false;++frameNumber;
     DisarmTransparentFog();
     worldDepthReady = false;

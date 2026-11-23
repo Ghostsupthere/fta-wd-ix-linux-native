@@ -5,8 +5,11 @@
 // default-pool resources, including resize, device loss and shutdown.
 class CGxShader;
 class CM2Model;
+class CM2Scene;
 namespace NativeVisualHooks {
 inline bool waterDepthWriteOverride=false;
+inline float weaponEffectIntensity=1;
+inline const CM2Scene* weaponEffectScene=nullptr;
 inline void (*deviceLost)()=nullptr;
 // Called when the engine selects shaders; the WMO material module latches the pair.
 inline void (*wmoBind)(CGxShader* vertex,CGxShader* pixel)=nullptr;

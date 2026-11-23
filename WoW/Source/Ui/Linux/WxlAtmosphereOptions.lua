@@ -203,6 +203,10 @@ Check("Static lamps", "world.staticLamps", 1, 0, "lights.enabled",
 Slider("Static lamp strength", "world.staticLampStrength", 1, 0, 0, 2, .05, "world.staticLamps")
 
 Group("Effects", "Effects & Physics", 2, 0)
+Section("Weapon effects")
+Check("Reduce weapon effects", "world.weaponEffects", 1, 0, nil,
+    "Reduces particle emission and trail brightness for equipped weapons in the world.")
+Slider("Weapon effect intensity", "world.weaponEffectIntensity", 1, 0, 0, 1, .05, "world.weaponEffects")
 Section("Spell effects")
 Check("Spell effect lights (experimental)", "atmosphere.spellLights", 1, 0, nil,
     "Adds up to four small lights from nearby spell effects and projectiles.")

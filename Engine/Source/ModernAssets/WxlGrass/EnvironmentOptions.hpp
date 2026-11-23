@@ -94,6 +94,8 @@ namespace wxl::grass::environment
         {"world.rimStrength", 0, 1, 0.35, false},
         {"world.rimWidth", 1, 8, 4, false},
         {"world.rimTint", 0, 1, 0.45, false},
+        {"world.weaponEffects", 0, 1, 0, true},
+        {"world.weaponEffectIntensity", 0, 1, 0.7, false},
     };
     constexpr size_t kCount = sizeof(kOptions) / sizeof(kOptions[0]);
 
@@ -124,6 +126,7 @@ namespace wxl::grass::environment
         kCompactAreaNames, kHideAreaNames,
         kCosmeticFootprints, kFootprintStrength,
         kCharacterRim, kRimStrength, kRimWidth, kRimTint,
+        kWeaponEffects, kWeaponEffectIntensity,
     };
 
     struct Values

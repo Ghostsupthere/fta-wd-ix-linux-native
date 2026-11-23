@@ -21,6 +21,7 @@
 #include "Engine/Source/Model2/WxlGeometryBudget.h"
 #include "Engine/Source/ModernAssets/NativeItemPhysics.h"
 #include "Engine/Source/ModernAssets/NativeVisualHooks.h"
+#include <strings.h>
 #include "Engine/Source/ModernAssets/NativeModelPresentation.h"
 #endif
 #include "Engine/Source/Base/Handle.h"
@@ -2839,6 +2840,23 @@ void M2AnimateTrack<M2CompQuat, C4Quaternion>(CM2Model* model, M2ModelBone* bone
     }
 }
 
+#if defined(WOWDECOMP_LINUX)
+static float WeaponEffectScale(const CM2Model& model) {
+    using namespace NativeVisualHooks;
+    if (weaponEffectIntensity >= 1 || !model.m_attachParent || model.m_scene != weaponEffectScene)
+        return 1;
+    constexpr char prefix[] = "item\\objectcomponents\\weapon\\";
+    for (const CM2Model* node = &model; node && node->m_attachParent; node = node->m_attachParent) {
+        // Weapon meshes are below the character root. Limit the walk even
+        // when an attachment graph contains unrelated equipment or effects.
+        if (node->m_shared && !strncasecmp(node->m_shared->m_fileName, prefix, sizeof(prefix) - 1))
+            return weaponEffectIntensity;
+        if (node != &model) break;
+    }
+    return 1;
+}
+#endif
+
 // VERIFY: 4a40646d manual
 // OFFSET: 0x00828A00
 void CM2Model::AnimateST() {
@@ -2921,7 +2939,11 @@ void CM2Model::AnimateST() {
             emitter->SetColor(ribbon->m_colorTrack.m_currentValue.x, ribbon->m_colorTrack.m_currentValue.y, ribbon->m_colorTrack.m_currentValue.z);
         }
 
-        emitter->SetAlpha(ribbon->m_alphaTrack.m_currentValue * this->m_effectiveAlpha);
+        float ribbonAlpha = ribbon->m_alphaTrack.m_currentValue * this->m_effectiveAlpha;
+#if defined(WOWDECOMP_LINUX)
+        ribbonAlpha *= WeaponEffectScale(*this);
+#endif
+        emitter->SetAlpha(ribbonAlpha);
 
         if (ribbonData->m_heightAboveTrack.m_sequenceTimes.m_count > 1 || (ribbonData->m_heightAboveTrack.m_sequenceTimes.m_count == 1 && ribbonData->m_heightAboveTrack.m_sequenceTimes[0].m_count > this->m_uint90)) {
             emitter->SetAbove(ribbon->m_heightAboveTrack.m_currentValue);
@@ -6191,6 +6213,10 @@ void CM2Model::AnimateParticleST(float deltaTime, uint32_t index) {
         rate = particle->m_emissionRateTrack.m_currentValue;
     }
 
+#if defined(WOWDECOMP_LINUX)
+    const float weaponScale = WeaponEffectScale(*this);
+    rate *= weaponScale;
+#endif
     emitter->SetEmissionRate(rate);
 
     if (particle->m_visibilityTrack.m_currentValue || !this->m_uint90) {
@@ -6256,6 +6282,9 @@ void CM2Model::AnimateParticleST(float deltaTime, uint32_t index) {
             alpha = 1.0f;
         }
 
+#if defined(WOWDECOMP_LINUX)
+        alpha *= weaponScale;
+#endif
         emitter->m_alphaScale = alpha;
     }
 
