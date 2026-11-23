@@ -251,6 +251,18 @@ Check("Compact area announcements", "text.compactAreaNames", 1, 0, nil,
     "Moves zone and district announcements near the top and halves their font size.", true)
 Check("Hide area announcements", "text.hideAreaNames", 1, 0, nil,
     "Hides only zone and district announcements.", true)
+Section("Tooltip IDs")
+Check("Creature IDs", "text.tooltipCreatureIds", 1, 0, nil,
+    "Shows creature IDs when neither IdTip nor ElvUI owns the tooltip.", true)
+Check("Item IDs", "text.tooltipItemIds", 1, 0, nil,
+    "Shows item IDs when neither IdTip nor ElvUI owns the tooltip.", true)
+Section("Optional addons")
+Check("Load DrakeishUI on login", "addons.drakeishUI", 1, 0, nil,
+    "Requires a complete installed DrakeishUI package. Skips loading while ElvUI or Tukui is active. Reload to apply.", true)
+Check("Load FTA Quest Tracker on login", "addons.questTracker", 1, 0, nil,
+    "Loads the optional tracker without Questie. Uses stock quest data when native APIs are unavailable. Reload to apply.", true)
+Check("Load FTA Resilience on login", "addons.resilience", 1, 0, nil,
+    "Uses the optional server-provided resilience curve when confirmed. Reload to apply.", true)
 group.height = flow + 54
 
 local restore = CreateFrame("Button", "WXLNativeAtmosphereRestore", panel, "UIPanelButtonTemplate")
@@ -376,6 +388,59 @@ if VideoOptionsEffectsPanel and VideoOptionsEffectsPanel.name == panel.parent th
         VideoOptionsFrame.categoryFrame:update()
     end
 end
+local function OtherTooltipOwner()
+    return IsAddOnLoaded and (IsAddOnLoaded("IdTip") or IsAddOnLoaded("ElvUI"))
+end
+local function AddTooltipId(tooltip, key, id)
+    if not id or id <= 0 or OtherTooltipOwner() or Read(key) == 0 then return end
+    local line = "ID: " .. id
+    local name = tooltip:GetName()
+    if name then
+        for i = 1, tooltip:NumLines() do
+            local text = _G[name .. "TextLeft" .. i]
+            if text and text:GetText() == line then return end
+        end
+    end
+    tooltip:AddLine(line, .55, .8, 1)
+end
+if GameTooltip and GameTooltip.HookScript then
+    GameTooltip:HookScript("OnTooltipSetUnit", function(tooltip)
+        if Read("text.tooltipCreatureIds") == 0 or OtherTooltipOwner() then return end
+        local _, unit = tooltip:GetUnit()
+        local guid = unit and UnitGUID(unit)
+        local id = guid and guid:match("^0[xX][fF]130") and tonumber(guid:sub(7, 12), 16)
+        AddTooltipId(tooltip, "text.tooltipCreatureIds", id)
+    end)
+    local function ItemId(tooltip)
+        if Read("text.tooltipItemIds") == 0 or OtherTooltipOwner() then return end
+        local _, link = tooltip:GetItem()
+        AddTooltipId(tooltip, "text.tooltipItemIds", link and tonumber(link:match("item:(%d+)")))
+    end
+    for _, name in ipairs({"GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2",
+                           "ItemRefShoppingTooltip1", "ItemRefShoppingTooltip2"}) do
+        if _G[name] then _G[name]:HookScript("OnTooltipSetItem", ItemId) end
+    end
+end
+
+local function LoadRequestedAddons()
+    if not IsAddOnLoaded or not IsAddOnLoadOnDemand or not LoadAddOn then return end
+    local function LoadOne(key, name)
+        if Read(key) ~= 0 and not IsAddOnLoaded(name) and IsAddOnLoadOnDemand(name) then
+            LoadAddOn(name)
+        end
+    end
+    if not IsAddOnLoaded("ElvUI") and not IsAddOnLoaded("Tukui") then
+        LoadOne("addons.drakeishUI", "DrakeishUI")
+    end
+    if not IsAddOnLoaded("Questie-335") and not IsAddOnLoaded("Questie") then
+        LoadOne("addons.questTracker", "FTAQuestTracker")
+    end
+    if not FTA_Resilience then
+        LoadOne("addons.resilience", "FTA_Resilience")
+    end
+end
+LoadRequestedAddons()
+
 local areaEvents = CreateFrame("Frame", "WXLNativeAreaNameEvents")
 areaEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
 areaEvents:RegisterEvent("ADDON_LOADED")

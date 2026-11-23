@@ -96,6 +96,11 @@ namespace wxl::grass::environment
         {"world.rimTint", 0, 1, 0.45, false},
         {"world.weaponEffects", 0, 1, 0, true},
         {"world.weaponEffectIntensity", 0, 1, 0.7, false},
+        {"text.tooltipCreatureIds", 0, 1, 0, true},
+        {"text.tooltipItemIds", 0, 1, 0, true},
+        {"addons.drakeishUI", 0, 1, 0, true},
+        {"addons.questTracker", 0, 1, 0, true},
+        {"addons.resilience", 0, 1, 0, true},
     };
     constexpr size_t kCount = sizeof(kOptions) / sizeof(kOptions[0]);
 
@@ -127,6 +132,8 @@ namespace wxl::grass::environment
         kCosmeticFootprints, kFootprintStrength,
         kCharacterRim, kRimStrength, kRimWidth, kRimTint,
         kWeaponEffects, kWeaponEffectIntensity,
+        kTooltipCreatureIds, kTooltipItemIds,
+        kDrakeishUI, kQuestTrackerAddon, kResilienceAddon,
     };
 
     struct Values

@@ -3769,6 +3769,9 @@ void CGGameUI::EnterWorld() {
     CGGameUI::m_autoStoreItem = WOWGUID();
     CGGameUI::m_autoStoreItemID = 0;
 
+#if defined(WOWDECOMP_LINUX)
+    FrameScript_Execute(kAtmosphereOptionsUI, "FTA Native Atmosphere Options", nullptr);
+#endif
     if (CGGameUI::m_loggingIn) {
         CGGameUI::m_loggingIn = 0;
         FrameScript_SignalEvent(SCRIPT_EVENT_PLAYER_LOGIN, nullptr);
@@ -3777,9 +3780,6 @@ void CGGameUI::EnterWorld() {
 
     FrameScript_SignalEvent(SCRIPT_EVENT_PLAYER_ENTERING_WORLD, nullptr);
     BonusLootClient::EnterWorld();
-#if defined(WOWDECOMP_LINUX)
-    FrameScript_Execute(kAtmosphereOptionsUI, "FTA Native Atmosphere Options", nullptr);
-#endif
     RequestMacroTimewalking();
     CGMinimapFrame::EnterWorld();
     CGChat::EnterWorld();

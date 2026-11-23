@@ -7,6 +7,7 @@
 #   tools/make-linux-portable.sh [OUTPUT_DIR]       (default: <fta-linux-client>/dist)
 #
 # PORTABLE_REPO selects the fta-linux-client checkout (default: ../../fta-linux-client next to this tree).
+# VISUALS_DIR optionally supplies matching candidate shader packs and the lamp catalog.
 # RELEASE_TAG (for example v0.2.10) is recorded in the release so the launcher can tell which one is installed.
 #
 # Needs the built bin/Linux/Wow64 and the dxvk-native build under .deps (see shell-native.nix), and patchelf.
@@ -21,6 +22,7 @@ payload=$root/.deps/portable-payload
 dxvk=${DXVK_NATIVE_DIR:-$root/.deps/dxvk/build-native-sdl3}
 exe=$root/bin/Linux/Wow64
 visuals=$root/../../From_The_Ashes_Client/Utils/WarcraftXL/visuals
+visuals_override=${VISUALS_DIR:-}
 
 fail() { printf 'make-linux-portable: %s\n' "$*" >&2; exit 1; }
 command -v patchelf >/dev/null || fail 'patchelf is required'
@@ -83,9 +85,14 @@ else
 fi
 
 # Offline-built shader packs (derived from the client's own shaders; building them needs Wine).
-for pack in grass_instanced grass_shaders light_shaders wmo_shaders; do
-    if [[ -f $visuals/$pack.pack ]]; then cp -- "$visuals/$pack.pack" "$payload/Utils/WarcraftXL/visuals/"
-    else printf 'note: %s.pack not found; the overlay will not carry it\n' "$pack" >&2; fi
+for pack in grass_instanced.pack grass_shaders.pack light_shaders.pack light_weather.pack wmo_shaders.pack lamp_models.csv; do
+    if [[ -n $visuals_override && -f $visuals_override/$pack ]]; then
+        cp -- "$visuals_override/$pack" "$payload/Utils/WarcraftXL/visuals/"
+    elif [[ -f $visuals/$pack ]]; then
+        cp -- "$visuals/$pack" "$payload/Utils/WarcraftXL/visuals/"
+    else
+        printf 'note: %s not found; the overlay will not carry it\n' "$pack" >&2
+    fi
 done
 
 printf 'commit: %s\nbuilt: %s\nglibc: %s\n' "$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)" \
