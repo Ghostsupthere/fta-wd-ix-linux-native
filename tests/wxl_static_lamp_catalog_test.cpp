@@ -109,7 +109,8 @@ void CheckRange() {
         assert(sl::StaticLampFade(range - 1, range) > 0 && sl::StaticLampFade(range - 1, range) < .05f);
         assert(sl::StaticLampFade(range * .84f, range) == 1);
     }
-    assert(sl::StaticLampBudget(50) == 24 && sl::StaticLampBudget(100) == 48 && sl::StaticLampBudget(200) == 96);
+    assert(sl::StaticLampBudget(50) == 24 && sl::StaticLampBudget(100) == 48 && sl::StaticLampBudget(200) == 96 &&
+           sl::StaticLampBudget(400) == 192 && sl::StaticLampBudget(1000) == 192);
 }
 
 int main(int argc, char** argv) {

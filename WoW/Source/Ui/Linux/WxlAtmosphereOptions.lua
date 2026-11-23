@@ -193,7 +193,7 @@ Slider("Lantern strength", "atmosphere.lanternStrength", 2, 612, 0, 2, .05, "atm
 Check("Static lamps", "world.staticLamps", 1, 0, "lights.enabled",
     "Lights eligible nearby lamps, torches, and braziers. Requires Dynamic lights and the lamp catalog.")
 Slider("Static lamp strength", "world.staticLampStrength", 1, 0, 0, 2, .05, "world.staticLamps")
-Slider("Static lamp distance (yards)", "world.staticLampRange", 1, 0, 50, 200, 1, "world.staticLamps", "%.0f yd")
+Slider("Static lamp distance (yards)", "world.staticLampRange", 1, 0, 50, 400, 1, "world.staticLamps", "%.0f yd")
 
 Group("World", "World & Combat", 1, 0)
 Section("Character")

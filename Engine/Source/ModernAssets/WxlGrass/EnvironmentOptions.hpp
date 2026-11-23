@@ -85,7 +85,7 @@ namespace wxl::grass::environment
         {"atmosphere.terrainShadows", 0, 1, 0, true},
         {"world.staticLamps", 0, 1, 0, true},
         {"world.staticLampStrength", 0, 2, 1, false},
-        {"world.staticLampRange", 50, 200, 100, true},
+        {"world.staticLampRange", 50, 400, 100, true},
         {"water.lampGlints", 0, 1, 0, true},
         {"text.compactAreaNames", 0, 1, 0, true},
         {"text.hideAreaNames", 0, 1, 0, true},

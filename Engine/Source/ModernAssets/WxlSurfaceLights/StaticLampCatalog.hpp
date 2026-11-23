@@ -70,10 +70,10 @@ inline float StaticLampScore(const StaticLampPlacement& lamp, const float eye[3]
     return lamp.strength * lamp.radius * (1.0f + 0.5f * std::clamp(toward, 0.0f, 1.0f)) / std::max(d2, 4.0f);
 }
 
-constexpr unsigned kMaxStaticLamps = 96;
+constexpr unsigned kMaxStaticLamps = 192;
 
 inline unsigned StaticLampBudget(float range) {
-    return static_cast<unsigned>(std::clamp(range, 50.0f, 200.0f) * (24.0f / 50.0f) + 0.5f);
+    return static_cast<unsigned>(std::clamp(range, 50.0f, 400.0f) * (24.0f / 50.0f) + 0.5f);
 }
 
 inline float StaticLampFade(float distance, float range) {
