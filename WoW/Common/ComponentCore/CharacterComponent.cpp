@@ -1,4 +1,8 @@
 #if defined(WOWDECOMP_LINUX)
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Common/ComponentCore/CharacterCompositor.hpp"
+#include "Engine/Source/FrameScript/FrameScript.h"
+#endif
 #include "EquipmentFit.h"
 #include <filesystem>
 #include <fstream>
@@ -433,15 +437,24 @@ bool CCharacterComponent::Initialize() {
         }
 
         useCompression = 0;
-    } else if (mipLevels > 9) {
-        return CCharacterComponent::Initialize(GxTex_Rgb565, 9, useThread, useCompression);
     }
 
     if (mipLevels < 7) {
         mipLevels = 7;
     }
 
-    return CCharacterComponent::Initialize(GxTex_Rgb565, mipLevels, useThread, useCompression);
+    const bool ready = CCharacterComponent::Initialize(GxTex_Rgb565, mipLevels, useThread, useCompression);
+#if defined(WOWDECOMP_LINUX)
+    if (ready && FrameScript_GetContext())
+        FrameScript_RegisterFunction("WXL_SourceCharacterTextureInfo", [](lua_State* state) {
+            lua_pushnumber(state, CCharacterComponent::s_mipLevels);
+            lua_pushnumber(state, s_textureSize);
+            lua_pushboolean(state, CCharacterComponent::s_bComponentThread);
+            lua_pushboolean(state, CCharacterComponent::s_bComponentCompression);
+            return 4;
+        });
+#endif
+    return ready;
 }
 
 // VERIFY: 5682b94b manual
@@ -4409,28 +4422,95 @@ void CCharacterComponent::SetShieldItemDisplay(int32_t displayID) {
     this->SetHandItemDisplay(displayID, 1, INVSLOT_OFFHAND, true);
 }
 
+#if defined(WOWDECOMP_LINUX)
+static bool ValidCompositorSource(HTEXTURECACHE texture, const TCTEXTUREINFO& info) {
+    if (!texture || texture->m_loadFailed || !texture->m_data || texture->m_size < sizeof(BLPHeader) ||
+        !info.m_width || !info.m_height || !info.m_mipCount || info.m_mipCount > BLP_MIP_SLOTS)
+        return false;
+    const BLPHeader& blp = *texture->m_data;
+    const unsigned bits = blp.m_alphaSize;
+    if (blp.m_colorEncoding != COLOR_PAL || blp.m_width != info.m_width || blp.m_height != info.m_height ||
+        (info.m_alphaSize && info.m_alphaSize != bits) || (bits != 0 && bits != 1 && bits != 4 && bits != 8))
+        return false;
+    for (unsigned mip = 0; mip < info.m_mipCount; ++mip) {
+        const uint64_t pixels = uint64_t(std::max(1u, blp.m_width >> mip)) * std::max(1u, blp.m_height >> mip);
+        const uint32_t offset = blp.m_mipOffsets[mip], length = blp.m_mipSizes[mip];
+        if (offset < sizeof(BLPHeader) || offset > texture->m_size || length > texture->m_size - offset ||
+            length < pixels + (pixels * bits + 7) / 8)
+            return false;
+    }
+    return true;
+}
+#endif
+
 // VERIFY: e411dd8f manual
 // OFFSET: 0x004EF9D0
 void CCharacterComponent::PasteScale(HTEXTURECACHE texture, MipBits* dstMips, const C2iVector& dstPos, const C2iVector& srcPos, const C2iVector& srcSize, TCTEXTUREINFO& srcInfo) {
     C2iVector pos = dstPos;
     C2iVector src = srcPos;
     C2iVector size = srcSize;
+    uint32_t stride = 4 * s_textureSize;
+
+#if defined(WOWDECOMP_LINUX)
+    if (s_mipLevels == wxl::compositor::MaximumLevel) {
+        if (!ValidCompositorSource(texture, srcInfo) || !dstMips || pos.x < 0 || pos.y < 0 ||
+            src.x < 0 || src.y < 0 || size.x <= 0 || size.y <= 0 ||
+            pos.x + size.x > int(s_textureSize) || pos.y + size.y > int(s_textureSize))
+            return;
+        // Base skin uses atlas coordinates for both origins. Loose sections use
+        // source-local coordinates and the destination section's dimensions.
+        const unsigned targetWidth = &dstPos == &srcPos ? s_textureSize : size.x;
+        const unsigned targetHeight = &dstPos == &srcPos ? s_textureSize : size.y;
+        unsigned shift = 0;
+        while ((unsigned(srcInfo.m_width) << shift) < targetWidth) ++shift;
+        if ((unsigned(srcInfo.m_width) << shift) != targetWidth ||
+            (unsigned(srcInfo.m_height) << shift) != targetHeight ||
+            shift == 0 || srcInfo.m_mipCount + shift > s_mipLevels + 1)
+            return;
+
+        const unsigned x = unsigned(src.x) >> shift, y = unsigned(src.y) >> shift;
+        const unsigned width = unsigned(size.x) >> shift, height = unsigned(size.y) >> shift;
+        if (!width || !height || x + width > srcInfo.m_width || y + height > srcInfo.m_height)
+            return;
+        for (unsigned mip = 0; mip < srcInfo.m_mipCount + shift; ++mip)
+            if (!dstMips->m_mip[mip]) return;
+
+        const auto* pixels = static_cast<const uint8_t*>(TextureCacheGetMip(texture, 0));
+        const auto* palette = TextureCacheGetPal(texture);
+        unsigned mip = 0;
+        while (shift > 1) {
+            const unsigned edge = s_textureSize >> mip;
+            auto* output = dstMips->m_mip[mip] + pos.y * edge + pos.x;
+            wxl::compositor::ScaleSection(pixels, palette, srcInfo.m_width, srcInfo.m_height,
+                srcInfo.m_alphaSize, x, y, width, height, output, edge, shift);
+            pos.x >>= 1;
+            pos.y >>= 1;
+            size.x >>= 1;
+            size.y >>= 1;
+            --shift;
+            ++mip;
+        }
+        src = {static_cast<int32_t>(x * 2), static_cast<int32_t>(y * 2)};
+        stride >>= mip;
+        dstMips = reinterpret_cast<MipBits*>(dstMips->m_mip + mip);
+    }
+#endif
 
     switch (srcInfo.m_alphaSize) {
         case 0:
-            CCharacterComponent::PasteOpaqueScale(texture, dstMips, pos, 4 * s_textureSize, src, size, srcInfo);
+            CCharacterComponent::PasteOpaqueScale(texture, dstMips, pos, stride, src, size, srcInfo);
             break;
 
         case 1:
-            CCharacterComponent::PasteTransparent1BitScale(texture, dstMips, pos, 4 * s_textureSize, src, size, srcInfo);
+            CCharacterComponent::PasteTransparent1BitScale(texture, dstMips, pos, stride, src, size, srcInfo);
             break;
 
         case 4:
-            CCharacterComponent::PasteTransparent4BitScale(texture, dstMips, pos, 4 * s_textureSize, src, size, srcInfo);
+            CCharacterComponent::PasteTransparent4BitScale(texture, dstMips, pos, stride, src, size, srcInfo);
             break;
 
         case 8:
-            CCharacterComponent::PasteTransparent8BitScale(texture, dstMips, pos, 4 * s_textureSize, src, size, srcInfo);
+            CCharacterComponent::PasteTransparent8BitScale(texture, dstMips, pos, stride, src, size, srcInfo);
             break;
     }
 }
@@ -5001,7 +5081,10 @@ void CCharacterComponent::PasteFromSkin(COMPONENT_SECTIONS section, HTEXTURECACH
     info.m_mipCount = 0;
     info.m_alphaSize = 0;
     info.m_opaque = 1;
-    TextureCacheGetInfo(texture, info, 1);
+    if (!TextureCacheGetInfo(texture, info, 1) || !info.m_width || !info.m_height) return;
+#if defined(WOWDECOMP_LINUX)
+    if (s_mipLevels == wxl::compositor::MaximumLevel && !ValidCompositorSource(texture, info)) return;
+#endif
     uint32_t width = info.m_width;
     info.m_alphaSize = 0;
 
@@ -5012,10 +5095,11 @@ void CCharacterComponent::PasteFromSkin(COMPONENT_SECTIONS section, HTEXTURECACH
 
     uint32_t mipLevel = 0;
 
-    while (width != s_textureSize) {
+    while (width > s_textureSize && mipLevel + 1 < info.m_mipCount) {
         width >>= 1;
         mipLevel++;
     }
+    if (width != s_textureSize) return;
 
     CCharacterComponent::Paste(texture, dstMips, s_sectionInfo[section].m_pos, s_sectionInfo[section].m_pos, s_sectionInfo[section].m_size, info, mipLevel);
 }
@@ -5033,7 +5117,10 @@ void CCharacterComponent::PasteToSection(COMPONENT_SECTIONS section, HTEXTURECAC
     info.m_mipCount = 0;
     info.m_alphaSize = 0;
     info.m_opaque = 1;
-    TextureCacheGetInfo(texture, info, 1);
+    if (!TextureCacheGetInfo(texture, info, 1) || !info.m_width || !info.m_height) return;
+#if defined(WOWDECOMP_LINUX)
+    if (s_mipLevels == wxl::compositor::MaximumLevel && !ValidCompositorSource(texture, info)) return;
+#endif
     uint32_t width = info.m_width;
     uint32_t sectionWidth = s_sectionInfo[section].m_size.x;
     C2iVector srcPos;
@@ -5047,10 +5134,11 @@ void CCharacterComponent::PasteToSection(COMPONENT_SECTIONS section, HTEXTURECAC
 
     uint32_t mipLevel = 0;
 
-    while (width != sectionWidth) {
+    while (width > sectionWidth && mipLevel + 1 < info.m_mipCount) {
         width >>= 1;
         mipLevel++;
     }
+    if (width != sectionWidth) return;
 
     srcPos.x = 0;
     srcPos.y = 0;
@@ -5621,8 +5709,13 @@ bool CCharacterComponent::Initialize(EGxTexFormat format, uint32_t mipLevels, in
     CCharacterComponent::m_itemFunc[SECTION_LEG_LOWER] = &CCharacterComponent::UpdateItemLL;
     CCharacterComponent::m_itemFunc[SECTION_FOOT] = &CCharacterComponent::UpdateItemFO;
 
-    if (mipLevels > 9) {
-        mipLevels = 9;
+#if defined(WOWDECOMP_LINUX)
+    constexpr uint32_t maxLevel = wxl::compositor::MaximumLevel;
+#else
+    constexpr uint32_t maxLevel = 9;
+#endif
+    if (mipLevels > maxLevel) {
+        mipLevels = maxLevel;
     } else if (mipLevels < 6) {
         mipLevels = 6;
     }
@@ -5634,11 +5727,18 @@ bool CCharacterComponent::Initialize(EGxTexFormat format, uint32_t mipLevels, in
     CCharacterComponent::s_mipLevels = mipLevels;
     s_textureSize = 1 << mipLevels;
 
+    const auto ScaleSectionCoordinate = [mipLevels](int value) {
+#if defined(WOWDECOMP_LINUX)
+        return wxl::compositor::ScaleCoordinate(value, mipLevels);
+#else
+        return value >> (9 - mipLevels);
+#endif
+    };
     for (int32_t section = 0; section < NUM_COMPONENT_SECTIONS; section++) {
-        s_sectionInfo[section].m_pos.x = CCharacterComponent::s_sectionInfoRaw[section].m_pos.x >> (9 - mipLevels);
-        s_sectionInfo[section].m_pos.y = CCharacterComponent::s_sectionInfoRaw[section].m_pos.y >> (9 - mipLevels);
-        s_sectionInfo[section].m_size.x = CCharacterComponent::s_sectionInfoRaw[section].m_size.x >> (9 - mipLevels);
-        s_sectionInfo[section].m_size.y = CCharacterComponent::s_sectionInfoRaw[section].m_size.y >> (9 - mipLevels);
+        s_sectionInfo[section].m_pos.x = ScaleSectionCoordinate(CCharacterComponent::s_sectionInfoRaw[section].m_pos.x);
+        s_sectionInfo[section].m_pos.y = ScaleSectionCoordinate(CCharacterComponent::s_sectionInfoRaw[section].m_pos.y);
+        s_sectionInfo[section].m_size.x = ScaleSectionCoordinate(CCharacterComponent::s_sectionInfoRaw[section].m_size.x);
+        s_sectionInfo[section].m_size.y = ScaleSectionCoordinate(CCharacterComponent::s_sectionInfoRaw[section].m_size.y);
     }
 
     TextureCacheResetLoadCount();

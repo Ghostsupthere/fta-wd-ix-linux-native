@@ -19,7 +19,11 @@ class CACHEENTRY : public TSHashObject<CACHEENTRY, HASHKEY_NONE> {
     /* 00A4 */ int32_t m_refCount;
     /* 00A8 */ uint32_t m_memHandle;
     /* 00AC */ BLPHeader* m_data;
+#if defined(WOWDECOMP_LINUX)
+    uint32_t m_size;
+#else
     /* 00B0 */ uint32_t m_size : 20;
+#endif
     /* 00B0 */ uint32_t m_loadFailed : 1;
     /* 00B0 */ uint32_t m_unused : 11;
 

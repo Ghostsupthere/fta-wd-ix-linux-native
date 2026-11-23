@@ -54,6 +54,7 @@ static void LoadSuccessCallback(void* param) {
             memcpy(replacement, converted.data(), converted.size());
             SMemFree(entry->m_data, __FILE__, __LINE__, 0);
             entry->m_data = static_cast<BLPHeader*>(replacement);
+            entry->m_size = static_cast<uint32_t>(converted.size());
             WxlNativeDiagnostic("modern-blp: cache converted %s to palettized", entry->m_fileName);
         }
     } else if (conversion == ModernBlpTransformResult::Rejected) {
@@ -102,7 +103,7 @@ int32_t CACHEENTRY::LoadTexture() {
     this->m_asyncObject->m_priority = 130;
     this->m_size = this->m_asyncObject->m_size;
 #if defined(WOWDECOMP_LINUX)
-    // m_size is a 20-bit field: a file over 1 MiB would get a buffer smaller than the read that fills it.
+    // The cache tracks the full Linux allocation for the 1024 compositor.
     this->m_data = static_cast<BLPHeader*>(SMemAlloc(this->m_asyncObject->m_size, __FILE__, __LINE__, 0));
 #else
     this->m_data = static_cast<BLPHeader*>(SMemAlloc(this->m_size, __FILE__, __LINE__, 0));
