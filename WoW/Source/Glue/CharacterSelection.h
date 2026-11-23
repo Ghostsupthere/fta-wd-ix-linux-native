@@ -15,6 +15,10 @@ class CCharacterSelection {
     public:
     static CSimpleModelFFX* m_modelFrame;
     static TSGrowableArray<CharacterSelectionDisplay> s_characterList;
+#if defined(WOWDECOMP_LINUX)
+    static void ApplySavedOrder();
+    static int32_t MoveCharacter(int32_t direction);
+#endif
     static int32_t s_selectionIndex;
     static int32_t s_characterCount;
     static float s_charFacing;

@@ -24,6 +24,7 @@
 #include "Engine/Source/FrameScript/FrameScript.h"
 #include "Engine/Source/FrameXML/FrameXML.h"
 #include "Engine/Source/FrameXML/LoadXML.h"
+#include "WoW/Source/Glue/CharacterOrderUI.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
 #include "Engine/Source/Model2/M2Cache.h"
 #include "Engine/Source/Model2/M2Model.h"
@@ -763,6 +764,7 @@ void CGlueMgr::Resume() {
 
 #if defined(WOWDECOMP_LINUX)
             WxlRunRequiredAddonsPolicy(true);
+            FrameScript_Execute(kCharacterOrderUI, "Native character order", nullptr);
 #endif
             FrameScript_SignalEvent(GLUE_EVENT_FRAMES_LOADED, nullptr);
             CGlueMgr::InitializeFFX();

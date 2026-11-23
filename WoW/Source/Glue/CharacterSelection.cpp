@@ -630,6 +630,9 @@ void CCharacterSelection::UpdateCharacterList() {
     CCharacterSelection::s_raceRestrictions[9] = 0;
 
     ClientServices::Connection()->EnumerateCharacters(&CCharacterSelection::EnumerateCharactersCallback, nullptr);
+#if defined(WOWDECOMP_LINUX)
+    CCharacterSelection::ApplySavedOrder();
+#endif
 
     if (!CCharacterSelection::s_characterList.Count()) {
         CCharacterSelection::s_selectionIndex = 0;

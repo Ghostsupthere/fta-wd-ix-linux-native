@@ -338,6 +338,15 @@ static int32_t Script_SelectCharacter(lua_State* L) {
     return 0;
 }
 
+#if defined(WOWDECOMP_LINUX)
+static int32_t Script_MoveSelectedCharacter(lua_State* L) {
+    const auto direction = lua_tonumber(L, 1);
+    lua_pushnumber(L, direction == -1 || direction == 1 ?
+                   CCharacterSelection::MoveCharacter(static_cast<int32_t>(direction)) : 0);
+    return 1;
+}
+#endif
+
 // STATIC: 0x00AC4378
 static FrameScript_Method s_scriptFunctions[] = {
     { "SetCharSelectModelFrame", &Script_SetCharSelectModelFrame },
@@ -346,6 +355,9 @@ static FrameScript_Method s_scriptFunctions[] = {
     { "GetNumCharacters", &Script_GetNumCharacters },
     { "GetCharacterInfo", &Script_GetCharacterInfo },
     { "SelectCharacter", &Script_SelectCharacter },
+#if defined(WOWDECOMP_LINUX)
+    { "WXL_MoveSelectedCharacter", &Script_MoveSelectedCharacter },
+#endif
     { "DeleteCharacter", &Script_DeleteCharacter },
     { "RenameCharacter", &Script_RenameCharacter },
     { "DeclineCharacter", &Script_DeclineCharacter },
