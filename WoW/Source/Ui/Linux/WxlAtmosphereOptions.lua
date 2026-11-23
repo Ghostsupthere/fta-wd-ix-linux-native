@@ -373,20 +373,46 @@ saver:SetScript("OnUpdate", function(_, elapsed)
     UpdateStatus()
 end)
 OptionsFrame_AddCategory(VideoOptionsFrame, panel)
-if SlashCmdList and not SlashCmdList.WXLVISUALS then
-    SLASH_WXLVISUALS1 = "/visuals"
-    SlashCmdList.WXLVISUALS = function()
-        VideoOptionsFrame:Show()
-        if OptionsFrame_OpenToCategory then OptionsFrame_OpenToCategory(panel) end
+-- Show the sub-page under Effects without making the player expand the list first.
+local function ExpandEffects()
+    if VideoOptionsEffectsPanel and VideoOptionsEffectsPanel.name == panel.parent then
+        VideoOptionsEffectsPanel.collapsed = false
+        panel.hidden = false
+        if VideoOptionsFrame.categoryFrame and VideoOptionsFrame.categoryFrame.update then
+            VideoOptionsFrame.categoryFrame:update()
+        end
     end
 end
--- Show the sub-page under Effects without making the player expand the list first.
-if VideoOptionsEffectsPanel and VideoOptionsEffectsPanel.name == panel.parent then
-    VideoOptionsEffectsPanel.collapsed = false
-    panel.hidden = false
-    if VideoOptionsFrame.categoryFrame and VideoOptionsFrame.categoryFrame.update then
-        VideoOptionsFrame.categoryFrame:update()
+ExpandEffects()
+
+local function OpenVisuals(previous)
+    local video = VideoOptionsFrame
+    if previous then
+        HideUIPanel(previous)
+        ShowUIPanel(video)
+        video.lastFrame = previous
+    else
+        ShowUIPanel(video)
     end
+    ExpandEffects()
+    OptionsFrame_OpenToCategory(video, panel.name)
+end
+
+if SlashCmdList and not SlashCmdList.WXLVISUALS then
+    SLASH_WXLVISUALS1 = "/visuals"
+    SlashCmdList.WXLVISUALS = function() OpenVisuals() end
+end
+if GameMenuFrame and GameMenuButtonOptions and GameMenuButtonSoundOptions then
+    local button = CreateFrame("Button", "GameMenuButtonWXLVisuals", GameMenuFrame, "GameMenuButtonTemplate")
+    button:SetText(panel.name)
+    button:SetPoint("TOP", GameMenuButtonOptions, "BOTTOM", 0, -1)
+    GameMenuButtonSoundOptions:ClearAllPoints()
+    GameMenuButtonSoundOptions:SetPoint("TOP", button, "BOTTOM", 0, -1)
+    GameMenuFrame:SetHeight(GameMenuFrame:GetHeight() + button:GetHeight() + 1)
+    button:SetScript("OnClick", function()
+        PlaySound("igMainMenuOption")
+        OpenVisuals(GameMenuFrame)
+    end)
 end
 local function OtherTooltipOwner()
     return IsAddOnLoaded and (IsAddOnLoaded("IdTip") or IsAddOnLoaded("ElvUI"))
