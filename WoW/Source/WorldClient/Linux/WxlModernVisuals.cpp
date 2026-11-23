@@ -465,6 +465,9 @@ static void UpdateSpellLights(bool enabled) {
     spellScanAt = now + 100;
     spellLights.count = 0;
     struct Scan { float eye[3]; unsigned objects = 0, effects = 0; } scan{{eye->x, eye->y, eye->z}};
+    // Diagnostic counters, summed over the last logged interval: why effects are or are not accepted.
+    static unsigned why[10];  // 0 no spell, 1 faint, 2 no model, 3 no asset, 4 authored lights, 5 emitters,
+                              // 6 not additive, 7 no colour, 8 refused by list, 9 accepted
     ClntObjMgrEnumVisibleObjects([](WOWGUID guid, void* data) -> int32_t {
         auto& scan = *static_cast<Scan*>(data);
         if (++scan.objects > 512)
@@ -477,23 +480,27 @@ static void UpdateSpellLights(bool enabled) {
             if (++scan.effects > 64)
                 return 0;
             const auto* model = effect->m_model;
-            if (!effect->m_spellId || !(effect->m_alpha > 0.1f) || !model || !(model->m_fFlags & 1) || !model->m_shared)
-                continue;
+            if (!effect->m_spellId) { ++why[0]; continue; }
+            if (!model || !(model->m_fFlags & 1) || !model->m_shared) { ++why[2]; continue; }
+            // CEffect::m_alpha is never driven (it stays 0); the effect's fade lives on its model.
+            const float fade = model->m_alpha;
+            if (!(fade > 0.1f)) { ++why[1]; continue; }
             const auto* asset = model->m_shared->m_data;
-            if (!asset || asset->m_lights.m_count)
-                continue;
+            if (!asset) { ++why[3]; continue; }
+            if (asset->m_lights.m_count) { ++why[4]; continue; }
             const auto position = effect->m_mapEntity ? effect->m_mapEntity->m_position : object->m_worldObject->m_position;
             const float world[] = {position.x, position.y, position.z + (effect->m_mapEntity ? 0.25f : 1.0f)};
             for (unsigned i = 0; i < std::min(asset->m_particles.m_count, 4u); ++i) {
                 const auto& emitter = asset->m_particles[i];
-                if ((emitter.m_blendMode != M2PARTICLEBLEND_ADD &&
-                     emitter.m_blendMode != M2PARTICLEBLEND_NO_ALPHA_ADD &&
-                     emitter.m_blendMode != M2PARTICLEBLEND_BLEND_ADD) || !emitter.m_colorTrack.m_values.m_count)
-                    continue;
+                ++why[5];
+                if (emitter.m_blendMode != M2PARTICLEBLEND_ADD &&
+                    emitter.m_blendMode != M2PARTICLEBLEND_NO_ALPHA_ADD &&
+                    emitter.m_blendMode != M2PARTICLEBLEND_BLEND_ADD) { ++why[6]; continue; }
+                if (!emitter.m_colorTrack.m_values.m_count) { ++why[7]; continue; }
                 const auto& tint = emitter.m_colorTrack.m_values[0];
                 const float colour[] = {tint.x, tint.y, tint.z};
-                if (spellLights.Add(world, colour, scan.eye, effect->m_alpha))
-                    break;
+                if (spellLights.Add(world, colour, scan.eye, fade)) { ++why[9]; break; }
+                ++why[8];
             }
         }
         return 1;
@@ -503,6 +510,12 @@ static void UpdateSpellLights(bool enabled) {
         VF_LOG_INFO("spell light prototype: %u/%zu sources, %u objects, %u effects, scan %.4f ms",
                     spellLights.count, spellLights.lights.size(), std::min(scan.objects, 512u),
                     std::min(scan.effects, 64u), NowMs() - now);
+    if (scans % 50 == 1) {
+        VF_LOG_INFO("spell light reasons: nospell=%u faint=%u nomodel=%u noasset=%u authored=%u emitters=%u "
+                    "notadd=%u nocolour=%u refused=%u accepted=%u", why[0], why[1], why[2], why[3], why[4],
+                    why[5], why[6], why[7], why[8], why[9]);
+        std::memset(why, 0, sizeof(why));
+    }
 }
 
 static void UpdateCorpseLights(bool enabled) {
