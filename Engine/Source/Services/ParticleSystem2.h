@@ -275,6 +275,10 @@ class CParticleEmitter2 {
     void InterpolateAllTracks(const CParticle2& particle, CImVector* color, C2Vector* scale, int32_t* headCell, int32_t* tailCell);
     void InterpolateAllTracksSimple(const CParticle2& particle, CImVector* color, C2Vector* scale, int32_t* headCell, int32_t* tailCell);
     CImVector InterpolateColorTrack(float t);
+#if defined(WOWDECOMP_LINUX)
+    // Average a small sample of the live particles' emitted RGB.
+    bool SampleSpellLight(float (&rgb)[3]);
+#endif
     int32_t MoveParticle(CParticle2& particle, float deltaTime);
     int32_t MoveParticle(CParticle2_Model& particle, float deltaTime);
     void PlaceParticleModels(const C44Matrix* frameOfReference);

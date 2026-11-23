@@ -29,7 +29,7 @@ struct SpellLightList
         if (!(squared < MaxDistance * MaxDistance) || !(peak > 0) || !std::isfinite(peak) || !(alpha > 0))
             return false;
         for (int i = 0; i < 3; ++i)
-            if (!(colour[i] >= 0 && colour[i] <= peak))
+            if (!(colour[i] >= 0 && colour[i] <= 1.0f))
                 return false;
         for (unsigned i = 0; i < count; ++i)
         {
@@ -49,7 +49,7 @@ struct SpellLightList
             lights[i] = lights[i - 1];
         const float strength = 0.55f * std::min(alpha, 1.0f);
         lights[index] = {{position[0], position[1], position[2]},
-                         {strength * (colour[0] / peak), strength * (colour[1] / peak), strength * (colour[2] / peak)},
+                         {strength * colour[0], strength * colour[1], strength * colour[2]},
                          squared, 5.0f};
         return true;
     }

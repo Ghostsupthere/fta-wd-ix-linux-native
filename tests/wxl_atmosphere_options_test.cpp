@@ -92,7 +92,7 @@ int main()
     assert(corpses.lights[0].position[2] == 0.28f);
 
     wxl::atmosphere::SpellLightList spells;
-    const float gold[] = {10, 5, 0};
+    const float gold[] = {1, 0.5f, 0};
     const float first[] = {4, 0, 0}, second[] = {2, 0, 0}, nearest[] = {0, 0, 0};
     assert(!spells.Add(farAway, gold, eye, 1));
     assert(spells.Add(first, gold, eye, 1) && spells.Add(first, gold, eye, 1) && spells.count == 1);
@@ -102,6 +102,11 @@ int main()
     assert(spells.Add(sixth, gold, eye, 1) && spells.count == 4);
     assert(spells.Add(eighth, gold, eye, 1) == false && spells.count == 4);   // full, and farther than every light
     assert(spells.Add(ninth, gold, eye, 1) == false);
+    const float dim[] = {0.25f, 0.125f, 0.0f};
+    wxl::atmosphere::SpellLightList dimSpells;
+    assert(dimSpells.Add(first, dim, eye, 0.5f));
+    assert(dimSpells.lights[0].colour[0] == 0.55f * 0.5f * 0.25f);
+    assert(dimSpells.lights[0].colour[1] == dimSpells.lights[0].colour[0] * 0.5f);
 
     const float cloud[] = {0.24f, 0, 0, 0.5f};
     assert(wxl::atmosphere::CloudShade(cloud, 0, 1) == 1.0f);

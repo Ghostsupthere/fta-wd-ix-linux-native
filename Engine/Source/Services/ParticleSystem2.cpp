@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -492,6 +493,59 @@ bool CParticleEmitter2::CanUpdateOffThread() const {
 
     return true;
 }
+
+#if defined(WOWDECOMP_LINUX)
+bool CParticleEmitter2::SampleSpellLight(float (&rgb)[3]) {
+    // Use the renderer's color interpolation, including model color replacements.
+    // Check untrusted track shapes before asking it to read adjacent keys.
+    const auto valid = [](const auto* track) {
+        if (!track || !track->m_values.m_count) return false;
+        const unsigned count = track->m_values.m_count;
+        if (count == 1) return true;
+        if (count != track->m_times.m_count || count > 16) return false;
+        if (count == 2) return true;
+        if (count == 3)
+            return track->m_times[1].m_value > 0 && track->m_times[1].m_value < 32767;
+        if (track->m_times[0].m_value > 0 || track->m_times[count - 1].m_value != 32767)
+            return false;
+        for (unsigned i = 1; i < count; ++i)
+            if (track->m_times[i].m_value <= track->m_times[i - 1].m_value)
+                return false;
+        return true;
+    };
+    const unsigned live = m_liveList.Count();
+    if (!live || !valid(m_params.m_colorTrack) ||
+        ((m_flags & 0x10) && m_params.m_colorTrack->m_values.m_count > 3))
+        return false;
+    const bool hasAlpha = m_params.m_alphaTrack && m_params.m_alphaTrack->m_values.m_count;
+    if (hasAlpha && !valid(m_params.m_alphaTrack))
+        return false;
+
+    const unsigned count = std::min(live, 8u);
+    for (unsigned i = 0; i < count; ++i) {
+        const unsigned index = m_liveList[uint64_t(i) * live / count];
+        const CParticle2* particle = nullptr;
+        if (m_params.m_hasModel) {
+            if (index < m_particleModels.Count()) particle = &m_particleModels[index];
+        } else if (index < m_particles.Count()) {
+            particle = &m_particles[index];
+        }
+        if (!particle) continue;
+        const float life = particle->m_lifeSeed.m_value * m_params.m_lifeVariation * 0.000030518509f + m_params.m_life;
+        if (!std::isfinite(life) || !std::isfinite(particle->m_age)) continue;
+        // Keep the last endpoint inside the final interval of long tracks.
+        const float t = std::clamp(particle->m_age / std::max(life, 0.001f), 0.0f, 0.999999f);
+        const CImVector color = InterpolateColorTrack(t);
+        const float alpha = hasAlpha ? std::clamp(PartTrackSample(*m_params.m_alphaTrack, t), 0.0f, 1.0f) : 1.0f;
+        const float weight = alpha / (255.0f * count);
+        rgb[0] += weight * color.r;
+        rgb[1] += weight * color.g;
+        rgb[2] += weight * color.b;
+    }
+    for (float& channel : rgb) channel = std::min(channel, 1.0f);
+    return std::max({rgb[0], rgb[1], rgb[2]}) > 0.01f;
+}
+#endif
 
 // VERIFY: 0e21dad3 auto
 // OFFSET: 0x00979740

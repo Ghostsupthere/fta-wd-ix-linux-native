@@ -16,6 +16,7 @@
 #include "Engine/Source/Model2/M2Light.h"
 #include "Engine/Source/Model2/M2Model.h"
 #include "Engine/Source/Model2/M2Shared.h"
+#include "Engine/Source/Services/ParticleSystem2.h"
 #include "Engine/Source/Model2/M2Data.h"
 #include "Engine/Source/Model2/M2ModelLight.h"
 #include "Engine/Source/ModernAssets/NativeVisualHooks.h"
@@ -453,38 +454,80 @@ float WxlSurfaceWetness() { return surfaceWetness; }
 const float* WxlSurfaceCloud() { return surfaceCloud; }
 const wxl::atmosphere::SpellLightList& WxlFrameSpellLights() { return spellLights; }
 
-// Diagnostic counters, summed over the last logged interval: why effects and missiles are or are not accepted.
-static unsigned spellWhy[13];  // 0 no spell, 1 faint, 2 no model, 3 no asset, 4 authored lights, 5 emitters,
-                               // 6 not additive, 7 no colour, 8 refused by list, 9 accepted, 10 missiles seen,
-                               // 11 refused: beyond the camera range, 12 refused: all slots taken
+// Counters are summed over a logged interval.
+enum SpellLightReason {
+    NoSpell, Faint, NoModel, NoAsset, Authored, Emitters, NotAdditive, Dark,
+    Accepted, MissileFrames, Far, Full, MeshFallback, SpellLightReasonCount
+};
+static unsigned spellWhy[SpellLightReasonCount];
 static wxl::atmosphere::SpellLightList effectLights;   // rebuilt at 10 Hz
-static wxl::atmosphere::SpellLightList missileLights;  // rebuilt every frame; these take the slots first
+static wxl::atmosphere::SpellLightList missileLights;  // rebuilt every frame, with priority
 
-// Turns one spell effect or missile model into a light when it has an additive particle emitter.
+static bool ProjectileMeshLight(const CM2Model& model, const M2Data& asset, float (&rgb)[3]) {
+    const auto* skin = model.m_shared->m_skinData;
+    if (!skin) return false;
+    // A visible additive mesh can carry a projectile's glow even if it has
+    // no additive particles. Leave ordinary opaque and alpha-blended meshes dark.
+    for (unsigned i = 0; i < std::min(skin->m_batches.m_count, 32u); ++i) {
+        const auto& batch = skin->m_batches[i];
+        if (batch.m_materialIndex >= asset.m_materials.m_count) continue;
+        const auto blend = asset.m_materials[batch.m_materialIndex].m_blendMode;
+        if (blend != M2BLEND_NO_ALPHA_ADD && blend != M2BLEND_ADD && blend != M2BLEND_BLEND_ADD) continue;
+        if (model.m_colors && batch.m_colorIndex < asset.m_colors.m_count) {
+            const auto& track = model.m_colors[batch.m_colorIndex];
+            const auto& tint = track.m_colorTrack.m_currentValue;
+            const float weight = 0.40f * std::clamp(track.m_alphaTrack.m_currentValue, 0.0f, 1.0f);
+            rgb[0] = weight * std::clamp(tint.x, 0.0f, 1.0f);
+            rgb[1] = weight * std::clamp(tint.y, 0.0f, 1.0f);
+            rgb[2] = weight * std::clamp(tint.z, 0.0f, 1.0f);
+            if (std::max({rgb[0], rgb[1], rgb[2]}) > 0.01f) return true;
+        } else {
+            rgb[0] = rgb[1] = rgb[2] = 0.32f;
+            return true;
+        }
+    }
+    return false;
+}
+
 static void AddSpellModelLight(const CM2Model* model, const float* world, const float* eye,
-                               wxl::atmosphere::SpellLightList& into) {
-    if (!model || !(model->m_fFlags & 1) || !model->m_shared) { ++spellWhy[2]; return; }
-    // CEffect::m_alpha is never driven (it stays 0); the fade lives on the model.
+                               wxl::atmosphere::SpellLightList& into, bool projectile) {
+    if (!model || !(model->m_fFlags & 1) || !model->m_shared) { ++spellWhy[NoModel]; return; }
     const float fade = model->m_alpha;
-    if (!(fade > 0.1f)) { ++spellWhy[1]; return; }
+    if (!(fade > 0.1f)) { ++spellWhy[Faint]; return; }
     const auto* asset = model->m_shared->m_data;
-    if (!asset) { ++spellWhy[3]; return; }
-    if (asset->m_lights.m_count) { ++spellWhy[4]; return; }
+    if (!asset) { ++spellWhy[NoAsset]; return; }
+    if (asset->m_lights.m_count) { ++spellWhy[Authored]; return; }
+    const float dx = world[0] - eye[0], dy = world[1] - eye[1], dz = world[2] - eye[2];
+    constexpr float distance = wxl::atmosphere::SpellLightList::MaxDistance;
+    if (!(dx * dx + dy * dy + dz * dz < distance * distance)) { ++spellWhy[Far]; return; }
+
+    float rgb[3] = {}, brightest = 0;
+    bool additiveEmitter = false;
     for (unsigned i = 0; i < std::min(asset->m_particles.m_count, 4u); ++i) {
         const auto& emitter = asset->m_particles[i];
-        ++spellWhy[5];
+        ++spellWhy[Emitters];
         if (emitter.m_blendMode != M2PARTICLEBLEND_ADD &&
             emitter.m_blendMode != M2PARTICLEBLEND_NO_ALPHA_ADD &&
-            emitter.m_blendMode != M2PARTICLEBLEND_BLEND_ADD) { ++spellWhy[6]; continue; }
-        if (!emitter.m_colorTrack.m_values.m_count) { ++spellWhy[7]; continue; }
-        const auto& tint = emitter.m_colorTrack.m_values[0];
-        const float colour[] = {tint.x, tint.y, tint.z};
-        if (into.Add(world, colour, eye, fade)) { ++spellWhy[9]; return; }
-        const float dx = world[0] - eye[0], dy = world[1] - eye[1], dz = world[2] - eye[2];
-        if (!(dx * dx + dy * dy + dz * dz < wxl::atmosphere::SpellLightList::MaxDistance * wxl::atmosphere::SpellLightList::MaxDistance)) ++spellWhy[11];
-        else if (into.count == into.lights.size()) ++spellWhy[12];
-        else ++spellWhy[8];
+            emitter.m_blendMode != M2PARTICLEBLEND_BLEND_ADD) { ++spellWhy[NotAdditive]; continue; }
+        additiveEmitter = true;
+        auto* runtime = model->m_particleEmitters ? model->m_particleEmitters[i] : nullptr;
+        float sample[3] = {};
+        if (runtime && runtime->SampleSpellLight(sample)) {
+            const float peak = std::max({sample[0], sample[1], sample[2]});
+            if (peak > brightest) {
+                brightest = peak;
+                std::copy_n(sample, 3, rgb);
+            }
+        }
     }
+    if (brightest == 0) {
+        if (!projectile || additiveEmitter || !ProjectileMeshLight(*model, *asset, rgb)) {
+            ++spellWhy[Dark];
+            return;
+        }
+        ++spellWhy[MeshFallback];
+    }
+    ++spellWhy[into.Add(world, rgb, eye, fade) ? Accepted : Full];
 }
 
 static void UpdateSpellLights(bool enabled) {
@@ -517,10 +560,10 @@ static void UpdateSpellLights(bool enabled) {
             for (const auto* effect = object->m_effectList; effect && links++ < 8; effect = effect->m_next) {
                 if (++scan.effects > 64)
                     return 0;
-                if (!effect->m_spellId) { ++spellWhy[0]; continue; }
+                if (!effect->m_spellId) { ++spellWhy[NoSpell]; continue; }
                 const auto position = effect->m_mapEntity ? effect->m_mapEntity->m_position : object->m_worldObject->m_position;
                 const float world[] = {position.x, position.y, position.z + (effect->m_mapEntity ? 0.25f : 1.0f)};
-                AddSpellModelLight(effect->m_model, world, scan.eye, effectLights);
+                AddSpellModelLight(effect->m_model, world, scan.eye, effectLights, false);
             }
             return 1;
         }, &scan);
@@ -533,10 +576,10 @@ static void UpdateSpellLights(bool enabled) {
     unsigned missiles = 0;
     for (const CMissile* missile = CMissile::s_inFlightMissileList; missile && missiles < 16; missile = missile->m_next) {
         ++missiles;
-        ++spellWhy[10];
+        ++spellWhy[MissileFrames];
         const float world[] = {missile->m_position.x, missile->m_position.y, missile->m_position.z};
         if (std::isfinite(world[0]) && std::isfinite(world[1]) && std::isfinite(world[2]))
-            AddSpellModelLight(missile->m_model, world, eye, missileLights);
+            AddSpellModelLight(missile->m_model, world, eye, missileLights, true);
     }
 
     // Projectiles first, then the lights from object effects, skipping any within a yard of one already taken.
@@ -566,9 +609,10 @@ static void UpdateSpellLights(bool enabled) {
         VF_LOG_INFO("spell light prototype: %u/%zu sources, %u objects, %u effects, scan %.4f ms",
                     spellLights.count, spellLights.lights.size(), objects, effects, NowMs() - now);
         VF_LOG_INFO("spell light reasons: nospell=%u faint=%u nomodel=%u noasset=%u authored=%u emitters=%u "
-                    "notadd=%u nocolour=%u refused=%u accepted=%u missile-frames=%u far=%u full=%u", spellWhy[0],
-                    spellWhy[1], spellWhy[2], spellWhy[3], spellWhy[4], spellWhy[5], spellWhy[6], spellWhy[7],
-                    spellWhy[8], spellWhy[9], spellWhy[10], spellWhy[11], spellWhy[12]);
+                    "notadd=%u dark=%u accepted=%u missile-frames=%u far=%u full=%u mesh=%u",
+                    spellWhy[NoSpell], spellWhy[Faint], spellWhy[NoModel], spellWhy[NoAsset], spellWhy[Authored],
+                    spellWhy[Emitters], spellWhy[NotAdditive], spellWhy[Dark], spellWhy[Accepted],
+                    spellWhy[MissileFrames], spellWhy[Far], spellWhy[Full], spellWhy[MeshFallback]);
         std::memset(spellWhy, 0, sizeof(spellWhy));
     }
 }
