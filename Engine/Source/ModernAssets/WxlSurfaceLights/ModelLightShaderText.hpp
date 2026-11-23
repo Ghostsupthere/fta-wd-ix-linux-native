@@ -684,7 +684,7 @@ namespace wxl::surfacelights::modelshader
                         WmoWeather("r31.xyz", true) +
                         "    mov " + match[2].str() + mask + ", r31");
         }
-        else if (!std::regex_search(src, std::regex(R"(\bc249\b)")))
+        else if (!std::regex_search(src, std::regex(R"(\b(c249|b15)\b)")))
         {
             // Keep the original alpha write. Only the RGB result is adjusted in rain.
             static const std::regex output(R"(^\s*(mad_sat|add_sat) (o\d+)(?:\.xyz)?, ([^\r\n]+))");
@@ -694,10 +694,10 @@ namespace wxl::surfacelights::modelshader
             {
                 const auto end = src.find('\n', colour[0].at);
                 const std::string wet =
+                    "\n    " + match[1].str() + " r31.xyz, " + match[3].str() +
                     "\n    mov r30.w, c1.w"
                     "\n    if_gt c249.x, r30.w"
                     "\n      sge r29.w, c1.w, c1.w"
-                    "\n      " + match[1].str() + " r31.xyz, " + match[3].str() +
                     "\n      dp3 r30.w, r29, r29"
                     "\n      max r30.w, r30.w, c249.w"
                     "\n      rsq r30.w, r30.w"
@@ -709,9 +709,36 @@ namespace wxl::surfacelights::modelshader
                     "\n      mul r31.w, r31.w, c249.x"
                     "\n      mul r30.w, c249.x, c249.y"
                     "\n      add r30.w, r29.w, -r30.w"
-                    "\n      mad_sat " + match[2].str() + ".xyz, r31, r30.w, r31.w"
+                    "\n      mad_sat r31.xyz, r31, r30.w, r31.w"
                     "\n    endif";
-                src.insert(end == std::string::npos ? src.size() : end, wet);
+                // b15 is set only around eligible draws. The two additional
+                // texels live in the existing vertex light texture's header.
+                const std::string rim =
+                    "\n    if b15"
+                    "\n      mov r27, c1"
+                    "\n      add r26.w, r27.z, r27.z"
+                    "\n      add r26.w, r26.w, r26.w"
+                    "\n      add r27.x, r27.x, r26.w"
+                    "\n      add r26.w, r26.w, r26.w"
+                    "\n      add r27.x, r27.x, r26.w"
+                    "\n      texldl r25, r27, s0"
+                    "\n      add r27.x, r27.x, r27.z"
+                    "\n      texldl r24, r27, s0"
+                    "\n      dp3 r26.w, r29, r29"
+                    "\n      max r26.w, r26.w, c249.w"
+                    "\n      rsq r26.w, r26.w"
+                    "\n      dp3 r27.w, r30, -r29"
+                    "\n      mul_sat r27.w, r27.w, r26.w"
+                    "\n      sge r26.w, c1.w, c1.w"
+                    "\n      add r27.w, r26.w, -r27.w"
+                    "\n      pow r27.w, r27.w, r24.w"
+                    "\n      dp3_sat r24.w, r30, r24"
+                    "\n      mul r27.w, r27.w, r24.w"
+                    "\n      mul r27.w, r27.w, r25.w"
+                    "\n      mad_sat r31.xyz, r25, r27.w, r31"
+                    "\n    endif";
+                src.insert(end == std::string::npos ? src.size() : end,
+                           wet + rim + "\n    mov " + match[2].str() + ".xyz, r31");
             }
         }
 #endif

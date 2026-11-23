@@ -45,6 +45,8 @@ inline void (*gliderForget)(CM2Model* model)=nullptr;
 inline void (*outlineOverlay)(void* device)=nullptr;
 inline void (*outlineDeviceLost)()=nullptr;
 inline CM2Model* currentM2Model=nullptr;
+// Arms the rim branch only for eligible character batches. A null model disarms it.
+inline void (*characterRim)(const CM2Model*)=nullptr;
 inline void (*m2BatchDrawn)(CM2Model* model,void* device,int type,int base,unsigned minimum,unsigned count,unsigned start,unsigned primitives)=nullptr;
 // Called from ~CM2Model, before the model is torn down, so modules that keep model pointers between
 // frames (surface lights) can drop them.

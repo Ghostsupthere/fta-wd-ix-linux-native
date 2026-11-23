@@ -90,6 +90,10 @@ namespace wxl::grass::environment
         {"text.hideAreaNames", 0, 1, 0, true},
         {"world.cosmeticFootprints", 0, 1, 0, true},
         {"world.footprintStrength", 0, 1, 0.65, false},
+        {"world.characterRim", 0, 1, 0, true},
+        {"world.rimStrength", 0, 1, 0.35, false},
+        {"world.rimWidth", 1, 8, 4, false},
+        {"world.rimTint", 0, 1, 0.45, false},
     };
     constexpr size_t kCount = sizeof(kOptions) / sizeof(kOptions[0]);
 
@@ -119,6 +123,7 @@ namespace wxl::grass::environment
         kWaterLampGlints,
         kCompactAreaNames, kHideAreaNames,
         kCosmeticFootprints, kFootprintStrength,
+        kCharacterRim, kRimStrength, kRimWidth, kRimTint,
     };
 
     struct Values

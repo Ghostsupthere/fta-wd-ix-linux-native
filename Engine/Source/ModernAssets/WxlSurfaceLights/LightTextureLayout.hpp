@@ -10,6 +10,7 @@
 //   t5  debug-view weights     t6  (1/W, 1/H, lights per cell, 0)     t7  (1, 0, 0.5, 2/3)
 //   t8  (0.7, 0.03, 1/ln2, 0.05)     t9  (0.8, 0.001, 0.25, 1/lights per cell)
 //   t10 (scale of ours on baked-light WMO surfaces, 0, 0, 0)     t11 the grid (x, y of cell 0, 1/cell size, cells)
+//   t12 (rim colour RGB and strength), t13 (view-light direction and exponent)
 //  rows 1..: the cells' entries, row-major: cell c's k-th light at linear texel c * perCell + k, each
 //   (u, v of the light's first texel, 1, 0); (0, 0, 0, 0) ends a cell's list.
 //  then the light pool, 4 texels each, never split across rows: world position + 1/radius; colour +

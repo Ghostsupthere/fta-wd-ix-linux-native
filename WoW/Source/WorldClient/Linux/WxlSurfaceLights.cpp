@@ -23,6 +23,7 @@
 #include "Engine/Source/ModernAssets/NativeVisualHooks.h"
 #include "Engine/Source/ModernAssets/WxlGrass/EnvironmentOptions.hpp"
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/StaticLampCatalog.hpp"
+#include "Engine/Source/ModernAssets/WxlSurfaceLights/CharacterRim.hpp"
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/DoodadLightTables.hpp"
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/LightPool.hpp"
 #include "Engine/Source/ModernAssets/WxlSurfaceLights/LightShaderPack.hpp"
@@ -33,6 +34,10 @@
 #include "WoW/Source/WorldClient/MapObj.h"
 #include "WoW/Source/WorldClient/MapObjDef.h"
 #include "WoW/Source/WorldClient/World.h"
+#include "WoW/Source/DB/Rec/SpellVisualKitRec.h"
+#include "WoW/Source/ObjectMgrClient/ObjectMgrClient.h"
+#include "WoW/Source/Object/ObjectClient/Player_C.h"
+#include "WoW/Source/Object/ObjectClient/Effect_C.h"
 #include "WoW/Source/WorldClient/Linux/WxlWmoMaterials.h"
 #include <algorithm>
 #include <chrono>
@@ -744,6 +749,85 @@ bool EnsureTexture(IDirect3DDevice9* d) {
     return true;
 }
 
+constexpr UINT kRimBranch = 15;
+float characterRimStrength = 0, characterRimWidth = 4, characterRimTint = 0.45f;
+const CM2Model* rimPlayer = nullptr;
+bool rimHeaderWritten = false, rimArmed = false;
+float rimTexels[8] = {};
+
+void ArmCharacterRim(const CM2Model* model) {
+    if (!model && !rimArmed) return;
+    auto* gx = Backend();
+    if (!gx || !gx->m_d3dDevice) return;
+
+    BOOL enabled = FALSE;
+    if (model && rimPlayer && model->m_scene == Scene()) {
+        for (unsigned parents = 0; model && parents < 8; ++parents, model = model->m_attachParent) {
+            if (model == rimPlayer) {
+                enabled = TRUE;
+                break;
+            }
+        }
+        if (!enabled) return;
+    }
+    if (rimArmed == (enabled != FALSE)) return;
+    if (SUCCEEDED(gx->m_d3dDevice->SetVertexShaderConstantB(kRimBranch, &enabled, 1)))
+        rimArmed = enabled != FALSE;
+}
+
+void UpdateCharacterRim(const float view[16], bool viewOk) {
+    rimPlayer = nullptr;
+    NativeVisualHooks::characterRim = nullptr;
+    if (!weatherPackLoaded || !viewOk || characterRimStrength <= 0) return;
+    const auto* player = ClntObjMgrGetActivePlayerObj();
+    const auto* sky = DayNight::GetInfo();
+    if (!player || !sky) return;
+    const auto* model = player->GetObjectModel();
+    if (!model || model->m_scene != Scene() || !(model->m_fFlags & 1)) return;
+
+    sl::CharacterRim rim{{1.0f - 0.64f * characterRimTint, 0.71f,
+                          0.28f + 0.72f * characterRimTint}, characterRimStrength, characterRimWidth};
+    unsigned links = 0;
+    for (const auto* effect = player->m_procEffects; effect && links++ < 24; effect = effect->m_next) {
+        const auto* kit = effect->m_kitRec;
+        if (kit && sl::ReadAuthoredRim(kit->m_charProc, kit->m_charParamZero, kit->m_charParamOne,
+                                       kit->m_charParamTwo, kit->m_charParamThree, rim)) break;
+    }
+    if (rim.strength <= 0) return;
+
+    const auto* origin = &model->m_worldTransform.d0;
+    const bool moon = sky->m_dayProgression < 0.2013889f || sky->m_dayProgression > 0.9236111f;
+    const auto& celestial = moon ? DayNight::g_planets.m_moon.m_position : DayNight::g_planets.m_sun.m_position;
+    float direction[] = {celestial.x - sky->m_cameraPos.x, celestial.y - sky->m_cameraPos.y,
+                         celestial.z - sky->m_cameraPos.z};
+    float strongest = moon ? 0.12f : 0.35f;
+    auto consider = [&](const float* pos, const float* rgb, float radius, float gain) {
+        if (!(radius > 0)) return;
+        const float candidate[] = {pos[0] - origin[0], pos[1] - origin[1], pos[2] - origin[2] - 1.0f};
+        const float distance = std::sqrt(candidate[0]*candidate[0] + candidate[1]*candidate[1] + candidate[2]*candidate[2]);
+        if (!(distance > 0.1f && distance < radius)) return;
+        const float edge = 1.0f - distance / radius;
+        const float score = std::max({rgb[0], rgb[1], rgb[2]}) * gain * edge * edge;
+        if (score > strongest) {
+            strongest = score;
+            std::copy_n(candidate, 3, direction);
+        }
+    };
+    const auto& lantern = WxlFrameLantern();
+    if (lantern.strength > 0) consider(lantern.position, lantern.Color, lantern.SurfaceRadius, lantern.strength);
+    for (const auto& light : pool.active) consider(light.pos, light.color, light.radius, 1);
+    const float length = std::sqrt(direction[0]*direction[0] + direction[1]*direction[1] + direction[2]*direction[2]);
+    if (!(length > 0.001f) || !std::isfinite(length)) return;
+
+    std::copy_n(rim.color.data(), 3, rimTexels);
+    rimTexels[3] = rim.strength;
+    for (unsigned axis = 0; axis < 3; ++axis)
+        rimTexels[4 + axis] = (direction[0] * view[axis] + direction[1] * view[4 + axis] +
+                                direction[2] * view[8 + axis]) / length;
+    rimTexels[7] = rim.exponent;
+    rimPlayer = model;
+}
+
 float* LockRows(int first, int count, int& pitchFloats) {
     D3DLOCKED_RECT lr{};
     const RECT r{0, first, tex::kWidth, first + count};
@@ -784,7 +868,7 @@ bool FillHeader(bool active, const float view[16], const float camera[3]) {
     if (active && !gridOn) active = false;
     // Keep the zero header and the binding while disabled: repeated managed-texture locks add work even
     // though the shader-visible bytes cannot change.
-    if (!active && !headerActive && headerInitialised) return true;
+    if (!active && !headerActive && headerInitialised && !rimPlayer && !rimHeaderWritten) return true;
     int pitch = 0;
     float* t = LockRows(0, 1, pitch);
     if (!t) return false;
@@ -799,6 +883,8 @@ bool FillHeader(bool active, const float view[16], const float camera[3]) {
         std::memcpy(in.view, view, sizeof(in.view));
     }
     tex::WriteHeader(t, in);
+    if (rimPlayer) std::copy_n(rimTexels, 8, t + 12 * 4);
+    rimHeaderWritten = rimPlayer != nullptr;
     if (FAILED(texture->UnlockRect(0))) return false;
     headerActive = active;
     headerInitialised = true;
@@ -982,6 +1068,10 @@ void WxlSurfaceLightsApply(const double* values, size_t count) {
     if (staticLampsEnabled != enableLamps) scanTimer = 0.25f;
     staticLampsEnabled = enableLamps;
     staticLampStrength = static_cast<float>(values[env::kStaticLampStrength]);
+    characterRimStrength = values[env::kAtmosphereOverride] && values[env::kCharacterRim] ?
+        static_cast<float>(values[env::kRimStrength]) : 0.0f;
+    characterRimWidth = static_cast<float>(values[env::kRimWidth]);
+    characterRimTint = static_cast<float>(values[env::kRimTint]);
 }
 
 void WxlSurfaceLightsBeforeTerrain() {
@@ -1064,7 +1154,10 @@ void WxlSurfaceLightsBeforeTerrain() {
     const bool lightsOn = viewOk && settings.enabled && Scene();
     if (lightsOn) UpdateLights(std::min(dt, 0.25f), camera);
     else if (grid.cells) { ClearLights(); }
+    UpdateCharacterRim(view, viewOk);
     const bool ready = Prepare(d, lightsOn, view, camera);
+    if (rimPlayer && texture && rimHeaderWritten)
+        NativeVisualHooks::characterRim = &ArmCharacterRim;
     float c206[4] = {}, c212[4] = {};
     const bool on = lightsOn && ready && gridOn && texture;
     tex::GridConstants(grid, geometry, on, c206, c212);
@@ -1090,6 +1183,9 @@ bool WxlSetWmoWeatherExterior(bool exterior) {
 }
 
 void WxlSurfaceLightsFrame() {
+    if (rimArmed) ArmCharacterRim(nullptr);
+    NativeVisualHooks::characterRim = nullptr;
+    rimPlayer = nullptr;
     wmoWeatherVisible = false;
     wmoWeatherExterior = false;
     if (weatherPackLoaded) {
@@ -1120,6 +1216,10 @@ void WxlSurfaceLightsFrame() {
 }
 
 void WxlSurfaceLightsRelease() {
+    ArmCharacterRim(nullptr);
+    rimArmed = false;
+    NativeVisualHooks::characterRim = nullptr;
+    rimPlayer = nullptr;
     ResetTerrainShadow();
     wmoWeatherVisible = false;
     wmoWeatherExterior = false;

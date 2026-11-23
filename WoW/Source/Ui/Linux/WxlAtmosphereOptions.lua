@@ -189,6 +189,11 @@ Slider("Native light strength", "atmosphere.lightStrength", 1, 612, 0, 2, .05, "
 Slider("Lantern strength", "atmosphere.lanternStrength", 2, 612, 0, 2, .05, "atmosphere.lantern")
 
 Group("World", "World & Combat", 1, 0)
+Section("Character")
+Check("Character rim light", "world.characterRim", 1, 0, nil, "Adds a directional edge light to your character and equipment.")
+Slider("Rim strength", "world.rimStrength", 1, 0, 0, 1, .05, "world.characterRim")
+Slider("Rim taper", "world.rimWidth", 1, 0, 1, 8, .25, "world.characterRim")
+Slider("Rim tint (warm to cool)", "world.rimTint", 1, 0, 0, 1, .05, "world.characterRim")
 Section("Local lights")
 Check("Lootable corpse lights", "atmosphere.corpseLights", 1, 0, nil,
     "Adds a faint light near a few nearby lootable corpses.")

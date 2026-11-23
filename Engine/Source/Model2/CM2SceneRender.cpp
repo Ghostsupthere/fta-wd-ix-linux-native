@@ -548,7 +548,16 @@ void CM2SceneRender::DrawBatch() {
     if (CShaderEffect::s_enableShaders) {
         batch.m_minIndex = this->m_curSkinSection->m_vertexStart;
         batch.m_maxIndex = this->m_curSkinSection->m_vertexCount + this->m_curSkinSection->m_vertexStart - 1;
+#if defined(WOWDECOMP_LINUX)
+        const bool rim = NativeVisualHooks::characterRim && this->m_curType == 0 &&
+            this->m_curMaterial->m_blendMode <= M2BLEND_ALPHA_KEY &&
+            !(this->m_curMaterial->m_flags & (1 | 8 | 0x10)) && !(element->m_flags & 1) && element->m_alpha > 0;
+        if (rim) NativeVisualHooks::characterRim(this->m_curModel);
+#endif
         g_theGxDevicePtr->Draw(&batch, 1);
+#if defined(WOWDECOMP_LINUX)
+        if (rim) NativeVisualHooks::characterRim(nullptr);
+#endif
     } else if (sharedVertices) {
         CGxMatrixStack& world = g_theGxDevicePtr->m_xforms[GxXform_World];
         world.m_dirty = 1;
