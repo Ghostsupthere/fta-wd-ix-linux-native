@@ -38,6 +38,7 @@ void WxlSurfaceLightsRelease();
 void WxlSurfaceLightsWorldLeave();
 // The Environment page's lighting readout.
 std::string WxlSurfaceLightsStatus();
+float WxlStaticLampResidentRange();
 std::string WxlStaticLampDebug();
 std::string WxlNearbyModelDebug(float maxYards);
 

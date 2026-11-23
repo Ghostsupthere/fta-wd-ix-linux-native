@@ -40,7 +40,8 @@ local function UpdateStatus()
     local supported, state, particles = WXL_AtmosphereStatus()
     if WXL_RefreshAreaNames then WXL_RefreshAreaNames() end
     local lamps = Read("world.staticLamps") ~= 0 and
-        (" Static lamp distance " .. Read("world.staticLampRange") .. " yd.") or ""
+        (" Static lamps %.0f yd, farthest resident fixture %.0f yd."):format(
+            Read("world.staticLampRange"), WXL_StaticLampResidentRange()) or ""
     if Read("world.softParticles") ~= 0 and particles then lamps = lamps .. " " .. particles .. "." end
     status:SetText(saveFailed and "Settings could not be saved." or
         (supported and (state .. ". Changes are saved automatically." .. lamps) or

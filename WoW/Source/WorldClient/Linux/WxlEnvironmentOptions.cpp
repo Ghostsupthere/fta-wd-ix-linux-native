@@ -182,6 +182,11 @@ int32_t Script_StaticLampDebug(lua_State* L) {
     return 1;
 }
 
+int32_t Script_StaticLampResidentRange(lua_State* L) {
+    lua_pushnumber(L, WxlStaticLampResidentRange());
+    return 1;
+}
+
 int32_t Script_Status(lua_State* L) {
     const std::string grass = GrassStatus();
     lua_pushlstring(L, grass.data(), grass.size());
@@ -232,6 +237,7 @@ void WxlRegisterEnvironmentLua() {
     FrameScript_RegisterFunction("WarcraftXL_SaveEnvironmentOptions", &Script_Save);
     FrameScript_RegisterFunction("WarcraftXL_GetEnvironmentOptionDefault", &Script_OptionDefault);
     FrameScript_RegisterFunction("WXL_AtmosphereStatus", &Script_AtmosphereStatus);
+    FrameScript_RegisterFunction("WXL_StaticLampResidentRange", &Script_StaticLampResidentRange);
     FrameScript_RegisterFunction("WarcraftXL_ResetEnvironmentOptions", &Script_Reset);
     FrameScript_RegisterFunction("WarcraftXL_GetEnvironmentStatus", &Script_Status);
     FrameScript_RegisterFunction("WarcraftXL_GetStaticLampDebug", &Script_StaticLampDebug);

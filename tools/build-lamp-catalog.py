@@ -27,7 +27,66 @@ MODERN_LAMPS = {
 }
 
 
-def entry(data, modern=False):
+def rest_key(data, track, fmt, embedded):
+    _, loop, _, _, count, offset = struct.unpack_from("<HH4I", data, track)
+    if not count or offset < 0x130 or offset + 8 * count > len(data):
+        return None
+    keys, values = struct.unpack_from("<II", data, offset)
+    if not keys:
+        return None
+    if (loop == 0xFFFF and not embedded) or values < 0x130 or values + struct.calcsize(fmt) > len(data):
+        raise ValueError("external or invalid bind keys")
+    return struct.unpack_from(fmt, data, values)
+
+
+def rotate_vector(point, key):
+    if key is None:
+        return point
+    q = tuple(value * 0.000030518044 - 1.0 for value in key)
+    norm = math.sqrt(sum(axis * axis for axis in q))
+    if not 0.8 <= norm <= 1.2:
+        raise ValueError("invalid bind rotation")
+    x, y, z, w = (axis / norm for axis in q)
+    px, py, pz = point
+    tx, ty, tz = 2 * (y*pz-z*py), 2 * (z*px-x*pz), 2 * (x*py-y*px)
+    return px + w*tx + y*tz-z*ty, py + w*ty + z*tx-x*tz, pz + w*tz + x*ty-y*tx
+
+
+def emitter_rest_position(data, bone, raw):
+    """Use the first embedded/global key along the emitter's bone chain."""
+    bone_count, base = struct.unpack_from("<II", data, 0x2c)
+    seq_count, seq_base = struct.unpack_from("<II", data, 0x1c)
+    embedded = bool(seq_count and seq_base >= 0x130 and seq_base + 64 <= len(data) and
+                    struct.unpack_from("<I", data, seq_base + 12)[0] & 0x20)
+    point, visited, tracks = raw, set(), set()
+    while bone != 0xFFFF:
+        start = base + 88 * bone
+        if bone in visited or len(visited) >= 64 or bone >= bone_count or base < 0x130 or start + 88 > len(data):
+            raise ValueError("invalid emitter bone chain")
+        visited.add(bone)
+        flags, parent = struct.unpack_from("<IH", data, start + 4)
+        if flags & 0x78:
+            raise ValueError("camera-facing bind transform")
+        if flags & 0x280:
+            translate = rest_key(data, start + 16, "<3f", embedded)
+            rotation = rest_key(data, start + 36, "<4H", embedded)
+            scale = rest_key(data, start + 56, "<3f", embedded)
+            for key, name in ((translate, "translation"), (rotation, "rotation"), (scale, "scale")):
+                if key is not None:
+                    tracks.add(name)
+            translate = translate or (0, 0, 0)
+            scale = scale or (1, 1, 1)
+            pivot = struct.unpack_from("<3f", data, start + 76)
+            if not all(math.isfinite(x) and abs(x) < 10000 for x in (*translate, *scale, *pivot)):
+                raise ValueError("nonfinite bind transform")
+            local = tuple((point[i] - pivot[i]) * scale[i] for i in range(3))
+            rotated = rotate_vector(local, rotation)
+            point = tuple(rotated[i] + pivot[i] + translate[i] for i in range(3))
+        bone = parent
+    return point, "+".join(sorted(tracks)) or "static"
+
+
+def entry(data, modern=False, audit=None):
     stride = 0x1dc
     version = 264
     if modern and data[:4] == b"MD21" and len(data) >= 8:
@@ -55,7 +114,15 @@ def entry(data, modern=False):
         for r, g, b in struct.iter_unpack("<3f", data[tint:tint + keys * 12]):
             peak = max(r, g, b)
             if all(math.isfinite(n) and abs(n) < 100 for n in (x, y, z)) and 0 < peak <= 255 and min(r, g, b) >= 0:
-                return x, y, z, r / peak, g / peak, b / peak
+                raw = (x, y, z)
+                bone = struct.unpack_from("<H", data, start + 20)[0]
+                try:
+                    position, reason = emitter_rest_position(data, bone, raw)
+                except ValueError as error:
+                    position, reason = raw, str(error)
+                if audit is not None:
+                    audit.update(raw=raw, rest=position, bone=bone, tracks=reason)
+                return *position, r / peak, g / peak, b / peak
     return None
 
 
@@ -156,10 +223,15 @@ def stormwind_mesh_lamps(read_effective):
             glass.add(index)
     if not glass:
         return
-    for index in range(min(len(root.get(b"MOGI", b"")) // 32, 512)):
+    bounds = root.get(b"MOGI", b"")
+    for index in range(min(len(bounds) // 32, 512)):
         path = STORMWIND + f"_{index:03d}.wmo".encode("ascii")
         group = chunks(read_effective(path) or b"")
+        box = struct.unpack_from("<6f", bounds, index * 32 + 4)
         for center in glass_centers(group, glass):
+            if not all(math.isfinite(axis) and low - 1 <= axis <= high + 1
+                       for axis, low, high in zip(center, box[:3], box[3:])):
+                continue
             key = (STORMWIND + f".wmo#{index}".encode("ascii")).decode("ascii")
             yield key + "," + ",".join(f"{v:.6g}" for v in (*center, 1, 0.73, 0.38, 15, 1.0))
 
@@ -169,6 +241,7 @@ def main():
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--storm", required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--audit", type=Path, help="write per-model bind and bounds decisions as JSON")
     args = parser.parse_args()
     lib = c.CDLL(args.storm)
     handle = c.c_void_p
@@ -200,6 +273,7 @@ def main():
     archives = sorted((p for p in args.data.iterdir() if p.suffix.lower() == ".mpq"),
                       key=lambda p: (order.get(p.stem.lower(), 4), p.stem.lower()))
     names, catalog, opened = set(), [], []
+    decisions = {}
     for path in reversed(archives):
         archive = handle()
         if not lib.SFileOpenArchive(bytes(path), 0, 0x100, c.byref(archive)):
@@ -220,7 +294,8 @@ def main():
             if not name.isascii() or b"," in name:
                 continue
             data = read_effective(name, 4 << 20)
-            light = entry(data, modern=name in MODERN_LAMPS) if data else None
+            decision = {}
+            light = entry(data, modern=name in MODERN_LAMPS, audit=decision) if data else None
             if light is not None:
                 base = name.rsplit(b"\\", 1)[-1]
                 x, y, z, red, green, blue = light
@@ -237,6 +312,10 @@ def main():
             if light is not None and data:
                 light = inside_bounds(name, data, light)
             if light is not None:
+                decision["catalog"] = light[:3]
+                if "track" not in decision and "rest" not in decision:
+                    decision["tracks"] = "mesh-derived"
+                decisions[name.decode("ascii")] = decision
                 catalog.append(name.decode("ascii") + "," + ",".join(f"{v:.5g}" for v in light))
         mesh = list(stormwind_mesh_lamps(read_effective))
     finally:
@@ -246,6 +325,9 @@ def main():
         raise SystemExit("no supported lamps found")
     args.out.write_text("# model or WMO#group,x,y,z,red,green,blue,radius,intensity\n" +
                         "\n".join(catalog + mesh) + "\n")
+    if args.audit:
+        import json
+        args.audit.write_text(json.dumps({"models": decisions, "embedded": mesh}, indent=2) + "\n")
     print(f"{len(opened)} archives, {len(names)} candidate names, {len(catalog)} models, {len(mesh)} embedded WMO lamps")
 
 

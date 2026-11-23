@@ -215,6 +215,7 @@ struct Stats {
     unsigned staticLamps = 0, staticDuplicates = 0, staticWmoMatches = 0, wmoPlacements = 0, meshLamps = 0;
     unsigned lampsBudgetDropped = 0, lampsGroupPending = 0;
     double lampScanMs = 0;
+    float farthestResidentLamp = 0;
     unsigned bakeWanted = 0, bakeDone = 0, bakeRays = 0, bakeCached = 0, indoor = 0, indoorTests = 0;
 };
 Stats stats;
@@ -493,7 +494,11 @@ void ScanStaticLamps(const float center[3], const float forward[3], const std::v
         const char* rejected = m.disabled ? "disabled doodad" : !m.data ? "model loading" :
             rows && !rows->empty() ? "authored assignment" :
             m.data->m_lights.m_count ? "native model lights" : m.parent ? "attached model" :
-            !(score > 0) ? "invalid light" : distance >= staticLampRange ? "lamp distance limit" : nullptr;
+            !(score > 0) ? "invalid light" : nullptr;
+        if (!rejected) {
+            st.farthestResidentLamp = std::max(st.farthestResidentLamp, distance);
+            if (distance >= staticLampRange) rejected = "lamp distance limit";
+        }
         LampDebug debug{std::move(path), rejected, {}, {}, placement.radius, placement.strength, distance};
         std::copy_n(placement.pos, 3, debug.pos);
         std::copy_n(lamp.color, 3, debug.color);
@@ -521,6 +526,8 @@ void ScanStaticLamps(const float center[3], const float forward[3], const std::v
                 if (!(score > 0)) continue;
                 const float distance = std::sqrt(d2);
                 const int8_t indoor = (def->m_owner->GetGroupFlags(static_cast<int>(row.group)) & 0x48u) ? 0 : 1;
+                if (group && (group->m_unkLoadedFlag & 1))
+                    st.farthestResidentLamp = std::max(st.farthestResidentLamp, distance);
                 const char* rejected = distance >= staticLampRange ? "lamp distance limit" :
                     !group || !(group->m_unkLoadedFlag & 1) ? "WMO group loading" : nullptr;
                 st.lampsGroupPending += rejected && distance < staticLampRange;
@@ -607,6 +614,7 @@ void ScanModels(const float center[3], const float forward[3]) {
     Stats st = stats;
     st.tableLights = st.suppressedModels = st.attachFallbacks = st.modelLights = 0;
     st.staticLamps = st.staticWmoMatches = st.wmoPlacements = st.meshLamps = st.lampsBudgetDropped = st.lampsGroupPending = 0;
+    st.farthestResidentLamp = 0;
     static std::vector<SceneModel> models;
     unsigned attached = 0;
     const float scanRange = staticLampsEnabled ? std::max(settings.range, staticLampRange + 20) : settings.range;
@@ -1501,13 +1509,15 @@ std::string WxlSurfaceLightsStatus() {
     std::string status = text;
     if (staticLampsEnabled) {
         char lamps[380];
-        std::snprintf(lamps, sizeof(lamps), "\nStatic lamps: %.0f yd, %u/%u selected, %u budget drops, %u waiting for WMO groups, %u near authored lights; scan %.3f ms. %u doodad matches and %u embedded fixtures.",
-                      staticLampRange, selectedStaticLamps, sl::StaticLampBudget(staticLampRange),
+        std::snprintf(lamps, sizeof(lamps), "\nStatic lamps: %.0f yd setting, %.0f yd farthest resident fixture in scan, %u/%u selected, %u budget drops, %u waiting for WMO groups, %u near authored lights; scan %.3f ms. %u doodad matches and %u embedded fixtures.",
+                      staticLampRange, stats.farthestResidentLamp, selectedStaticLamps, sl::StaticLampBudget(staticLampRange),
                       stats.lampsBudgetDropped, stats.lampsGroupPending, stats.staticDuplicates, stats.lampScanMs, stats.staticLamps, stats.meshLamps);
         status += lamps;
     }
     return status;
 }
+float WxlStaticLampResidentRange() { return stats.farthestResidentLamp; }
+
 std::string WxlStaticLampDebug() {
     if (!staticLampsEnabled) return "Static lamps: off.";
     if (!settings.enabled) return "Static lamps: enable Dynamic lights.";
