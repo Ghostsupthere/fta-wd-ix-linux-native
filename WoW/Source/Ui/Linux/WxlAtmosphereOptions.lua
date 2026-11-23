@@ -39,8 +39,10 @@ end
 local function UpdateStatus()
     local supported, state = WXL_AtmosphereStatus()
     if WXL_RefreshAreaNames then WXL_RefreshAreaNames() end
+    local lamps = Read("world.staticLamps") ~= 0 and
+        (" Static lamp distance " .. Read("world.staticLampRange") .. " yd.") or ""
     status:SetText(saveFailed and "Settings could not be saved." or
-        (supported and (state .. ". Changes are saved automatically.") or
+        (supported and (state .. ". Changes are saved automatically." .. lamps) or
             "Native world effects are unavailable on this graphics device."))
 end
 local function Synchronize()
@@ -188,6 +190,11 @@ Check("Player lantern in fog", "atmosphere.lantern", 2, 559, "atmosphere.fog", "
 Slider("Native light strength", "atmosphere.lightStrength", 1, 612, 0, 2, .05, "atmosphere.nativeLights")
 Slider("Lantern strength", "atmosphere.lanternStrength", 2, 612, 0, 2, .05, "atmosphere.lantern")
 
+Check("Static lamps", "world.staticLamps", 1, 0, "lights.enabled",
+    "Lights eligible nearby lamps, torches, and braziers. Requires Dynamic lights and the lamp catalog.")
+Slider("Static lamp strength", "world.staticLampStrength", 1, 0, 0, 2, .05, "world.staticLamps")
+Slider("Static lamp distance (yards)", "world.staticLampRange", 1, 0, 50, 200, 1, "world.staticLamps", "%.0f yd")
+
 Group("World", "World & Combat", 1, 0)
 Section("Character")
 Check("Character rim light", "world.characterRim", 1, 0, nil, "Adds a directional edge light to your character and equipment.")
@@ -198,9 +205,6 @@ Section("Local lights")
 Check("Lootable corpse lights", "atmosphere.corpseLights", 1, 0, nil,
     "Adds a faint light near a few nearby lootable corpses.")
 
-Check("Static lamps", "world.staticLamps", 1, 0, "lights.enabled",
-    "Lights eligible nearby lamp models. Requires Dynamic lights and the lamp catalog.")
-Slider("Static lamp strength", "world.staticLampStrength", 1, 0, 0, 2, .05, "world.staticLamps")
 
 Group("Effects", "Effects & Physics", 2, 0)
 Section("Weapon effects")

@@ -46,6 +46,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
@@ -152,10 +153,10 @@ sl::Settings settings;
 sl::LightTables tables;
 bool tablesLoaded = false;
 bool staticLampsEnabled = false, lampCatalogTried = false;
-float staticLampStrength = 1;
+float staticLampStrength = 1, staticLampRange = 100;
 sl::StaticLampCatalog lampCatalog;
 sl::StaticWmoLampCatalog meshLampCatalog;
-constexpr unsigned kStaticLampLimit = 24;
+constexpr unsigned kLampDebugLimit = 24;
 constexpr unsigned kMaxSceneModels = 100000;
 constexpr unsigned kMaxMapPlacements = 100000;
 struct LampDebug {
@@ -166,6 +167,8 @@ struct LampDebug {
     bool indoor = false;
 };
 std::vector<LampDebug> lampDebug;
+std::deque<std::string> lampTransitions;
+unsigned selectedStaticLamps = 0;
 std::string tableStatus = "not loaded yet";
 
 struct Source {
@@ -210,6 +213,8 @@ struct Stats {
     unsigned models = 0, modelsInRange = 0, modelLights = 0, fromClient = 0, fromWorld = 0, fileColor = 0, merged = 0,
              inRange = 0, active = 0, tableLights = 0, suppressedModels = 0, attachFallbacks = 0, attached = 0;
     unsigned staticLamps = 0, staticDuplicates = 0, staticWmoMatches = 0, wmoPlacements = 0, meshLamps = 0;
+    unsigned lampsBudgetDropped = 0, lampsGroupPending = 0;
+    double lampScanMs = 0;
     unsigned bakeWanted = 0, bakeDone = 0, bakeRays = 0, bakeCached = 0, indoor = 0, indoorTests = 0;
 };
 Stats stats;
@@ -458,8 +463,9 @@ void LoadLampCatalog() {
 
 void ScanStaticLamps(const float center[3], const float forward[3], const std::vector<SceneModel>& sceneModels,
                      bool haveTable, Stats& st) {
+    const auto started = std::chrono::steady_clock::now();
     static std::vector<SceneModel> mapModels;
-    MapDoodadModels(center, settings.range, mapModels);
+    MapDoodadModels(center, staticLampRange + 20, mapModels);
     st.wmoPlacements = std::count_if(mapModels.begin(), mapModels.end(), [](const auto& m) { return m.wmoDoodad; });
 
     struct Match {
@@ -475,20 +481,23 @@ void ScanStaticLamps(const float center[3], const float forward[3], const std::v
         auto path = sl::NormalizeLampPath(m.path);
         const auto catalog = lampCatalog.find(path);
         if (catalog == lampCatalog.end()) return;
+        if (m.distance > staticLampRange + 20) return;
         ++st.staticLamps;
         st.staticWmoMatches += m.wmoDoodad;
         const auto* rows = haveTable ? &RowsFor(m.path) : nullptr;
         const auto& lamp = catalog->second;
         const auto placement = sl::PlaceStaticLamp(lamp, m.world);
+        const float dx = placement.pos[0] - center[0], dy = placement.pos[1] - center[1], dz = placement.pos[2] - center[2];
+        const float distance = std::sqrt(dx*dx + dy*dy + dz*dz);
         const float score = sl::StaticLampScore(placement, center, forward);
         const char* rejected = m.disabled ? "disabled doodad" : !m.data ? "model loading" :
             rows && !rows->empty() ? "authored assignment" :
             m.data->m_lights.m_count ? "native model lights" : m.parent ? "attached model" :
-            !(score > 0) ? "invalid light" : nullptr;
-        LampDebug debug{std::move(path), rejected, {}, {}, placement.radius, placement.strength, m.distance};
+            !(score > 0) ? "invalid light" : distance >= staticLampRange ? "lamp distance limit" : nullptr;
+        LampDebug debug{std::move(path), rejected, {}, {}, placement.radius, placement.strength, distance};
         std::copy_n(placement.pos, 3, debug.pos);
         std::copy_n(lamp.color, 3, debug.color);
-        matches.push_back({m.model, std::move(debug), {score, m.distance, !rejected}, m.indoorOverride});
+        matches.push_back({m.model, std::move(debug), {score, distance, !rejected}, m.indoorOverride});
     });
     if (!meshLampCatalog.empty()) {
         auto& owners = CMap::mapObjDefHash.m_fulllist;
@@ -503,32 +512,68 @@ void ScanStaticLamps(const float center[3], const float forward[3], const std::v
                 if (row.group >= std::size(wmo->m_mapObjGroupArray) ||
                     static_cast<int>(row.group) >= wmo->m_mapObjGroupCount) continue;
                 const auto* group = wmo->m_mapObjGroupArray[row.group];
-                if (!group || !(group->m_unkLoadedFlag & 1)) continue;
                 const auto placement = sl::PlaceStaticLamp(row.lamp, Floats(def->m_mat));
                 const float dx = placement.pos[0] - center[0], dy = placement.pos[1] - center[1], dz = placement.pos[2] - center[2];
                 const float d2 = dx*dx + dy*dy + dz*dz;
-                if (!(d2 <= settings.range * settings.range)) continue;
+                const float scanRange = staticLampRange + 20;
+                if (!(d2 <= scanRange * scanRange)) continue;
                 const float score = sl::StaticLampScore(placement, center, forward);
                 if (!(score > 0)) continue;
                 const float distance = std::sqrt(d2);
                 const int8_t indoor = (def->m_owner->GetGroupFlags(static_cast<int>(row.group)) & 0x48u) ? 0 : 1;
-                LampDebug debug{path + "#" + std::to_string(row.group), nullptr, {}, {},
+                const char* rejected = distance >= staticLampRange ? "lamp distance limit" :
+                    !group || !(group->m_unkLoadedFlag & 1) ? "WMO group loading" : nullptr;
+                st.lampsGroupPending += rejected && distance < staticLampRange;
+                LampDebug debug{path + "#" + std::to_string(row.group), rejected, {}, {},
                                 placement.radius, placement.strength, distance};
                 std::copy_n(placement.pos, 3, debug.pos);
                 std::copy_n(row.lamp.color, 3, debug.color);
-                matches.push_back({nullptr, std::move(debug), {score, distance, true}, indoor});
+                matches.push_back({nullptr, std::move(debug), {score, distance, !rejected}, indoor});
                 ++st.meshLamps;
             }
         }
     }
-    const size_t shown = std::min<size_t>(matches.size(), kStaticLampLimit);
+    const size_t budget = sl::StaticLampBudget(staticLampRange);
+    const size_t eligible = std::count_if(matches.begin(), matches.end(), [](const Match& m) { return m.rank.eligible; });
+    const unsigned previousSelected = selectedStaticLamps;
+    selectedStaticLamps = std::min(eligible, budget);
+    st.lampsBudgetDropped = eligible - selectedStaticLamps;
+    const size_t shown = std::min(matches.size(), budget + kLampDebugLimit);
     std::partial_sort(matches.begin(), matches.begin() + shown, matches.end(), [](const Match& a, const Match& b) {
         return a.rank < b.rank;
     });
+    for (size_t i = 0; i < matches.size(); ++i)
+        if (i >= selectedStaticLamps && !matches[i].debug.stage) matches[i].debug.stage = "lamp selection limit";
+
+    const auto sameLamp = [](const LampDebug& a, const LampDebug& b) {
+        return a.path == b.path && std::equal(a.pos, a.pos + 3, b.pos);
+    };
+    const auto event = [](const char* verb, const LampDebug& lamp, float distance, const char* reason) {
+        char fields[160];
+        std::snprintf(fields, sizeof(fields), " %.1f yd @ (%.2f, %.2f, %.2f) %s", distance,
+                      lamp.pos[0], lamp.pos[1], lamp.pos[2], reason);
+        lampTransitions.emplace_back(std::string(verb) + " " + lamp.path + fields);
+        if (lampTransitions.size() > sl::kMaxStaticLamps * 2) lampTransitions.pop_front();
+    };
+    std::vector<LampDebug> previous;
+    previous.swap(lampDebug);
+    for (unsigned i = 0; i < previousSelected && i < previous.size(); ++i) {
+        const auto& old = previous[i];
+        const auto found = std::find_if(matches.begin(), matches.end(), [&](const Match& m) { return sameLamp(old, m.debug); });
+        if (found != matches.end() && !found->debug.stage) continue;
+        const float dx = old.pos[0] - center[0], dy = old.pos[1] - center[1], dz = old.pos[2] - center[2];
+        const float distance = std::sqrt(dx*dx + dy*dy + dz*dz);
+        event("Left", old, distance, found != matches.end() ? found->debug.stage :
+              distance >= staticLampRange ? "lamp distance limit" : "placement not resident");
+    }
     for (size_t i = 0; i < shown; ++i) {
         auto& match = matches[i];
         auto& debug = match.debug;
         if (!debug.stage) {
+            const auto old = std::find_if(previous.begin(), previous.end(), [&](const auto& m) { return sameLamp(m, debug); });
+            if (old == previous.end() || static_cast<size_t>(old - previous.begin()) >= previousSelected) {
+                event("Entered", debug, debug.distance, old == previous.end() ? "newly eligible or resident" : old->stage);
+            }
             debug.stage = "selected";
             Source s;
             s.table = true;
@@ -547,25 +592,31 @@ void ScanStaticLamps(const float center[3], const float forward[3], const std::v
         }
         lampDebug.push_back(std::move(debug));
     }
+    st.lampScanMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
 }
 
 void ScanModels(const float center[3], const float forward[3]) {
     if (staticLampsEnabled) LoadLampCatalog();
     sources.clear();
     liveModels.clear();
-    lampDebug.clear();
+    if (!staticLampsEnabled) {
+        lampDebug.clear();
+        lampTransitions.clear();
+        selectedStaticLamps = 0;
+    }
     Stats st = stats;
     st.tableLights = st.suppressedModels = st.attachFallbacks = st.modelLights = 0;
-    st.staticLamps = st.staticWmoMatches = st.wmoPlacements = st.meshLamps = 0;
+    st.staticLamps = st.staticWmoMatches = st.wmoPlacements = st.meshLamps = st.lampsBudgetDropped = st.lampsGroupPending = 0;
     static std::vector<SceneModel> models;
     unsigned attached = 0;
-    st.models = SceneModels(center, settings.range, models, attached, &liveModels);
+    const float scanRange = staticLampsEnabled ? std::max(settings.range, staticLampRange + 20) : settings.range;
+    st.models = SceneModels(center, scanRange, models, attached, &liveModels);
     st.modelsInRange = static_cast<unsigned>(models.size());
     st.attached = attached;
     const bool haveTable = !tables.AllAssignments().empty();
     if (staticLampsEnabled && (!lampCatalog.empty() || !meshLampCatalog.empty())) ScanStaticLamps(center, forward, models, haveTable, st);
     for (const SceneModel& m : models) {
-        if (!m.data) continue;
+        if (!m.data || m.distance > settings.range) continue;
         bool suppress = false;
         const auto* rows = haveTable ? &RowsFor(m.path) : nullptr;
         if (rows)
@@ -663,7 +714,7 @@ void UpdateLights(float dt, const float eye[3], const float forward[3]) {
     lightTime += dt;
     std::vector<sl::Candidate> cands;
     struct PendingLamp { sl::Candidate candidate; LampDebug* debug; };
-    std::array<PendingLamp, kStaticLampLimit> lamps;
+    std::array<PendingLamp, sl::kMaxStaticLamps> lamps;
     unsigned lampCount = 0;
     unsigned fromClient = 0, fromWorld = 0, fileColor = 0;
     const float range = settings.range;
@@ -732,13 +783,15 @@ void UpdateLights(float dt, const float eye[3], const float forward[3]) {
             debug->distance = std::sqrt(distanceSquared);
             debug->stage = "outside light range";
         }
-        if (distanceSquared > range * range) continue;
+        const float reach = s.staticLamp ? staticLampRange : range;
+        if (distanceSquared > reach * reach || (s.staticLamp && distanceSquared == reach * reach)) continue;
         if (s.staticLamp) {
             if (debug) debug->stage = "zero strength";
             if (!staticLampsEnabled || staticLampStrength <= 0) continue;
             for (float& channel : c.color) channel *= staticLampStrength;
             c.supplemental = true;
             c.staticLamp = true;
+            c.distanceFade = sl::StaticLampFade(std::sqrt(distanceSquared), staticLampRange);
             c.indoorOverride = s.indoorOverride;
             lamps[lampCount++] = {c, debug};
         } else {
@@ -792,7 +845,7 @@ void UpdateLights(float dt, const float eye[3], const float forward[3]) {
         cands.push_back(light);
     }
     stats.staticDuplicates = 0;
-    std::array<LampDebug*, kStaticLampLimit> submittedLamps{};
+    std::array<LampDebug*, sl::kMaxStaticLamps> submittedLamps{};
     unsigned submitted = 0;
     size_t poolSlotsUsed = lampCount ? std::count_if(cands.begin(), cands.end(),
         [](const auto& light) { return light.weight > 0; }) : 0;
@@ -827,7 +880,9 @@ void UpdateLights(float dt, const float eye[3], const float forward[3]) {
     stats.indoorTests = indoorTestsThisFrame;
     const auto bake = occlusion.Update(pool.active, pool.wantBake, eye, settings, &TraceFraction);
     stats.bakeWanted = bake.wanted; stats.bakeDone = bake.done; stats.bakeRays = bake.rays; stats.bakeCached = bake.cached;
-    gridBuilder.Build(pool.active, pool.baseLuminance, eye, settings, grid, gridStats);
+    auto gridSettings = settings;
+    if (staticLampsEnabled) gridSettings.range = std::max(settings.range, staticLampRange);
+    gridBuilder.Build(pool.active, pool.baseLuminance, eye, gridSettings, grid, gridStats);
     if (submitted) {
         // Static entries were appended in order with room in the global pool.
         unsigned slot = 0;
@@ -846,6 +901,8 @@ void UpdateLights(float dt, const float eye[3], const float forward[3]) {
 void ClearLights() {
     sources.clear();
     lampDebug.clear();
+    lampTransitions.clear();
+    selectedStaticLamps = 0;
     liveModels.clear();
     pool = sl::ChosenPool();
     grid = sl::Grid{};
@@ -1237,7 +1294,9 @@ void WxlSurfaceLightsApply(const double* values, size_t count) {
     settings.indoorSkipsTerrain = static_cast<int>(values[env::kLightsIndoorIsolation]);
     settings.modelStockOff = 1;
     const bool enableLamps = values[env::kAtmosphereOverride] && values[env::kStaticLamps];
-    if (staticLampsEnabled != enableLamps) scanTimer = 0.25f;
+    const float range = static_cast<float>(values[env::kStaticLampRange]);
+    if (staticLampsEnabled != enableLamps || staticLampRange != range) scanTimer = 0.25f;
+    staticLampRange = range;
     staticLampsEnabled = enableLamps;
     staticLampStrength = static_cast<float>(values[env::kStaticLampStrength]);
     characterRimStrength = values[env::kAtmosphereOverride] && values[env::kCharacterRim] ?
@@ -1441,9 +1500,10 @@ std::string WxlSurfaceLightsStatus() {
                   stats.bakeDone, stats.bakeWanted, stats.bakeCached, stats.indoor);
     std::string status = text;
     if (staticLampsEnabled) {
-        char lamps[256];
-        std::snprintf(lamps, sizeof(lamps), "\nStatic lamps: %zu catalog models, %u nearby matches (%u across %u WMO placements), %u embedded WMO lamps, %u near authored lights. Requires Dynamic lights.",
-                      lampCatalog.size(), stats.staticLamps, stats.staticWmoMatches, stats.wmoPlacements, stats.meshLamps, stats.staticDuplicates);
+        char lamps[380];
+        std::snprintf(lamps, sizeof(lamps), "\nStatic lamps: %.0f yd, %u/%u selected, %u budget drops, %u waiting for WMO groups, %u near authored lights; scan %.3f ms. %u doodad matches and %u embedded fixtures.",
+                      staticLampRange, selectedStaticLamps, sl::StaticLampBudget(staticLampRange),
+                      stats.lampsBudgetDropped, stats.lampsGroupPending, stats.staticDuplicates, stats.lampScanMs, stats.staticLamps, stats.meshLamps);
         status += lamps;
     }
     return status;
@@ -1465,6 +1525,10 @@ std::string WxlStaticLampDebug() {
         if (!result.empty()) result += '\n';
         result += lamp.path;
         result += values;
+    }
+    if (!lampTransitions.empty()) {
+        result += "\nRecent lamp selection changes";
+        for (const auto& event : lampTransitions) result += "\n" + event;
     }
     return result;
 }
@@ -1490,7 +1554,7 @@ std::string WxlNearbyModelDebug(float maxYards) {
         wmo += m.wmoDoodad;
         wmoOutsideSceneRange += m.wmoDoodad && inSceneRange.find(m.model) == inSceneRange.end();
     });
-    const size_t shown = std::min<size_t>(nearest.size(), kStaticLampLimit);
+    const size_t shown = std::min<size_t>(nearest.size(), kLampDebugLimit);
     std::partial_sort(nearest.begin(), nearest.begin() + shown, nearest.end(),
         [](const SceneModel* a, const SceneModel* b) { return a->distance < b->distance; });
     char line[256];

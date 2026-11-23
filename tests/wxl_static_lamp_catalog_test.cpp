@@ -97,6 +97,21 @@ void CheckPlacementScan(const sl::StaticLamp& streetLamp) {
     assert(!sl::ChooseActive({indoor}, {}, eye, 0, [](const float*) { return true; }).active.front().indoor);
 }
 
+void CheckRange() {
+    for (const auto [range, expected] : {std::pair{50.0f, 14u}, {100.0f, 32u}, {200.0f, 60u}}) {
+        unsigned eligible = 0;
+        for (unsigned i = 0; i < 60; ++i) {
+            const float distance = 10.0f + i * (170.0f / 59.0f);
+            eligible += sl::StaticLampFade(distance, range) > 0;
+        }
+        assert(std::min(eligible, sl::StaticLampBudget(range)) == expected);
+        assert(sl::StaticLampFade(range, range) == 0);
+        assert(sl::StaticLampFade(range - 1, range) > 0 && sl::StaticLampFade(range - 1, range) < .05f);
+        assert(sl::StaticLampFade(range * .84f, range) == 1);
+    }
+    assert(sl::StaticLampBudget(50) == 24 && sl::StaticLampBudget(100) == 48 && sl::StaticLampBudget(200) == 96);
+}
+
 int main(int argc, char** argv) {
     using namespace wxl::surfacelights;
     std::istringstream sample{
@@ -114,6 +129,7 @@ int main(int argc, char** argv) {
     const StaticLamp streetLamp{{0, 0, 4.25f}, {1, 0.73f, 0.38f}, 15, 1};
     CheckProjectedPool(streetLamp);
     CheckPlacementScan(streetLamp);
+    CheckRange();
     const StaticLamp hanging{{0, 0, 6}, {1, .73f, .25f}, 13, .85f};
     CheckProjectedPool(hanging);
     if (argc == 2) {

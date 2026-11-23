@@ -80,6 +80,7 @@ namespace wxl::surfacelights
         bool supplemental = false;
         bool staticLamp = false;
         int8_t indoorOverride = -1;
+        float distanceFade = -1.0f;
     };
 
     struct Grid
@@ -288,7 +289,8 @@ namespace wxl::surfacelights
         {
             const Candidate& c = cands[entry.second];
             const float d = std::sqrt(entry.first);
-            const float fade = d <= fadeStart ? 1.0f : std::max(0.0f, 1.0f - (d - fadeStart) / (range - fadeStart));
+            const float fade = c.distanceFade >= 0.0f ? c.distanceFade :
+                (d <= fadeStart ? 1.0f : std::max(0.0f, 1.0f - (d - fadeStart) / (range - fadeStart)));
             const int mode = c.flickerMode == kFlickerDefault ? kFlickerSmooth : c.flickerMode;
             const float amount = std::clamp(c.flickerAmount >= 0.0f ? c.flickerAmount * (settings.flicker / 0.15f) : settings.flicker, 0.0f, 1.0f);
             const float speed = c.flickerSpeed >= 0.0f ? c.flickerSpeed : 1.0f;
