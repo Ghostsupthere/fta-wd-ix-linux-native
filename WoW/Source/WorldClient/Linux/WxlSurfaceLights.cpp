@@ -50,6 +50,11 @@ namespace {
 // ---- shader replacement --------------------------------------------------------------------------
 sl::LightShaderPack pack, weatherPack;
 bool weatherPackLoaded = false;
+bool wmoWeatherSelected = false;
+bool wmoWeatherExterior = false;
+bool wmoWeatherVisible = false;
+constexpr UINT kWmoCloudTransform = 246, kWmoCloud = 248, kWetVertex = 249;
+float wmoCloud[4] = {};
 bool packTried = false, packLoaded = false, profileOn = false;
 // The WMO layered-material module finds its shaders by hashing the engine's CURRENT bytecode, so a
 // light-patched WMO vertex shader only keeps its layered materials if the layered pack carries a variant
@@ -106,9 +111,17 @@ bool Replace(const uint8_t* code, size_t size, const uint32_t** out, size_t* out
     if (kind > 1) return false;
     const sl::LightPackEntry* entry = pack.Find(kind, code, size);
     if (!entry || (entry->group == sl::kGroupWmo && !wmoLights)) return false;
-    if (weatherPackLoaded && entry->group != sl::kGroupWmo)
-        if (const auto* weather = weatherPack.Find(kind, code, size))
-            entry = weather;
+    if (weatherPackLoaded) {
+        if (const auto* weather = weatherPack.Find(kind, code, size); weather && weather->group == entry->group) {
+            const bool wmo = entry->group == sl::kGroupWmo;
+            // Match the new bytecode per permutation. Older layered packs keep
+            // using the existing light-only WMO shaders.
+            if (!wmo || !wmoPackPresent || WxlWmoPackHasVertexVariant(weather->bytecode.data(), weather->bytecode.size() * 4)) {
+                entry = weather;
+                wmoWeatherSelected |= wmo;
+            }
+        }
+    }
     ++replaced[entry->group];
     *out = entry->bytecode.data();
     *outBytes = entry->bytecode.size() * 4;
@@ -831,7 +844,28 @@ void WxlSurfaceLightsBeforeTerrain() {
         d->SetPixelShaderConstantF(215, wet, 1);
         d->SetPixelShaderConstantF(216, eye, 1);
         d->SetPixelShaderConstantF(217, WxlSurfaceCloud(), 1);
-        d->SetVertexShaderConstantF(249, wet, 1);
+        d->SetVertexShaderConstantF(kWetVertex, wet, 1);
+        if (wmoWeatherSelected) {
+            const float* cloud = WxlSurfaceCloud();
+            wmoWeatherVisible = viewOk && (wet[0] > 0 || cloud[0] > 0);
+            wmoCloud[0] = wmoWeatherVisible ? cloud[0] : 0.0f;
+            wmoCloud[1] = 1.0f;
+            wmoCloud[3] = 0.0f;
+            wmoWeatherExterior = false;
+            d->SetVertexShaderConstantF(kWmoCloud, wmoCloud, 1);
+            if (wmoCloud[0] > 0) {
+                float transform[8];
+                for (unsigned axis = 0; axis < 2; ++axis) {
+                    float* row = transform + 4 * axis;
+                    const float* rotation = view + 4 * axis;
+                    for (unsigned i = 0; i < 3; ++i)
+                        row[i] = rotation[i] * cloud[3];
+                    row[3] = cloud[1 + axis] + camera[axis] * cloud[3] -
+                             (row[0] * view[12] + row[1] * view[13] + row[2] * view[14]);
+                }
+                d->SetVertexShaderConstantF(kWmoCloudTransform, transform, 2);
+            }
+        }
     }
     const bool lightsOn = viewOk && settings.enabled && Scene();
     if (lightsOn) UpdateLights(std::min(dt, 0.25f), camera);
@@ -849,13 +883,28 @@ void WxlSurfaceLightsBeforeTerrain() {
     d->SetVertexShaderConstantF(kStockSwitch, stock, 1);
 }
 
+bool WxlSetWmoWeatherExterior(bool exterior) {
+    const bool previous = wmoWeatherExterior;
+    if (previous != exterior && wmoWeatherVisible) {
+        if (auto* gx = Backend(); gx && gx->m_d3dDevice) {
+            wmoWeatherExterior = exterior;
+            wmoCloud[3] = exterior ? 1.0f : 0.0f;
+            gx->m_d3dDevice->SetVertexShaderConstantF(kWmoCloud, wmoCloud, 1);
+        }
+    }
+    return previous;
+}
+
 void WxlSurfaceLightsFrame() {
+    wmoWeatherVisible = false;
+    wmoWeatherExterior = false;
     if (weatherPackLoaded) {
         if (auto* gx = Backend(); gx && gx->m_d3dDevice) {
             const float dry[4] = {};
             gx->m_d3dDevice->SetPixelShaderConstantF(215, dry, 1);
             gx->m_d3dDevice->SetPixelShaderConstantF(217, dry, 1);
-            gx->m_d3dDevice->SetVertexShaderConstantF(249, dry, 1);
+            gx->m_d3dDevice->SetVertexShaderConstantF(kWetVertex, dry, 1);
+            if (wmoWeatherSelected) gx->m_d3dDevice->SetVertexShaderConstantF(kWmoCloud, dry, 1);
         }
     }
     if (!texture || !device) return;
@@ -875,12 +924,16 @@ void WxlSurfaceLightsFrame() {
     Bind(d);
 }
 
-void WxlSurfaceLightsRelease() { ResetGpu(); }
+void WxlSurfaceLightsRelease() {
+    wmoWeatherVisible = false;
+    wmoWeatherExterior = false;
+    ResetGpu();
+}
 
 void WxlSurfaceLightsWorldLeave() {
     ClearLights();
     haveLastUpdate = false;
-    ResetGpu();
+    WxlSurfaceLightsRelease();
 }
 
 std::string WxlSurfaceLightsStatus() {

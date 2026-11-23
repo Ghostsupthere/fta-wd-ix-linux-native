@@ -558,6 +558,47 @@ namespace wxl::surfacelights::modelshader
         return b;
     }
 
+#if defined(WXL_WEATHER_MATERIALS)
+    // c246/c247 transform the view-space position to cloud UV; c248 is
+    // (cloud strength, one, unused, exterior group), and c249 is the shared wet control.
+    inline std::string WmoWeather(const std::string& rgb, bool hasNormal)
+    {
+        std::string wet =
+            "    mov r25.w, c1.w\n"
+            "    if_gt c248.w, r25.w\n"
+            "      if_gt c249.x, r25.w\n"
+            "        mov r25.z, c248.y\n"
+            "        mad r30.w, -c249.x, c249.y, r25.z\n";
+        if (hasNormal) wet +=
+            "        dp3 r27.w, r29, r29\n"
+            "        max r27.w, r27.w, c249.w\n"
+            "        rsq r27.w, r27.w\n"
+            "        dp3 r26.w, r30, -r29\n"
+            "        mul_sat r26.w, r26.w, r27.w\n"
+            "        add r26.w, c248.y, -r26.w\n"
+            "        mul r26.w, r26.w, r26.w\n"
+            "        mul r26.w, r26.w, c249.z\n"
+            "        mul r26.w, r26.w, c249.x\n"
+            "        mad_sat " + rgb + ", " + rgb + ", r30.w, r26.w\n";
+        else wet += "        mul " + rgb + ", " + rgb + ", r30.w\n";
+        return wet +
+            "      endif\n"
+            "      if_gt c248.x, r25.w\n"
+            "        mov r29.w, c248.y\n"
+            "        dp4 r27.x, r29, c246\n"
+            "        dp4 r27.y, r29, c247\n"
+            "        frc r27.xy, r27\n"
+            "        add r27.xy, r27, r27\n"
+            "        add r27.xy, r27, -c248.y\n"
+            "        add r27.xy, c248.y, -r27_abs\n"
+            "        mul r27.x, r27.x, r27.y\n"
+            "        mad r27.x, -r27.x, c248.x, c248.y\n"
+            "        mul " + rgb + ", " + rgb + ", r27.x\n"
+            "      endif\n"
+            "    endif\n";
+    }
+#endif
+
     inline bool BakedRule(std::string& src, std::string& why)
     {
         why = "unlit (no sun term)";
@@ -590,7 +631,13 @@ namespace wxl::surfacelights::modelshader
         }
         std::string::size_type end = src.find('\n', copy[0].at);
         end = end == std::string::npos ? src.size() : end + 1;
-        src.replace(copy[0].at, end - copy[0].at, BakedBlock(vc, oc, vn, injected));
+        std::string block = BakedBlock(vc, oc, vn, injected);
+#if defined(WXL_WEATHER_MATERIALS)
+        // Baked variants do not always have a normal. Preserve their alpha and
+        // limit the wet response to diffuse darkening.
+        block.insert(block.rfind("    mov " + oc), WmoWeather("r17.xyz", false));
+#endif
+        src.replace(copy[0].at, end - copy[0].at, block);
         src.insert(pos[0].at, "    mov r29.xyz, " + pos[0].reg + "\n");
         src.insert(src.find('\n') + 1, Prologue() + declareNormal);
         ++g_marked;
@@ -603,6 +650,10 @@ namespace wxl::surfacelights::modelshader
         static const std::regex clash(R"(\b(i0|aL|c1|r9|r1[0-9]|r2[0-9]|r3[01])\b)");
         if (std::regex_search(src, clash)) { why = "uses a register the patch needs"; return false; }
         const std::vector<Hit> sun = Lines(src, kSun);
+#if defined(WXL_WEATHER_MATERIALS)
+        if (g_family.starts_with("MapObj") && std::regex_search(src, std::regex(R"(\bc24[6-9]\b)")))
+        { why = "weather material registers in use"; return false; }
+#endif
         if (sun.empty()) return BakedRule(src, why);
         const std::vector<Hit> pos = Lines(src, kPosition), colour = Lines(src, kColour);
         if (pos.size() != 1 || sun.size() != 1 || colour.size() != 1)
@@ -620,7 +671,20 @@ namespace wxl::surfacelights::modelshader
         const bool wmo = g_family.compare(0, 6, "MapObj") == 0;
         const std::string surface = LampBlock(colour[0].reg, wmo ? IndoorSkip() : std::string());
 #if defined(WXL_WEATHER_MATERIALS)
-        if (!wmo && !std::regex_search(src, std::regex(R"(\bc249\b)")))
+        if (wmo)
+        {
+            static const std::regex output(R"(^\s*(mad_sat|add_sat) (o\d+)(\.xyz)?, ([^\r\n]+))");
+            std::smatch match;
+            const auto end = src.find('\n', colour[0].at);
+            const std::string line = src.substr(colour[0].at, end - colour[0].at);
+            if (!std::regex_search(line, match, output)) { why = "WMO colour output"; return false; }
+            const std::string mask = match[3].str();
+            src.replace(colour[0].at, end - colour[0].at,
+                        "    " + match[1].str() + " r31" + mask + ", " + match[4].str() + "\n" +
+                        WmoWeather("r31.xyz", true) +
+                        "    mov " + match[2].str() + mask + ", r31");
+        }
+        else if (!std::regex_search(src, std::regex(R"(\bc249\b)")))
         {
             // Keep the original alpha write. Only the RGB result is adjusted in rain.
             static const std::regex output(R"(^\s*(mad_sat|add_sat) (o\d+)(?:\.xyz)?, ([^\r\n]+))");

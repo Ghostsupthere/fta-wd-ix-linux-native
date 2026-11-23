@@ -100,7 +100,8 @@ def main():
     temporary = args.out.with_suffix('.pack.tmp')
     # If the surface-light pack exists beside the output, add layered variants of the light-patched WMO shaders.
     light_pack = args.out.parent / 'light_shaders.pack'
-    extra = ['Z:' + str(light_pack)] if light_pack.is_file() else []
+    weather_pack = args.out.parent / 'light_weather.pack'
+    extra = ['Z:' + str(pack.resolve()) if pack.is_file() else '' for pack in (light_pack, weather_pack)]
     subprocess.run(['wine', str(exe), 'Z:' + str(work / 'in'), 'Z:' + str(temporary)] + extra, env=env, cwd=work, check=True)
     temporary.replace(args.out)
     print('wrote', args.out)

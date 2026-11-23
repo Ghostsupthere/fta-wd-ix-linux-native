@@ -2,6 +2,7 @@
 #define WOWDECOMP_GX_DXVK
 #include <d3d9.h>
 #include "WxlWmoMaterials.h"
+#include "WxlSurfaceLights.h"
 #include "WxlVisualEnvironment.h"
 #include "Engine/Source/Gx/CGxDevice/CGxShader.h"
 #include "Engine/Source/Gx/CGxDeviceD3d9Ex/CGxDeviceD3d9Ex.h"
@@ -328,7 +329,9 @@ bool Draw(void* raw, int type, int base, unsigned minimum, unsigned count, unsig
 }
 } // namespace
 
-WxlWmoLeafScope::WxlWmoLeafScope(CMapObj* root, CMapObjGroup* group) : m_previous(std::move(context)) {
+WxlWmoLeafScope::WxlWmoLeafScope(CMapObj* root, CMapObjGroup* group)
+    : m_previous(std::move(context)),
+      m_previousWeather(WxlSetWmoWeatherExterior(group && !(group->m_flags & 0x2000))) {
     Initialise();
     NativeVisualHooks::wmoBind = enabled ? &Bind : nullptr;
     NativeVisualHooks::wmoDraw = enabled ? &Draw : nullptr;
@@ -344,6 +347,7 @@ WxlWmoLeafScope::WxlWmoLeafScope(CMapObj* root, CMapObjGroup* group) : m_previou
 }
 
 WxlWmoLeafScope::~WxlWmoLeafScope() {
+    WxlSetWmoWeatherExterior(m_previousWeather);
     RestoreTextures();
     context = std::move(m_previous);
 }

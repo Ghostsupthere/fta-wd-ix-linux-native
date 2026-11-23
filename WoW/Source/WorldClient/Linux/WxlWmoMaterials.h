@@ -34,6 +34,7 @@ public:
     WxlWmoLeafScope& operator=(const WxlWmoLeafScope&) = delete;
 private:
     WxlWmoContext m_previous;
+    bool m_previousWeather;
 };
 
 // Latches the material of a batch that survived culling (or clears the latch).

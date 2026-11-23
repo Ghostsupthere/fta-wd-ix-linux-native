@@ -28,7 +28,7 @@ def main():
     parser.add_argument('--client', type=Path, default=ROOT.parent.parent / 'From_The_Ashes_Client')
     parser.add_argument('--storm', default=os.environ.get('STORMLIB'), help='path to the StormLib shared library (or set STORMLIB)')
     parser.add_argument('--out', type=Path)
-    parser.add_argument('--weather-only', action='store_true', help='build the optional terrain and M2 weather variants')
+    parser.add_argument('--weather-only', action='store_true', help='build the optional terrain, M2 and WMO weather variants')
     parser.add_argument('--compiler-dll', type=Path, default=ROOT / '.deps/visual-shader-tools/d3dcompiler_47.dll')
     args = parser.parse_args()
     if args.out is None:
@@ -46,8 +46,6 @@ def main():
     jobs = [('tv', 'Vertex\\vs_3_0', 'vs', TERRAIN_VERTEX), ('tp', 'Pixel\\ps_3_0', 'ps', TERRAIN_PIXEL),
             ('m2', 'Vertex\\vs_3_0', 'vs', M2_VERTEX), ('wmo', 'Vertex\\vs_3_0', 'vs', WMO_VERTEX)]
     for group, profile, ext, names in jobs:
-        if args.weather_only and group == 'wmo':
-            continue
         for name in names:
             blob = mpq.read(f'Shaders\\{profile}\\{name}.bls')
             if blob is None:

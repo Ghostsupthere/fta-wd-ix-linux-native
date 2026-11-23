@@ -185,15 +185,18 @@ int main(int argc, char** argv) {
     unsigned skippedVs = 0, skippedPs = 0, vsCount = 0, psCount = 0;
     std::set<uint64_t> seen;
 
-    // Optional: the surface-light pack (argv[3]). WMO vertex shaders it replaces change the engine's own
-    // bytecode, and the layered-material module looks its shaders up by that current bytecode, so the
-    // layered variant of each light-patched shader is added under the light-patched bytecode's hash.
-    wxl::surfacelights::LightShaderPack lightPack;
-    bool haveLightPack = false;
-    if (argc >= 4) {
-        std::string lightWhy;
-        haveLightPack = lightPack.Load(argv[3], lightWhy);
-        std::printf("surface-light pack %s: %s\n", argv[3], haveLightPack ? "loaded" : lightWhy.c_str());
+    // Both optional packs change the bytecode used as the runtime lookup key.
+    // Keep the stock, light-only and weather variants for mixed-version installs.
+    std::vector<wxl::surfacelights::LightShaderPack> lightPacks;
+    for (int i = 3; i < argc; ++i) {
+        if (!*argv[i]) continue;
+        std::string why;
+        wxl::surfacelights::LightShaderPack pack;
+        if (!pack.Load(argv[i], why)) {
+            std::fprintf(stderr, "cannot load %s: %s\n", argv[i], why.c_str());
+            return 1;
+        }
+        lightPacks.push_back(std::move(pack));
     }
     unsigned lightVariants = 0, lightVariantsSkipped = 0;
     const auto addVertex = [&](const std::vector<uint8_t>& code, const std::string& name, bool lightVariant) {
@@ -239,7 +242,7 @@ int main(int argc, char** argv) {
         std::vector<uint8_t> code;
         if (!ReadFile(dir + "\\" + name, code) || code.size() < 8 || code.size() > wxl::wmo::kMaxShaderBytes) continue;
         addVertex(code, name, false);
-        if (haveLightPack)
+        for (const auto& lightPack : lightPacks)
             if (const auto* lit = lightPack.Find(0, code.data(), code.size()); lit && lit->group == wxl::surfacelights::kGroupWmo) {
                 std::vector<uint8_t> patchedCode(lit->bytecode.size() * 4);
                 std::memcpy(patchedCode.data(), lit->bytecode.data(), patchedCode.size());
@@ -291,7 +294,7 @@ int main(int argc, char** argv) {
     FILE* out = std::fopen(argv[2], "wb");
     if (!out || std::fwrite(bytes.data(), 1, bytes.size(), out) != bytes.size()) { std::fprintf(stderr, "cannot write pack\n"); return 1; }
     std::fclose(out);
-    if (haveLightPack) std::printf("light-patched WMO vertex shaders with a layered variant: %u (skipped %u)\n", lightVariants, lightVariantsSkipped);
+    if (!lightPacks.empty()) std::printf("light-patched WMO vertex shaders with a layered variant: %u (skipped %u)\n", lightVariants, lightVariantsSkipped);
     std::printf("vertex shaders %u (skipped %u, compact layouts %u in %zu mappings), pixel shaders %u (variants skipped %u, compact variants %u), mappings %zu, entries %zu, %zu bytes\n",
                 vsCount, skippedVs, compactVs, compactLayouts.size(), psCount, skippedPs, compactPs, mappings.size(), entries.size(), bytes.size());
     return 0;
