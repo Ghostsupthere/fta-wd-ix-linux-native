@@ -21,6 +21,9 @@ MEDIA_ALIASES = {
     "assets/Dark_UI/uimicromenu2x_dark.blp": "assets/uimicromenu2x.blp",
 }
 MEDIA = {".blp", ".tga", ".dds", ".ttf", ".otf", ".wav", ".mp3", ".ogg"}
+# Texture trees outside assets/ that the Windows load graph references by path or builds names from.
+UPSTREAM_TREES = ("modules/dragonflightui/textures/", "libs/classicapi/texture/")
+ADDON_PATH = re.compile(r"""['"](Interface[\\/]+Add[Oo]ns[\\/]+DrakeishUI[\\/]+[^'"]+)['"]""", re.I)
 ASSET_PATH = re.compile(r'assets[/\\]+([^"\'\r\n<>]+)', re.I)
 
 
@@ -100,6 +103,9 @@ def main():
     # These atlas families are indexed through variables by retained modules.
     prefixes.update("assets/" + group + "/" for group in ("actionbars", "bags", "characterpanel",
         "classicons", "collections", "end_caps", "raidframe", "social", "spellbook", "talents", "ui", "worldmap"))
+    for name, source in upstream.items():
+        if name.startswith(UPSTREAM_TREES) and source.suffix.lower() in MEDIA:
+            selected.setdefault(name, source)
     for name, source in {**upstream, **windows}.items():
         root_asset = name.startswith("assets/") and name.count("/") == 1
         if source.suffix.lower() in MEDIA and (root_asset or any(name.startswith(prefix) for prefix in prefixes)):
@@ -107,6 +113,17 @@ def main():
     for prefix in prefixes:
         if not any(name.startswith(prefix) for name in selected):
             missing.add(f"media folder missing: {prefix}")
+    present = set(selected) | {key(alias) for alias in MEDIA_ALIASES}
+    folders = {"/".join(name.split("/")[:i]) for name in present for i in range(1, name.count("/") + 1)}
+    for name, source in tuple(selected.items()):
+        if source.suffix.lower() not in {".lua", ".xml"}:
+            continue
+        for value in ADDON_PATH.findall(source.read_text(encoding="utf-8-sig", errors="replace")):
+            reference = key(value).split("/", 3)[-1]
+            if not reference or reference.endswith("/"):
+                continue
+            if reference not in folders and not any(reference + ext in present for ext in ("", *sorted(MEDIA))):
+                missing.add(f"{name}: addon path {reference}")
     args.out.mkdir(parents=True, exist_ok=False)
     manifest = []
     totals = defaultdict(int)
