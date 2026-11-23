@@ -2,12 +2,12 @@
 if WXLNativeAtmospherePanel or not (VideoOptionsFrame and OptionsFrame_AddCategory) then return end
 
 local panel = CreateFrame("Frame", "WXLNativeAtmospherePanel", VideoOptionsFramePanelContainer)
-panel.name = "Atmosphere & Water"
+panel.name = "Visuals & Guidance"
 panel.parent = (VideoOptionsEffectsPanel and VideoOptionsEffectsPanel.name) or EFFECTS_LABEL
 panel:Hide()
 
 local scroll = CreateFrame("ScrollFrame", "WXLNativeAtmosphereScroll", panel, "UIPanelScrollFrameTemplate")
-scroll:SetPoint("TOPLEFT", 12, -10)
+scroll:SetPoint("TOPLEFT", 12, -65)
 scroll:SetPoint("BOTTOMRIGHT", -30, 12)
 local content = CreateFrame("Frame", "WXLNativeAtmosphereContent", scroll)
 content:SetSize(330, 1000)
@@ -38,6 +38,7 @@ local function Read(key)
 end
 local function UpdateStatus()
     local supported, state = WXL_AtmosphereStatus()
+    if WXL_RefreshAreaNames then WXL_RefreshAreaNames() end
     status:SetText(saveFailed and "Settings could not be saved." or
         (supported and (state .. ". Changes are saved automatically.") or
             "Native world effects are unavailable on this graphics device."))
@@ -46,7 +47,7 @@ local function Synchronize()
     syncing = true
     for _, entry in ipairs(controls) do
         local value = Read(entry.key)
-        local enabled = entry.key == preview or Read(preview) ~= 0
+        local enabled = entry.independent or entry.key == preview or Read(preview) ~= 0
         local parent = entry.parent
         while enabled and parent do
             enabled = Read(parent) ~= 0
@@ -73,19 +74,50 @@ local function Change(key, value)
     Synchronize()
 end
 local flow = 60
+local groups, group = {}, nil
+local function SelectGroup(key)
+    for name, row in pairs(groups) do
+        if name == key then
+            row.frame:Show()
+            row.button:Disable()
+            content:SetHeight(math.max(row.height or 0, 260))
+        else
+            row.frame:Hide()
+            row.button:Enable()
+        end
+    end
+    scroll:SetVerticalScroll(0)
+end
+local function Group(key, label, x, y)
+    if group then group.height = flow + 52 end
+    flow = 95
+    local frame = CreateFrame("Frame", "WXLNativeVisuals" .. key .. "Controls", content)
+    frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    frame:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
+    local button = CreateFrame("Button", "WXLNativeVisuals" .. key .. "Tab", panel, "UIPanelButtonTemplate")
+    button:SetText(label)
+    button:SetSize(108, 21)
+    button:SetPoint("TOPLEFT", panel, "TOPLEFT", 12 + x * 109, -10 - y * 24)
+    button:SetScript("OnClick", function() SelectGroup(key) end)
+    group = {frame=frame, button=button}
+    groups[key] = group
+end
+local function ControlParent()
+    return group and group.frame or content
+end
 local function Section(label)
     flow = flow + 10
     local y = flow
     flow = flow + 24
-    local heading = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local heading = ControlParent():CreateFontString(nil, "ARTWORK", "GameFontNormal")
     heading:SetPoint("TOPLEFT", 4, -y)
     heading:SetText(label)
 end
-local function Check(label, key, _, _, parent, help)
+local function Check(label, key, _, _, parent, help, independent)
     local y = flow
     flow = flow + 26
     local name = panel:GetName() .. "Check" .. (#controls + 1)
-    local frame = CreateFrame("CheckButton", name, content, "UICheckButtonTemplate")
+    local frame = CreateFrame("CheckButton", name, ControlParent(), "UICheckButtonTemplate")
     frame:SetPoint("TOPLEFT", 2, -y)
     local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     text:SetPoint("LEFT", frame, "RIGHT", 1, 0)
@@ -97,13 +129,13 @@ local function Check(label, key, _, _, parent, help)
         GameTooltip:SetText(help or label, 1, 1, 1, 1, true)
     end)
     frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    controls[#controls + 1] = {frame=frame, key=key, parent=parent}
+    controls[#controls + 1] = {frame=frame, key=key, parent=parent, independent=independent}
 end
-local function Slider(label, key, _, _, low, high, step, parent, format, help)
+local function Slider(label, key, _, _, low, high, step, parent, format, help, independent)
     local y = flow + 16
     flow = flow + 46
     local name = panel:GetName() .. "Slider" .. (#controls + 1)
-    local frame = CreateFrame("Slider", name, content, "OptionsSliderTemplate")
+    local frame = CreateFrame("Slider", name, ControlParent(), "OptionsSliderTemplate")
     frame:SetPoint("TOPLEFT", 8, -y)
     frame:SetWidth(210)
     frame:SetMinMaxValues(low, high)
@@ -120,11 +152,12 @@ local function Slider(label, key, _, _, low, high, step, parent, format, help)
     end)
     frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
     controls[#controls + 1] = {frame=frame, key=key, parent=parent,
-        slider=true, value=valueText, format=format or "%.2f"}
+        slider=true, value=valueText, format=format or "%.2f", independent=independent}
 end
 
 Check("Use these settings", preview, 1, 64, nil, "Preview these controls in the world. Clear this switch to return to your launch profile.")
 
+Group("Environment", "Environment", 0, 0)
 Section("Fog and shafts", 104)
 Check("Depth fog", "atmosphere.fog", 1, 126)
 Check("Sun and moon shafts", "atmosphere.shafts", 2, 126)
@@ -155,9 +188,29 @@ Check("Player lantern in fog", "atmosphere.lantern", 2, 559, "atmosphere.fog", "
 Slider("Native light strength", "atmosphere.lightStrength", 1, 612, 0, 2, .05, "atmosphere.nativeLights")
 Slider("Lantern strength", "atmosphere.lanternStrength", 2, 612, 0, 2, .05, "atmosphere.lantern")
 
+Group("World", "World & Combat", 1, 0)
+Section("Local lights")
 Check("Lootable corpse lights", "atmosphere.corpseLights", 1, 0, nil,
     "Adds a faint light near a few nearby lootable corpses.")
 
+Check("Static lamps", "world.staticLamps", 1, 0, "lights.enabled",
+    "Lights eligible nearby lamp models. Requires Dynamic lights and the lamp catalog.")
+Slider("Static lamp strength", "world.staticLampStrength", 1, 0, 0, 2, .05, "world.staticLamps")
+
+Group("Effects", "Effects & Physics", 2, 0)
+Section("Spell effects")
+Check("Spell effect lights (experimental)", "atmosphere.spellLights", 1, 0, nil,
+    "Adds up to four small lights from nearby spell effects and projectiles.")
+Slider("Spell light brightness", "atmosphere.spellLightStrength", 1, 0, 1, 5, .1, "atmosphere.spellLights", nil,
+    "Multiplies the light from spell effects, 1 to 5. Raise it if walls stay dark.")
+Slider("Spell light distance (yards)", "atmosphere.spellLightRange", 1, 0, 2, 16, .5, "atmosphere.spellLights", "%.1f",
+    "How far each spell light reaches across nearby surfaces.")
+
+Group("Terrain", "Terrain & Water", 0, 1)
+Section("Terrain")
+Check("Dynamic lights", "lights.enabled", 1, 0, nil, "Enables the existing surface-light grid.", true)
+Check("Instanced ground clutter", "grass.instanced", 1, 0, nil, nil, true)
+Slider("Grass wind strength", "grass.windStrength", 1, 0, 0, 2, .05, nil, nil, nil, true)
 Check("Rain-wet surfaces", "atmosphere.wetSurfaces", 1, 0, nil,
     "Adds damp terrain and model lighting outdoors during rain.")
 
@@ -165,17 +218,6 @@ Check("Cloud shadows", "atmosphere.cloudShadows", 1, 0, nil,
     "Moves soft cloud shade across outdoor terrain and buildings and dims nearby fog light.")
 Check("Terrain shadows", "atmosphere.terrainShadows", 1, 0, nil,
     "Shades nearby ground behind hills when the sun is low.")
-
-Check("Static lamps", "world.staticLamps", 1, 0, "lights.enabled",
-    "Lights eligible nearby lamp models. Requires Dynamic lights and the lamp catalog.")
-Slider("Static lamp strength", "world.staticLampStrength", 1, 0, 0, 2, .05, "world.staticLamps")
-
-Check("Spell effect lights (experimental)", "atmosphere.spellLights", 1, 0, nil,
-    "Adds up to four small lights from nearby spell effects and projectiles.")
-Slider("Spell light brightness", "atmosphere.spellLightStrength", 1, 0, 1, 5, .1, "atmosphere.spellLights", nil,
-    "Multiplies the light from spell effects, 1 to 5. Raise it if walls stay dark.")
-Slider("Spell light distance (yards)", "atmosphere.spellLightRange", 1, 0, 2, 16, .5, "atmosphere.spellLights", "%.1f",
-    "How far each spell light reaches across nearby surfaces.")
 
 Section("Water", 671)
 Check("Modern water", "water.modern", 1, 695)
@@ -191,11 +233,20 @@ Slider("Shore foam", "water.foam", 1, 849, 0, 2, .05, "water.modern")
 Slider("Water reflections", "water.reflections", 2, 849, 0, 2, .05, "water.modern")
 Slider("Water clarity", "water.clarity", 1, 900, 0, 2, .05, "water.modern")
 
-local restore = CreateFrame("Button", "WXLNativeAtmosphereRestore", content, "UIPanelButtonTemplate")
+Group("Text", "Text & Image", 1, 1)
+Section("Area names")
+Check("Compact area announcements", "text.compactAreaNames", 1, 0, nil,
+    "Moves zone and district announcements near the top and halves their font size.", true)
+Check("Hide area announcements", "text.hideAreaNames", 1, 0, nil,
+    "Hides only zone and district announcements.", true)
+group.height = flow + 54
+
+local restore = CreateFrame("Button", "WXLNativeAtmosphereRestore", panel, "UIPanelButtonTemplate")
 restore:SetSize(165, 24)
-restore:SetPoint("TOPLEFT", 5, -(flow + 12))
-content:SetHeight(flow + 56)
-restore:SetText("Restore page defaults")
+restore:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 7)
+scroll:SetPoint("BOTTOMRIGHT", -30, 36)
+restore:SetText("Restore visual defaults")
+SelectGroup("Environment")
 local function Defaults()
     for _, entry in ipairs(controls) do
         WarcraftXL_SetEnvironmentOption(entry.key, WarcraftXL_GetEnvironmentOptionDefault(entry.key))
@@ -230,7 +281,61 @@ panel.cancel = function()
     Synchronize()
 end
 
+local areaFrames, areaRegions
+local function InstallAreaNames()
+    if not ZoneTextFrame or not SubZoneTextFrame or not hooksecurefunc then return end
+    areaFrames, areaRegions = {ZoneTextFrame, SubZoneTextFrame}, {}
+    for _, frame in ipairs(areaFrames) do
+        frame:HookScript("OnShow", function(self)
+            if Read("text.hideAreaNames") ~= 0 then self:Hide() end
+        end)
+    end
+    for _, name in ipairs({"ZoneTextString", "SubZoneTextString", "PVPInfoTextString", "PVPArenaTextString"}) do
+        local region = _G[name]
+        if region and region.GetFont and region.SetFont then areaRegions[#areaRegions + 1] = region end
+    end
+end
+local original, compactApplied = {}, false
+function WXL_RefreshAreaNames()
+    local compact = Read("text.compactAreaNames") ~= 0
+    local hide = Read("text.hideAreaNames") ~= 0
+    if not areaFrames and (compact or hide) then InstallAreaNames() end
+    if not areaFrames then return end
+    if compact ~= compactApplied then
+        if compact then
+            for _, frame in ipairs(areaFrames) do
+                local points = {}
+                for i = 1, frame:GetNumPoints() do points[i] = {frame:GetPoint(i)} end
+                original[frame] = points
+                frame:ClearAllPoints()
+                frame:SetPoint("TOP", UIParent, "TOP", 0, -64)
+            end
+            for _, region in ipairs(areaRegions) do
+                local font, size, flags = region:GetFont()
+                if font and size and size > 0 then
+                    original[region] = {font, size, flags}
+                    region:SetFont(font, size * .5, flags)
+                end
+            end
+        else
+            for _, frame in ipairs(areaFrames) do
+                frame:ClearAllPoints()
+                for _, point in ipairs(original[frame] or {}) do frame:SetPoint(unpack(point, 1, 5)) end
+            end
+            for _, region in ipairs(areaRegions) do
+                if original[region] then region:SetFont(unpack(original[region])) end
+            end
+            original = {}
+        end
+        compactApplied = compact
+    end
+    if hide then
+        for _, frame in ipairs(areaFrames) do if frame:IsShown() then frame:Hide() end end
+    end
+end
+
 Remember()
+WXL_RefreshAreaNames()
 -- Save a moment after the last change, so the settings survive a restart even when the window is closed with
 -- Escape instead of Okay. This runs on its own frame because the page stops updating once it is hidden.
 local saver = CreateFrame("Frame", nil, UIParent)
@@ -244,6 +349,13 @@ saver:SetScript("OnUpdate", function(_, elapsed)
     UpdateStatus()
 end)
 OptionsFrame_AddCategory(VideoOptionsFrame, panel)
+if SlashCmdList and not SlashCmdList.WXLVISUALS then
+    SLASH_WXLVISUALS1 = "/visuals"
+    SlashCmdList.WXLVISUALS = function()
+        VideoOptionsFrame:Show()
+        if OptionsFrame_OpenToCategory then OptionsFrame_OpenToCategory(panel) end
+    end
+end
 -- Show the sub-page under Effects without making the player expand the list first.
 if VideoOptionsEffectsPanel and VideoOptionsEffectsPanel.name == panel.parent then
     VideoOptionsEffectsPanel.collapsed = false
@@ -252,6 +364,10 @@ if VideoOptionsEffectsPanel and VideoOptionsEffectsPanel.name == panel.parent th
         VideoOptionsFrame.categoryFrame:update()
     end
 end
+local areaEvents = CreateFrame("Frame", "WXLNativeAreaNameEvents")
+areaEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
+areaEvents:RegisterEvent("ADDON_LOADED")
+areaEvents:SetScript("OnEvent", WXL_RefreshAreaNames)
 local elapsedStatus = 0
 panel:SetScript("OnUpdate", function(_, elapsed)
     elapsedStatus = elapsedStatus + elapsed
