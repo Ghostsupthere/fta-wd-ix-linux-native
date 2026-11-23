@@ -1,3 +1,4 @@
+#include <iterator>
 #include "WoW/Source/WorldClient/DayNight__DNInfo.h"
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Source/WorldClient/Linux/WxlCloudNoise.h"
@@ -3325,7 +3326,7 @@ void DayNight::RemoveLightOverride(int32_t lightId, uint32_t duration) {
 // VERIFY: 1d606d65 auto
 // OFFSET: 0x007F31C0
 void DayNight::SetBlendSky(uint32_t index, const char* sky, int32_t flags, float blend) {
-    if (index > 3) {
+    if (index >= std::size(DayNight::g_dnInfo.m_blendSkybox)) {
         return;
     }
 

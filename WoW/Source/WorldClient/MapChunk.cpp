@@ -7,7 +7,9 @@
 #include "Engine/Source/Tempest/CRandom.h"
 #include "Engine/Source/Tempest/C3Ray.h"
 #include "Engine/Source/Tempest/NTempest.h"
+#include <algorithm>
 #include <cmath>
+#include <iterator>
 #include "Engine/Source/Base/CDataAllocator.h"
 #include "Engine/Source/Base/RCString.h"
 #include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
@@ -1127,7 +1129,7 @@ int32_t CMapChunk::LoadDetailDoodadModels() {
 // VERIFY: 04ba1328 manual
 // OFFSET: 0x007D3390
 void CMapChunk::CreateDetailDoodads() {
-    if (!this->m_header->m_nLayers || !this->LoadDetailDoodadModels()) {
+    if (!this->m_layers || !this->m_header->m_nLayers || !this->LoadDetailDoodadModels()) {
         return;
     }
 
@@ -1136,6 +1138,9 @@ void CMapChunk::CreateDetailDoodads() {
     seed.SetSeed(this->m_cOffset.x | (this->m_cOffset.y << 16));
 
     this->m_detailDoodadInst = CDetailDoodad::AllocInst();
+    if (!this->m_detailDoodadInst) {
+        return;
+    }
     this->m_detailDoodadInst->m_chunk = this;
     CDetailDoodadInst* inst = this->m_detailDoodadInst;
 
@@ -1145,6 +1150,7 @@ void CMapChunk::CreateDetailDoodads() {
 
     static C4Plane s_planes[256];
     static C2iVector s_cells[256];
+    const uint32_t density = std::clamp(World::s_detailDoodadDensity, 0, static_cast<int32_t>(std::size(s_cells)));
     C3Vector verts[3];
     static C3Vector s_colorBase[256];
     static C3Vector s_colorEdgeA[256];
@@ -1152,7 +1158,7 @@ void CMapChunk::CreateDetailDoodads() {
 
     uint8_t used[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
-    for (uint32_t i = 0; i < World::s_detailDoodadDensity; i++) {
+    for (uint32_t i = 0; i < density; i++) {
         uint32_t x = CRandom::uint32_(seed) & 7;
         uint32_t y = CRandom::uint32_(seed) & 7;
         s_cells[i].x = x;
@@ -1212,7 +1218,7 @@ void CMapChunk::CreateDetailDoodads() {
     C3Vector position(0.0f, 0.0f, 0.0f);
     CImVector color;
 
-    for (uint32_t i = 0; i < World::s_detailDoodadDensity; i++) {
+    for (uint32_t i = 0; i < density; i++) {
         int32_t x = s_cells[i].x;
         int32_t y = s_cells[i].y;
 
@@ -1225,6 +1231,10 @@ void CMapChunk::CreateDetailDoodads() {
         }
 
         uint32_t layer = (reinterpret_cast<uint16_t*>(this->m_lowQualityTexMap)[y] & CMap::s_2bitSplatMask[x]) >> CMap::s_2bitSplatShft[x];
+        if (layer >= this->m_header->m_nLayers) {
+            continue;
+        }
+
         GroundEffectTextureRec* record = g_groundEffectTextureDB.GetRecord(this->m_layers[layer].m_offectId);
 
         if (!record) {

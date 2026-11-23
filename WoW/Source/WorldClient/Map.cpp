@@ -5642,6 +5642,10 @@ bool CMap::QueryGroundTypeTerrain(C3Vector* pos, uint32_t* groundType) {
     }
 
     uint32_t layer = (CMap::s_2bitSplatMask[col] & reinterpret_cast<uint16_t*>(chunk->m_lowQualityTexMap)[row]) >> CMap::s_2bitSplatShft[col];
+    if (!chunk->m_layers || layer >= chunk->m_header->m_nLayers) {
+        return false;
+    }
+
     GroundEffectTextureRec* rec = g_groundEffectTextureDB.GetRecord(chunk->m_layers[layer].m_offectId);
 
     if (!rec) {
