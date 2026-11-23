@@ -208,6 +208,9 @@ Slider("Spell light distance (yards)", "atmosphere.spellLightRange", 1, 0, 2, 16
 
 Group("Terrain", "Terrain & Water", 0, 1)
 Section("Terrain")
+Check("Colorful footsteps", "world.cosmeticFootprints", 1, 0, nil,
+    "Colors your character's existing footprint decals on surfaces that show footsteps.")
+Slider("Footstep brightness", "world.footprintStrength", 1, 0, 0, 1, .05, "world.cosmeticFootprints")
 Check("Dynamic lights", "lights.enabled", 1, 0, nil, "Enables the existing surface-light grid.", true)
 Check("Instanced ground clutter", "grass.instanced", 1, 0, nil, nil, true)
 Slider("Grass wind strength", "grass.windStrength", 1, 0, 0, 2, .05, nil, nil, nil, true)

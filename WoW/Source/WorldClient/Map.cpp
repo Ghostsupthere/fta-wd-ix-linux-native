@@ -1,3 +1,8 @@
+#if defined(WOWDECOMP_LINUX)
+#include "WoW/Source/WorldClient/Linux/WxlModernVisuals.h"
+#include <algorithm>
+#include <cmath>
+#endif
 #include <limits>
 #include "Map.h"
 #include "Engine/Source/Base/Profiler.h"
@@ -6047,110 +6052,142 @@ void CMap::RenderFootprints() {
     }
 
     uint32_t now = FrameTime::s_curTimeMs;
-    uint32_t index = 0;
-    CMapFootprint* footprints = &s_footprints[0][0];
+#if defined(WOWDECOMP_LINUX)
+    const float cosmeticStrength = WxlFootprintStrength();
+#else
+    constexpr float cosmeticStrength = 0;
+#endif
+    const unsigned passes = cosmeticStrength > 0 ? 2 : 1;
+    for (unsigned pass = 0; pass < passes; ++pass) {
+        const bool colorful = pass == 1;
+        CMapFootprint* footprints = &s_footprints[0][0];
 
-    for (uint32_t n = 576; n; n--) {
-        CMapFootprint* footprint = &footprints[index];
+        for (uint32_t index = 0; index < 576; ++index) {
+            if (passes == 2 && (index < 64) != colorful) continue;
+            CMapFootprint* footprint = &footprints[index];
 
-        if (footprint->m_vertices.Count()) {
-            uint32_t elapsed = now - footprint->m_startTime;
-            float fade = 1.0f - static_cast<float>(elapsed) * FOOTPRINT_FADEOUT_RATE;
+            if (footprint->m_vertices.Count()) {
+                uint32_t elapsed = now - footprint->m_startTime;
+                float fade = 1.0f - static_cast<float>(elapsed) * FOOTPRINT_FADEOUT_RATE;
 
-            if (fade >= 0.0f) {
-                float alpha = fade * 255.0f;
-                int32_t value = CMath::fint_(alpha - 0.5f);
-                footprint->m_alpha = value < MAXALPHA ? CMath::fint_(alpha - 0.5f) : MAXALPHA;
-                CMapFootprintTexture& texture = s_footprintTextures.m_data[footprint->m_textureIndex];
-                texture.m_footprintIndices.Add(1, &index);
-                texture.m_vertexCount += footprint->m_vertices.Count();
-            } else {
-                footprint->m_vertices.SetCount(0);
-            }
-        }
-
-        if (++index >= 576) {
-            index = 0;
-        }
-    }
-
-    g_theGxDevicePtr->RsPush();
-    g_theGxDevicePtr->RsSet(GxRs_Texture1, ProjectTex2dGetModFadeTex());
-    GxRsSet(GxRs_BlendingMode, 2);
-    GxRsSet(GxRs_AlphaRef, static_cast<int32_t>(CGxDevice::s_alphaRef[2]));
-    GxRsSet(GxRs_DepthWrite, 0);
-    GxRsSet(GxRs_PolygonOffset, CWorldParam::cvar_footstepBias->m_floatValue * 0.0039063096f);
-
-    C44Matrix world;
-    world.d0 = -CWorldScene::s_activeWorldView.x;
-    world.d1 = -CWorldScene::s_activeWorldView.y;
-    world.d2 = -CWorldScene::s_activeWorldView.z;
-    g_theGxDevicePtr->XformPushAndSet(GxXform_World, world);
-
-    for (uint32_t t = 0; t < s_footprintTextures.Count(); t++) {
-        CMapFootprintTexture& texture = s_footprintTextures.m_data[t];
-
-        if (texture.m_vertexCount) {
-            CGxTex* gxTex = TextureGetGxTex(texture.m_texture, 0, nullptr);
-
-            if (gxTex) {
-                CGxBuf* vertexBuf = g_theGxDevicePtr->BufStream(GxPoolTarget_Vertex, 44, texture.m_vertexCount);
-                float* vertices = reinterpret_cast<float*>(g_theGxDevicePtr->BufLock(vertexBuf));
-                CGxBuf* indexBuf = g_theGxDevicePtr->BufStream(GxPoolTarget_Index, 2, texture.m_vertexCount);
-                uint16_t* indices = reinterpret_cast<uint16_t*>(g_theGxDevicePtr->BufLock(indexBuf));
-                uint16_t next = 0;
-
-                for (uint32_t k = 0; k < texture.m_footprintIndices.Count(); k++) {
-                    CMapFootprint* footprint = &footprints[texture.m_footprintIndices.m_data[k]];
-                    CImVector color;
-                    color.b = 0xFF;
-                    color.g = 0xFF;
-                    color.r = 0xFF;
-                    color.a = static_cast<uint8_t>(footprint->m_alpha);
-
-                    for (uint32_t v = 0; v < footprint->m_vertices.Count(); v++) {
-                        CGxVertexPT0T1& src = footprint->m_vertices.m_data[v];
-                        vertices[0] = src.m_position.x;
-                        vertices[1] = src.m_position.y;
-                        vertices[2] = src.m_position.z;
-                        vertices[3] = 0.0f;
-                        vertices[4] = 0.0f;
-                        vertices[5] = 1.0f;
-                        *reinterpret_cast<CImVector*>(&vertices[6]) = color;
-                        vertices[7] = src.m_texture0.x;
-                        vertices[8] = src.m_texture0.y;
-                        vertices[9] = src.m_texture1.x;
-                        vertices[10] = src.m_texture1.y;
-                        *indices = next++;
-                        vertices += 11;
-                        indices++;
-                    }
+                if (fade >= 0.0f) {
+                    float alpha = fade * 255.0f;
+                    int32_t value = CMath::fint_(alpha - 0.5f);
+                    footprint->m_alpha = value < MAXALPHA ? CMath::fint_(alpha - 0.5f) : MAXALPHA;
+                    CMapFootprintTexture& texture = s_footprintTextures.m_data[footprint->m_textureIndex];
+                    texture.m_footprintIndices.Add(1, &index);
+                    texture.m_vertexCount += footprint->m_vertices.Count();
+                } else {
+                    footprint->m_vertices.SetCount(0);
                 }
-
-                g_theGxDevicePtr->BufUnlock(vertexBuf, 0);
-                vertexBuf->m_hasData = 1;
-                g_theGxDevicePtr->BufUnlock(indexBuf, 0);
-                indexBuf->m_hasData = 1;
-                GxPrimVertexPtr(vertexBuf, GxVBF_PNCT2);
-                g_theGxDevicePtr->PrimIndexPtr(indexBuf);
-                g_theGxDevicePtr->RsSet(GxRs_Texture0, gxTex);
-
-                CGxBatch batch;
-                batch.m_primType = GxPrim_Triangles;
-                batch.m_start = 0;
-                batch.m_count = texture.m_vertexCount;
-                batch.m_minIndex = 0;
-                batch.m_maxIndex = static_cast<uint16_t>(texture.m_vertexCount - 1);
-                g_theGxDevicePtr->Draw(&batch, 1);
             }
+
         }
 
-        texture.m_footprintIndices.m_count = 0;
-        texture.m_vertexCount = 0;
-    }
+        g_theGxDevicePtr->RsPush();
+        g_theGxDevicePtr->RsSet(GxRs_Texture1, ProjectTex2dGetModFadeTex());
+        GxRsSet(GxRs_BlendingMode, 2);
+        GxRsSet(GxRs_AlphaRef, static_cast<int32_t>(CGxDevice::s_alphaRef[2]));
+        GxRsSet(GxRs_DepthWrite, 0);
+#if defined(WOWDECOMP_LINUX)
+        if (colorful) {
+            GxRsSet(GxRs_VertexShader, static_cast<void*>(nullptr));
+            GxRsSet(GxRs_PixelShader, static_cast<void*>(nullptr));
+            GxRsSet(GxRs_ColorOp0, GxTexOp_PassThru);
+            GxRsSet(GxRs_ColorOp1, GxTexOp_Mod);
+            GxRsSet(GxRs_AlphaOp0, GxTexOp_Mod);
+            GxRsSet(GxRs_AlphaOp1, GxTexOp_Mod);
+            GxRsSet(GxRs_BlendingMode, GxBlend_Add);
+            GxRsSet(GxRs_AlphaRef, 0);
+            GxRsSet(GxRs_Lighting, 0);
+        }
+#endif
+        GxRsSet(GxRs_PolygonOffset, CWorldParam::cvar_footstepBias->m_floatValue * 0.0039063096f);
 
-    GxXformPop(GxXform_World);
-    g_theGxDevicePtr->RsPop();
+        C44Matrix world;
+        world.d0 = -CWorldScene::s_activeWorldView.x;
+        world.d1 = -CWorldScene::s_activeWorldView.y;
+        world.d2 = -CWorldScene::s_activeWorldView.z;
+        g_theGxDevicePtr->XformPushAndSet(GxXform_World, world);
+
+        for (uint32_t t = 0; t < s_footprintTextures.Count(); t++) {
+            CMapFootprintTexture& texture = s_footprintTextures.m_data[t];
+
+            if (texture.m_vertexCount) {
+                CGxTex* gxTex = TextureGetGxTex(texture.m_texture, 0, nullptr);
+
+                if (gxTex) {
+                    CGxBuf* vertexBuf = g_theGxDevicePtr->BufStream(GxPoolTarget_Vertex, 44, texture.m_vertexCount);
+                    float* vertices = reinterpret_cast<float*>(g_theGxDevicePtr->BufLock(vertexBuf));
+                    CGxBuf* indexBuf = g_theGxDevicePtr->BufStream(GxPoolTarget_Index, 2, texture.m_vertexCount);
+                    uint16_t* indices = reinterpret_cast<uint16_t*>(g_theGxDevicePtr->BufLock(indexBuf));
+                    uint16_t next = 0;
+
+                    for (uint32_t k = 0; k < texture.m_footprintIndices.Count(); k++) {
+                        CMapFootprint* footprint = &footprints[texture.m_footprintIndices.m_data[k]];
+                        CImVector color;
+                        color.b = 0xFF;
+                        color.g = 0xFF;
+                        color.r = 0xFF;
+                        color.a = static_cast<uint8_t>(footprint->m_alpha);
+#if defined(WOWDECOMP_LINUX)
+                        if (colorful) {
+                            const float hue = (footprint->m_startTime % 3600) / 600.0f;
+                            const auto channel = [hue](float offset) {
+                                const float triangle = std::abs(std::fmod(hue + offset, 6.0f) - 3.0f) - 1.0f;
+                                return static_cast<uint8_t>(255.0f * (0.08f + 0.92f * std::clamp(triangle, 0.0f, 1.0f)));
+                            };
+                            color.r = channel(0);
+                            color.g = channel(4);
+                            color.b = channel(2);
+                            color.a = static_cast<uint8_t>(std::min(footprint->m_alpha, 255u) * cosmeticStrength);
+                        }
+#endif
+
+                        for (uint32_t v = 0; v < footprint->m_vertices.Count(); v++) {
+                            CGxVertexPT0T1& src = footprint->m_vertices.m_data[v];
+                            vertices[0] = src.m_position.x;
+                            vertices[1] = src.m_position.y;
+                            vertices[2] = src.m_position.z;
+                            vertices[3] = 0.0f;
+                            vertices[4] = 0.0f;
+                            vertices[5] = 1.0f;
+                            *reinterpret_cast<CImVector*>(&vertices[6]) = color;
+                            vertices[7] = src.m_texture0.x;
+                            vertices[8] = src.m_texture0.y;
+                            vertices[9] = src.m_texture1.x;
+                            vertices[10] = src.m_texture1.y;
+                            *indices = next++;
+                            vertices += 11;
+                            indices++;
+                        }
+                    }
+
+                    g_theGxDevicePtr->BufUnlock(vertexBuf, 0);
+                    vertexBuf->m_hasData = 1;
+                    g_theGxDevicePtr->BufUnlock(indexBuf, 0);
+                    indexBuf->m_hasData = 1;
+                    GxPrimVertexPtr(vertexBuf, GxVBF_PNCT2);
+                    g_theGxDevicePtr->PrimIndexPtr(indexBuf);
+                    g_theGxDevicePtr->RsSet(GxRs_Texture0, gxTex);
+
+                    CGxBatch batch;
+                    batch.m_primType = GxPrim_Triangles;
+                    batch.m_start = 0;
+                    batch.m_count = texture.m_vertexCount;
+                    batch.m_minIndex = 0;
+                    batch.m_maxIndex = static_cast<uint16_t>(texture.m_vertexCount - 1);
+                    g_theGxDevicePtr->Draw(&batch, 1);
+                }
+            }
+
+            texture.m_footprintIndices.m_count = 0;
+            texture.m_vertexCount = 0;
+        }
+
+        GxXformPop(GxXform_World);
+        g_theGxDevicePtr->RsPop();
+    }
 }
 
 // VERIFY: 331b297f manual

@@ -453,6 +453,10 @@ const wxl::atmosphere::PlayerLantern& WxlFrameLantern() { return frameLantern; }
 const wxl::atmosphere::CorpseLightList& WxlFrameCorpseLights() { return corpseLights; }
 float WxlSurfaceWetness() { return surfaceWetness; }
 bool WxlTerrainShadows() { return terrainShadows; }
+float WxlFootprintStrength() {
+    return options.v[env::kAtmosphereOverride] && options.v[env::kCosmeticFootprints] ?
+        static_cast<float>(options.v[env::kFootprintStrength]) : 0;
+}
 const float* WxlSurfaceCloud() { return surfaceCloud; }
 const wxl::atmosphere::SpellLightList& WxlFrameSpellLights() { return spellLights; }
 
