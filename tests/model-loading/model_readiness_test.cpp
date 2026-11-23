@@ -37,6 +37,11 @@ static std::function<void(CAsyncObject*)> onRead;
 void SErrDisplayAppFatal(const char*) { ++fatalCalls; }
 void DebugLog(const char*, const char*) {}
 void OsSleep(int) {}
+namespace Profiler {
+enum Id { AsyncLoadWait };
+Id SpikeZone(Id zone) { return zone; }
+struct Scope { explicit Scope(Id) {} };
+}
 namespace SFile {
 bool IsStreamingMode() { return false; }
 void SetFilePriority(void*, int, int) {}

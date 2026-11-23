@@ -72,8 +72,6 @@ bool EnvEnabled() {
 
 // All state belongs to the thread that first made a Scope or called EndFrame (the render thread).
 std::atomic<bool> g_enabled{EnvEnabled()};
-std::thread::id g_owner;
-bool g_haveOwner = false;
 Scope* g_current = nullptr;
 FrameRecord g_open = {};       // the frame being recorded
 FrameRecord g_ring[kKeptFrames] = {};
@@ -137,11 +135,8 @@ void LogSpike(const FrameRecord& frame, uint64_t medianNs) {
 }
 
 bool OnOwnerThread() {
-    if (!g_haveOwner) {
-        g_owner = std::this_thread::get_id();
-        g_haveOwner = true;
-    }
-    return g_owner == std::this_thread::get_id();
+    static const std::thread::id owner = std::this_thread::get_id();
+    return owner == std::this_thread::get_id();
 }
 
 void ResolveLog() {
@@ -156,7 +151,7 @@ void LogSummary() {
     if (!Summarize(120, s)) return;
     std::fprintf(stderr, "WarcraftXL profiler: %.1f fps, frame %.2f ms, %.0f draws, %.0f tris over %u frames |",
                  s.fps, s.frameMs, s.drawCalls, s.triangles, s.frames);
-    const uint32_t zoneCount = UiDetailEnabled() ? Count : UiLayout;
+    const uint32_t zoneCount = UiDetailEnabled() ? AsyncLoadPoll : UiLayout;
     for (uint32_t i = 0; i < zoneCount; ++i)
     {
         const int precision = (i == M2TransparentSort || i >= UiLayout) ? 3 : 2;
