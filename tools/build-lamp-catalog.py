@@ -7,9 +7,11 @@ from pathlib import Path
 import re
 import struct
 
-LAMP = re.compile(r"lamp|lantern|torch|brazier|campfire|candle|chandelier|streetlight|lightpost|firepit|forge|sconce")
+LAMP = re.compile(r"lamp|lantern|torch|brazier|campfire|bonfire|hearth|fireplace|candle|chandelier|streetlight|lightpost|firepit|forge|sconce")
 EXCLUDED = re.compile(r"broken|unlit|extinguished|weapon|spell|projectile|burning|invisible")
 ADDITIVE = {3, 4, 7}
+TORCH = re.compile(rb"torch|sconce")
+FIRE = re.compile(rb"brazier|campfire|bonfire|hearth|fireplace|forge|firepit")
 # This fixture illuminates its glass with a mesh material and has no emitter.
 # The offset is at the centre of the lantern head in its legacy model geometry.
 MESH_LAMPS = {
@@ -195,8 +197,14 @@ def main():
             light = entry(data, modern=name in MODERN_LAMPS) if data else None
             if light is not None:
                 base = name.rsplit(b"\\", 1)[-1]
-                radius, strength = (2.5, 0.5) if b"candle" in base else (13, 0.85)
-                light = (*light, radius, strength)
+                x, y, z, red, green, blue = light
+                radius, strength = 13, 0.85
+                if b"candle" in base:
+                    radius, strength = 2.5, 0.5
+                elif TORCH.search(base) or FIRE.search(base):
+                    radius = 7 if TORCH.search(base) else 8
+                    green, blue = green * 0.78, blue * 0.52
+                light = (x, y, z, red, green, blue, radius, strength)
             elif data and data[:8] == b"MD20\x08\x01\0\0" and len(data) >= 0x130:
                 if not struct.unpack_from("<I", data, 0x108)[0]:
                     light = MESH_LAMPS.get(name)
