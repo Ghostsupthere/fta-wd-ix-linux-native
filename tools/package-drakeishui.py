@@ -24,6 +24,19 @@ MEDIA = {".blp", ".tga", ".dds", ".ttf", ".otf", ".wav", ".mp3", ".ogg"}
 ASSET_PATH = re.compile(r'assets[/\\]+([^"\'\r\n<>]+)', re.I)
 
 
+COMPAT = "linux_compat_bags.lua"
+
+
+def add_linux_compat(toc):
+    """List the Linux bag shim first in the TOC, ahead of every hook DrakeishUI installs."""
+    text = toc.decode("utf-8-sig")
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(newline)
+    first = next(i for i, line in enumerate(lines) if line.strip() and not line.lstrip().startswith("#"))
+    lines.insert(first, COMPAT)
+    return newline.join(lines).encode("utf-8")
+
+
 def index(root):
     return {path.relative_to(root).as_posix().casefold(): path
             for path in sorted(root.rglob("*")) if path.is_file() and ".git" not in path.parts}
@@ -103,11 +116,17 @@ def main():
         target = args.out / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
+        if origin == "windows" and relative.as_posix().casefold() == TOC.casefold():
+            target.write_bytes(add_linux_compat(target.read_bytes()))
         data = target.read_bytes()
         if source.suffix.lower() in MEDIA:
             module = relative.parts[1] if relative.parts[0].casefold() == "assets" and len(relative.parts) > 2 else relative.parts[0]
             totals[module] += len(data)
         manifest.append(dict(path=relative.as_posix(), size=len(data), sha256=hashlib.sha256(data).hexdigest(), source=origin))
+    compat = Path(__file__).with_name("drakeishui") / COMPAT
+    data = compat.read_bytes()
+    (args.out / COMPAT).write_bytes(data)
+    manifest.append(dict(path=COMPAT, size=len(data), sha256=hashlib.sha256(data).hexdigest(), source="linux-compat"))
     for relative, original in MEDIA_ALIASES.items():
         if relative.casefold() in selected:
             continue
