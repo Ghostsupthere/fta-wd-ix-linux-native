@@ -85,7 +85,7 @@ else
 fi
 
 # Offline-built shader packs (derived from the client's own shaders; building them needs Wine).
-for pack in grass_instanced.pack grass_shaders.pack light_shaders.pack light_weather.pack wmo_shaders.pack lamp_models.csv; do
+for pack in grass_instanced.pack grass_shaders.pack light_shaders.pack light_weather.pack wmo_shaders.pack soft_particles.pack lamp_models.csv; do
     if [[ -n $visuals_override && -f $visuals_override/$pack ]]; then
         cp -- "$visuals_override/$pack" "$payload/Utils/WarcraftXL/visuals/"
     elif [[ -f $visuals/$pack ]]; then
