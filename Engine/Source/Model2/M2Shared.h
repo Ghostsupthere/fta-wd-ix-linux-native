@@ -73,6 +73,9 @@ class CM2Shared {
     /* 019C */ uint32_t m_lastUsedTime;
     /* 01A0 */ TSLink<CM2Shared> m_updateLink;
     bool m_loadFailed = false;
+#if defined(WOWDECOMP_LINUX)
+    uint32_t m_loadedSkinProfile = 0xFFFFFFFF;
+#endif
 
     static void LoadFailedCallback(void* param);
     static void LoadSucceededCallback(void* param);

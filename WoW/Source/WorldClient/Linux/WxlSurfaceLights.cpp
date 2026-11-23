@@ -1575,6 +1575,11 @@ std::string WxlNearbyModelDebug(float maxYards) {
         result += '\n';
         result += path.empty() ? "(unnamed)" : path;
         result += line;
+        if (m.data && m.model->m_shared->m_skinData) {
+            std::snprintf(line, sizeof(line), " skin=%u batches=%u",
+                m.model->m_shared->m_loadedSkinProfile, m.model->m_shared->m_skinData->m_batches.m_count);
+            result += line;
+        }
     }
     return result;
 }

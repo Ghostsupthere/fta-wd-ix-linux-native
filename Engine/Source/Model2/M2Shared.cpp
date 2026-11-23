@@ -1528,6 +1528,9 @@ int32_t CM2Shared::LoadSkinProfile(uint32_t profile) {
     this->m_asyncObject->m_isRead = 0;
     this->m_asyncObject->m_isProcessed = 0;
     this->m_asyncObject->m_priority = 125;
+#if defined(WOWDECOMP_LINUX)
+    this->m_loadedSkinProfile = profile;
+#endif
     AsyncFileReadObject(this->m_asyncObject, 1);
 
     return 1;
