@@ -12,7 +12,7 @@ static void Require(bool ok, const char* what) { if (!ok) { std::fprintf(stderr,
 
 int main() {
     Values defaults;
-    Require(kCount == kSpellLights + 1, "option indices match the table");
+    Require(kCount == kSpellLightRange + 1, "option indices match the table");
     for (const auto option : {kWeatherDrift, kShaftEdges, kCorpseLights, kRainRings, kWetSurfaces, kCloudShadows, kSpellLights})
         Require(defaults.v[option] == 0, "new visual controls default off");
     Require(defaults.v[kLightsEnabled] == 1 && defaults.v[kLightsModels] == 1 && defaults.v[kGrassMemoryMB] == 64, "defaults (surface lights on)");

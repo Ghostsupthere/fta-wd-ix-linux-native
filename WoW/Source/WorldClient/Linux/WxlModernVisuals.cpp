@@ -505,6 +505,13 @@ static void UpdateSpellLights(bool enabled) {
         }
         return 1;
     }, &scan);
+    const float brightness = static_cast<float>(options.v[env::kSpellLightStrength]);
+    const float reach = static_cast<float>(options.v[env::kSpellLightRange]);
+    for (unsigned i = 0; i < spellLights.count; ++i) {
+        for (float& channel : spellLights.lights[i].colour)
+            channel *= brightness;
+        spellLights.lights[i].reach = reach;
+    }
     static unsigned scans = 0;
     if (++scans % 50 == 1)
         VF_LOG_INFO("spell light prototype: %u/%zu sources, %u objects, %u effects, scan %.4f ms",

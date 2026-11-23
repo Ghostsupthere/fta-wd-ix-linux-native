@@ -11,6 +11,7 @@ struct SpellLight
     float position[3];
     float colour[3];
     float distanceSquared;
+    float reach = 5.0f;
 };
 
 struct SpellLightList
@@ -47,7 +48,7 @@ struct SpellLightList
         const float strength = 0.55f * std::min(alpha, 1.0f);
         lights[index] = {{position[0], position[1], position[2]},
                          {strength * (colour[0] / peak), strength * (colour[1] / peak), strength * (colour[2] / peak)},
-                         squared};
+                         squared, 5.0f};
         return true;
     }
 };

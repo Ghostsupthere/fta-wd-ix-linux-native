@@ -164,6 +164,10 @@ Check("Cloud shadows", "atmosphere.cloudShadows", 1, 0, nil,
 
 Check("Spell effect lights (experimental)", "atmosphere.spellLights", 1, 0, nil,
     "Adds up to two small lights from nearby additive spell particles.")
+Slider("Spell light brightness", "atmosphere.spellLightStrength", 1, 0, 0, 3, .05, "atmosphere.spellLights", nil,
+    "Multiplies the light from spell effects. 1 is the default; raise it if walls stay dark.")
+Slider("Spell light distance (yards)", "atmosphere.spellLightRange", 1, 0, 2, 16, .5, "atmosphere.spellLights", "%.1f",
+    "How far each spell light reaches across nearby surfaces.")
 
 Section("Water", 671)
 Check("Modern water", "water.modern", 1, 695)

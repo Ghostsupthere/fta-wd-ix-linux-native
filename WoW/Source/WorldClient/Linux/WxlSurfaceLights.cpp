@@ -574,7 +574,7 @@ void UpdateLights(float dt, const float eye[3]) {
         sl::Candidate light;
         std::memcpy(light.pos, spells.lights[i].position, sizeof(light.pos));
         std::memcpy(light.color, spells.lights[i].colour, sizeof(light.color));
-        light.radius = 5.0f * 16.0f / settings.radius;
+        light.radius = spells.lights[i].reach * 16.0f / settings.radius;
         light.flickerMode = sl::kFlickerOff;
         light.moving = true;
         light.supplemental = true;
