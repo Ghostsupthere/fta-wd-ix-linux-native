@@ -415,6 +415,8 @@ void CCharacterSelection::ShowCharacter() {
         return;
     }
 
+    if (!CCharacterSelection::m_modelFrame) return;
+
     CreatureDisplayInfoRec* displayRec = nullptr;
     CreatureModelDataRec* modelRec = nullptr;
     ComponentData data;
@@ -440,8 +442,6 @@ void CCharacterSelection::ShowCharacter() {
             return;
         }
 
-        CCharacterSelection::s_characterList[CCharacterSelection::s_selectionIndex].m_component = CCharacterComponent::AllocComponent();
-
         CHARACTER_INFO& info = CCharacterSelection::s_characterList[CCharacterSelection::s_selectionIndex].m_characterInfo;
         data.m_preferences.m_raceID = info.m_raceID;
         data.m_preferences.m_sexID = info.m_sexID;
@@ -451,7 +451,10 @@ void CCharacterSelection::ShowCharacter() {
         data.m_preferences.m_hairStyleId = info.m_hairStyleID;
         data.m_preferences.m_hairColorId = info.m_hairColorID;
         data.m_preferences.m_facialHairId = info.m_facialHairStyleID;
-        data.m_model = CCharacterSelection::m_modelFrame->GetScene()->CreateModel(playerRec->m_modelName, 0);
+        auto* scene = CCharacterSelection::m_modelFrame->GetScene();
+        data.m_model = scene ? scene->CreateModel(playerRec->m_modelName, 0) : nullptr;
+        if (!data.m_model) return;
+        CCharacterSelection::s_characterList[CCharacterSelection::s_selectionIndex].m_component = CCharacterComponent::AllocComponent();
         data.m_flags |= 0x2;
 
         CCharacterSelection::s_characterList[CCharacterSelection::s_selectionIndex].m_component->Init(&data, nullptr);
