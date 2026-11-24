@@ -21,6 +21,10 @@ struct QuestLogEntry {
     /* 000C */ int32_t m_expired;
 };
 
+inline bool QuestPOIObjectiveMatches(int32_t index, uint32_t mask) {
+    return static_cast<uint32_t>(index) < 32 && (mask & (uint32_t{1} << index)) != 0;
+}
+
 struct QuestPOIPoint {
     /* 0000 */ int32_t m_x;
     /* 0004 */ int32_t m_y;

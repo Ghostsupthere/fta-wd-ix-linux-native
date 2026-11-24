@@ -2073,7 +2073,7 @@ int32_t CGQuestLog::UpdateAllQuestPOI() {
                 if (blob.m_objectiveIndex != -1) {
                     continue;
                 }
-            } else if (blob.m_objectiveIndex == -1 || !((1 << blob.m_objectiveIndex) & poi.m_objectiveMask)) {
+            } else if (!QuestPOIObjectiveMatches(blob.m_objectiveIndex, poi.m_objectiveMask)) {
                 continue;
             }
 
@@ -2681,7 +2681,7 @@ int32_t CGQuestLog::GetQuestWorldMapAreaID(int32_t questId, int32_t* floor) {
                     if (blob->m_objectiveIndex != -1) {
                         continue;
                     }
-                } else if (blob->m_objectiveIndex == -1 || !((1 << blob->m_objectiveIndex) & objectives)) {
+                } else if (!QuestPOIObjectiveMatches(blob->m_objectiveIndex, objectives)) {
                     continue;
                 }
 
@@ -2833,7 +2833,7 @@ static float GetQuestPOIDistance(int32_t questId) {
             if (blob->m_objectiveIndex != -1) {
                 continue;
             }
-        } else if (blob->m_objectiveIndex == -1 || !((1 << blob->m_objectiveIndex) & objectives)) {
+        } else if (!QuestPOIObjectiveMatches(blob->m_objectiveIndex, objectives)) {
             continue;
         }
 
