@@ -1,5 +1,6 @@
 #include "Engine/Source/Model2/M2ParticleBuild.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -39,6 +40,7 @@ struct Run {
     uint32_t count;
     uint8_t* arena;
     std::atomic<uint32_t> next;
+    uint32_t claimSize;
 };
 
 std::unordered_map<const void*, Store> g_stores;
@@ -56,19 +58,20 @@ void BuildTask(void* param) {
     const bool timed = M2ParticleJobs::LoggingEnabled();
 
     for (;;) {
-        const uint32_t i = run->next.fetch_add(1, std::memory_order_relaxed);
+        const uint32_t first = run->next.fetch_add(run->claimSize, std::memory_order_relaxed);
+        if (first >= run->count) break;
 
-        if (i >= run->count) {
-            break;
-        }
+        const uint32_t end = first + std::min(run->claimSize, run->count - first);
+        for (uint32_t i = first; i < end; ++i) {
+            Entry& entry = run->entries[i];
+            const uint64_t start = timed ? M2ParticleJobs::NowNs() : 0;
+            entry.emitter->BuildVertexBlock(entry.hasFrame ? &entry.frame : nullptr, entry.view, entry.format,
+                entry.count, run->arena + entry.offset, entry.block);
+            entry.built = true;
 
-        Entry& entry = run->entries[i];
-        const uint64_t start = timed ? M2ParticleJobs::NowNs() : 0;
-        entry.emitter->BuildVertexBlock(entry.hasFrame ? &entry.frame : nullptr, entry.view, entry.format, entry.count, run->arena + entry.offset, entry.block);
-        entry.built = true;
-
-        if (timed) {
-            g_busyNs.fetch_add(M2ParticleJobs::NowNs() - start, std::memory_order_relaxed);
+            if (timed) {
+                g_busyNs.fetch_add(M2ParticleJobs::NowNs() - start, std::memory_order_relaxed);
+            }
         }
     }
 }
@@ -194,6 +197,12 @@ uint32_t Prebuild(const void* scene, const Item* items, uint32_t itemCount, cons
     run.count = blocks;
     run.arena = store.arena.data();
     run.next.store(0, std::memory_order_relaxed);
+    static const bool batchBuild = [] {
+        const char* value = std::getenv("WXL_PARTICLE_BUILD_CHUNKS");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    // Small ranges amortize atomic claims while leaving individual vertex blocks intact.
+    run.claimSize = batchBuild && dispatcher && allowThreads && blocks >= 32 ? 4 : 1;
 
     if (dispatcher && allowThreads && blocks > 1) {
         dispatcher(context, BuildTask, &run);
