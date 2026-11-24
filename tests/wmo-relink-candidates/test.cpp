@@ -198,7 +198,12 @@ int main(int argc, char** argv) {
     assert((cell == Cell{-1, -1, true}));
     assert(!CellForRay({{0, 0, 0}, {.0001f, 0, 1}}, cell));
     assert(!CellForRay({{std::numeric_limits<float>::infinity(), 0, 0}, {0, 0, 1}}, cell));
-    const auto* warm = GetMask(1, 0, {-1, -1, true}, synthetic.faces.data(), synthetic.faces.size(), synthetic.View());
-    assert(warm && warm == GetMask(1, 0, {-1, -1, true}, synthetic.faces.data(), synthetic.faces.size(), synthetic.View()));
-    assert(!GetMask(0, 0, {-1, -1, true}, synthetic.faces.data(), synthetic.faces.size(), synthetic.View()));
+    Lookup lookup;
+    const auto* warm = GetMask(1, 0, {-1, -1, true}, synthetic.faces.data(), synthetic.faces.size(),
+        synthetic.View(), &lookup);
+    assert(warm && lookup == Lookup::Built);
+    assert(warm == GetMask(1, 0, {-1, -1, true}, synthetic.faces.data(), synthetic.faces.size(),
+        synthetic.View(), &lookup) && lookup == Lookup::Hit);
+    assert(!GetMask(0, 0, {-1, -1, true}, synthetic.faces.data(), synthetic.faces.size(),
+        synthetic.View(), &lookup) && lookup == Lookup::Unavailable);
 }

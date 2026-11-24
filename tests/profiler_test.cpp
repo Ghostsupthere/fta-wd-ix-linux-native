@@ -1,7 +1,11 @@
 #include "Engine/Source/Base/Profiler.h"
+#include "Engine/Source/Tempest/C3Vector.h"
+#include "Engine/Source/Tempest/C44Matrix.h"
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <thread>
 
 static void Sleep(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
@@ -198,7 +202,20 @@ int main() {
         auto* counters = Profiler::MovementWorkScope::Active();
         assert((counters != nullptr) == workEnabled);
         if (counters) {
-            *counters = {4, 2, 3, 2, 1, 1, 56, 41, 60, {}, {}};
+            counters->units = 4;
+            counters->changed = 2;
+            counters->relinks = 3;
+            counters->positionChanged = 2;
+            counters->facingChanged = 1;
+            counters->pitchChanged = 1;
+            counters->rayTriangleTests = 56;
+            counters->linkTriangleTests = 41;
+            counters->linkBspFaces = 60;
+            counters->candidateHit = 6;
+            counters->candidateMiss = 4;
+            counters->candidateDeferred = 2;
+            counters->candidateUnsupportedRay = 8;
+            counters->candidateSmallLeaf = 10;
             counters->ObserveDisplacement(0.0, true);
             counters->ObserveDisplacement(0.002 * 0.002, false);
             counters->ObserveDisplacement(0.01 * 0.01, false);
@@ -235,6 +252,11 @@ int main() {
     assert(s.movement.rayTriangleTests == (workEnabled ? 28.0 : 0.0));
     assert(s.movement.linkTriangleTests == (workEnabled ? 20.5 : 0.0));
     assert(s.movement.linkBspFaces == (workEnabled ? 30.0 : 0.0));
+    assert(s.movement.candidateHit == (workEnabled ? 3.0 : 0.0));
+    assert(s.movement.candidateMiss == (workEnabled ? 2.0 : 0.0));
+    assert(s.movement.candidateDeferred == (workEnabled ? 1.0 : 0.0));
+    assert(s.movement.candidateUnsupportedRay == (workEnabled ? 4.0 : 0.0));
+    assert(s.movement.candidateSmallLeaf == (workEnabled ? 5.0 : 0.0));
     for (double n : s.movement.displacement) assert(n == (workEnabled ? 0.5 : 0.0));
     for (uint32_t i = 0; i < Profiler::MovementDisplacementBins; ++i) {
         assert(s.movement.relinkDisplacement[i] == (workEnabled && (i == 0 || i == 3) ? 0.5 : 0.0));
@@ -243,5 +265,81 @@ int main() {
     assert(s.zones[Profiler::TerrainD3dSubmit].calls == (spikesEnabled ? 0.5 : 0.0));
     assert(s.zones[Profiler::TerrainD3dSubmit].selfDraws == (spikesEnabled ? 0.5 : 0.0));
     assert(s.zones[Profiler::Terrain].selfDraws == (spikesEnabled ? 0.0 : 0.5));
+    const auto optIn = [](const char* name) {
+        const char* value = std::getenv(name);
+        return value && std::strcmp(value, "1") == 0;
+    };
+    const char* interval = std::getenv("WXL_PROFILE_LOG");
+    const bool periodic = interval && std::atof(interval) > 0;
+    const bool animation = periodic && optIn("WXL_PROFILE_M2_ANIMATION");
+    const bool cull = periodic && optIn("WXL_PROFILE_CULL_STABILITY");
+    const bool buffers = periodic && optIn("WXL_PROFILE_BUFFER_WRITES");
+    const bool batching = periodic && optIn("WXL_PROFILE_M2_BATCHING");
+    const bool night = workEnabled && optIn("WXL_PROFILE_NIGHT_LIGHTS");
+    using Stage = Profiler::M2AnimationStage;
+    const auto parallel = static_cast<uint32_t>(Stage::Parallel);
+    const auto serial = static_cast<uint32_t>(Stage::Serial);
+    const int model = 1, otherModel = 2;
+    const C3Vector position;
+    const C44Matrix view, projection;
+    C44Matrix changedProjection = projection;
+    changedProjection.a0 += 1.0f;
+
+    Profiler::Reset();
+    Profiler::EndFrame();
+    Profiler::ObserveCullCamera(0, position, view, projection);
+    Profiler::ObserveCullCamera(0, position, view, changedProjection); // secondary view
+    Profiler::CountM2Animation(&model, Stage::Parallel);
+    std::thread animationWorker([&] {
+        Profiler::CountM2Animation(&model, Stage::Parallel);
+        Profiler::CountM2Animation(&otherModel, Stage::Parallel);
+    });
+    animationWorker.join();
+    Profiler::CountM2Animation(&model, Stage::Serial);
+    {
+        Profiler::Scope lock(Profiler::BufferLockZone());
+        Profiler::CountD3dBufferLock(512);
+    }
+    {
+        Profiler::Scope lamps(Profiler::NightLightsZone(Profiler::StaticLampScan));
+    }
+    if (Profiler::M2BatchProbeEnabled()) {
+        Profiler::CountM2BatchOpportunity(Profiler::M2BatchOpportunity::TransformOnly);
+    }
+    Profiler::EndFrame();
+    assert(Profiler::Summarize(1, s) == 1);
+    assert(s.cullCameraSamples == (cull ? 1.0 : 0.0) && s.cullCameraComparisons == 0.0);
+    assert(s.m2AnimationCalls[parallel] == (animation ? 3.0 : 0.0));
+    assert(s.m2RepeatedModels[parallel] == (animation ? 1.0 : 0.0));
+    assert(s.m2MaxRepeats[parallel] == (animation ? 1 : 0));
+    assert(s.m2AnimationCalls[serial] == (animation ? 1.0 : 0.0));
+    assert(s.m2MaxRepeats[serial] == 0);
+    assert(s.m2AnimationDropped == 0.0);
+    assert(s.d3dBufferLocks == (buffers ? 1.0 : 0.0));
+    assert(s.d3dBufferMappedBytes == (buffers ? 512.0 : 0.0));
+    assert(s.zones[Profiler::D3dBufferLock].calls == (buffers || spikesEnabled ? 1.0 : 0.0));
+    assert(s.zones[Profiler::StaticLampScan].calls == (night ? 1.0 : 0.0));
+    assert(s.m2BatchCounts[static_cast<uint32_t>(Profiler::M2BatchOpportunity::TransformOnly)] == (batching ? 1.0 : 0.0));
+
+    Profiler::ObserveCullCamera(0, position, view, projection);
+    Profiler::CountM2Animation(&model, Stage::Parallel);
+    Profiler::EndFrame();
+    assert(Profiler::Summarize(1, s) == 1);
+    assert(s.cullCameraUnchanged == (cull ? 1.0 : 0.0));
+    assert(s.m2AnimationCalls[parallel] == (animation ? 1.0 : 0.0));
+    assert(s.m2MaxRepeats[parallel] == 0); // table clears between presented frames
+    assert(Profiler::Summarize(2, s) == 2 && s.m2MaxRepeats[parallel] == (animation ? 1 : 0));
+
+    Profiler::ObserveCullCamera(0, position, view, changedProjection);
+    Profiler::EndFrame();
+    assert(Profiler::Summarize(1, s) == 1);
+    assert(s.cullCameraComparisons == (cull ? 1.0 : 0.0) && s.cullCameraUnchanged == 0.0);
+    Profiler::ObserveCullCamera(1, position, view, changedProjection);
+    Profiler::EndFrame();
+    assert(Profiler::Summarize(1, s) == 1 && s.cullCameraComparisons == 0.0);
+    Profiler::EndFrame(); // no world camera on this presented frame
+    Profiler::ObserveCullCamera(1, position, view, changedProjection);
+    Profiler::EndFrame();
+    assert(Profiler::Summarize(1, s) == 1 && s.cullCameraComparisons == 0.0);
     return 0;
 }
