@@ -140,6 +140,9 @@ struct MovementTotals {
     double relinkDisplacement[MovementDisplacementBins];
 };
 
+enum class M2AnimationStage : uint32_t { Parallel, Serial, Bones, Texture, Count };
+inline constexpr uint32_t M2AnimationStages = static_cast<uint32_t>(M2AnimationStage::Count);
+
 struct Summary {
     double frameMs;      // average time between frames
     double fps;
@@ -153,6 +156,10 @@ struct Summary {
     MovementTotals movement;
     double d3dBufferLocks;
     double d3dBufferMappedBytes;
+    double m2AnimationCalls[M2AnimationStages];
+    double m2RepeatedModels[M2AnimationStages];
+    uint32_t m2MaxRepeats[M2AnimationStages];
+    double m2AnimationDropped;
 };
 
 struct Scope {
@@ -221,6 +228,7 @@ private:
 };
 
 void CountD3dBufferLock(uint32_t bytes);
+void CountM2Animation(const void* model, M2AnimationStage stage);
 bool M2DiagnosticsEnabled();
 bool UiDetailEnabled();
 Id UiDetailZone(Id detail, Id parent);

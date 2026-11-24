@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
+#include <mutex>
 #include <thread>
 
 #if defined(WOWDECOMP_LINUX)
@@ -70,6 +71,10 @@ struct FrameRecord {
     MovementWorkScope::Counters movement;
     uint32_t d3dBufferLocks;
     uint64_t d3dBufferMappedBytes;
+    uint32_t m2AnimationCalls[M2AnimationStages];
+    uint32_t m2RepeatedModels[M2AnimationStages];
+    uint32_t m2MaxRepeats[M2AnimationStages];
+    uint32_t m2AnimationDropped;
 };
 
 uint64_t NowNs() {
@@ -123,6 +128,49 @@ bool BufferWritesEnabled() {
         return PeriodicLoggingEnabled() && value && std::strcmp(value, "1") == 0;
     }();
     return enabled;
+}
+
+bool M2AnimationEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_PROFILE_M2_ANIMATION");
+        return PeriodicLoggingEnabled() && value && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+
+// Workers write to this table. Take and clear the sample when the owner presents.
+constexpr uint32_t kAnimationSlots = 8192;
+constexpr uint32_t kAnimationProbes = 32;
+struct AnimationEntry {
+    const void* model;
+    uint32_t calls[M2AnimationStages];
+};
+std::mutex g_animationMutex;
+AnimationEntry g_animation[kAnimationSlots] = {};
+uint32_t g_animationTouched[kAnimationSlots];
+uint32_t g_animationUsed = 0;
+uint32_t g_animationDropped = 0;
+
+void FinishAnimationFrame(FrameRecord* frame) {
+    if (!M2AnimationEnabled()) return;
+    std::lock_guard<std::mutex> lock(g_animationMutex);
+    for (uint32_t i = 0; i < g_animationUsed; ++i) {
+        auto& entry = g_animation[g_animationTouched[i]];
+        if (frame) {
+            for (uint32_t stage = 0; stage < M2AnimationStages; ++stage) {
+                const uint32_t calls = entry.calls[stage];
+                frame->m2AnimationCalls[stage] += calls;
+                if (calls > 1) {
+                    ++frame->m2RepeatedModels[stage];
+                    frame->m2MaxRepeats[stage] = std::max(frame->m2MaxRepeats[stage], calls - 1);
+                }
+            }
+        }
+        entry = {};
+    }
+    if (frame) frame->m2AnimationDropped = g_animationDropped;
+    g_animationUsed = 0;
+    g_animationDropped = 0;
 }
 
 uint64_t SpikeBaseline() {
@@ -226,6 +274,14 @@ void LogSummary() {
     if (BufferWritesEnabled()) {
         std::fprintf(stderr, " | D3D9 buffer/frame locks=%.2f mappedBytes=%.2f",
             s.d3dBufferLocks, s.d3dBufferMappedBytes);
+    }
+    if (M2AnimationEnabled()) {
+        constexpr const char* stages[M2AnimationStages] = {"mt", "st", "bones", "texture"};
+        std::fprintf(stderr, " | M2 animation/frame dropped=%.2f", s.m2AnimationDropped);
+        for (uint32_t i = 0; i < M2AnimationStages; ++i) {
+            std::fprintf(stderr, " %sCalls=%.2f %sRepeated=%.2f %sMaxRepeats=%u",
+                stages[i], s.m2AnimationCalls[i], stages[i], s.m2RepeatedModels[i], stages[i], s.m2MaxRepeats[i]);
+        }
     }
     if (M2DiagnosticsEnabled()) {
         std::fprintf(stderr, " | M2 draws/frame");
@@ -445,6 +501,26 @@ void CountD3dBufferLock(uint32_t bytes) {
     g_open.d3dBufferMappedBytes += bytes;
 }
 
+void CountM2Animation(const void* model, M2AnimationStage stage) {
+    if (!M2AnimationEnabled() || !Enabled()) return;
+    uintptr_t hash = reinterpret_cast<uintptr_t>(model) >> 4;
+    hash ^= hash >> 13;
+    std::lock_guard<std::mutex> lock(g_animationMutex);
+    for (uint32_t probe = 0; probe < kAnimationProbes; ++probe) {
+        const uint32_t index = (hash + probe) & (kAnimationSlots - 1);
+        auto& entry = g_animation[index];
+        if (!entry.model) {
+            entry.model = model;
+            g_animationTouched[g_animationUsed++] = index;
+        }
+        if (entry.model == model) {
+            ++entry.calls[static_cast<uint32_t>(stage)];
+            return;
+        }
+    }
+    ++g_animationDropped;
+}
+
 bool M2DiagnosticsEnabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("WXL_PROFILE_M2_DRAWS");
@@ -473,6 +549,7 @@ void CountDraw(uint32_t primitives) {
 void EndFrame() {
     if (!g_enabled.load(std::memory_order_relaxed) || !OnOwnerThread()) return;
     const uint64_t now = NowNs();
+    FinishAnimationFrame(&g_open);
     g_open.frameId = g_frameId++;
     uint64_t medianNs = 0;
     if (g_lastFrameEnd) {
@@ -532,6 +609,12 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
         const FrameRecord& r = g_ring[(g_next + kKeptFrames - 1 - k) % kKeptFrames];
         frameNs += static_cast<double>(r.frameNs);
         draws += r.draws;
+        out.m2AnimationDropped += r.m2AnimationDropped;
+        for (uint32_t i = 0; i < M2AnimationStages; ++i) {
+            out.m2AnimationCalls[i] += r.m2AnimationCalls[i];
+            out.m2RepeatedModels[i] += r.m2RepeatedModels[i];
+            out.m2MaxRepeats[i] = std::max(out.m2MaxRepeats[i], r.m2MaxRepeats[i]);
+        }
         out.d3dBufferLocks += r.d3dBufferLocks;
         out.d3dBufferMappedBytes += r.d3dBufferMappedBytes;
         triangles += static_cast<double>(r.triangles);
@@ -572,6 +655,11 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
     out.frameMs = frameNs / n * 1.0e-6;
     out.fps = out.frameMs > 0.0 ? 1000.0 / out.frameMs : 0.0;
     out.drawCalls = draws / n;
+    out.m2AnimationDropped /= n;
+    for (uint32_t i = 0; i < M2AnimationStages; ++i) {
+        out.m2AnimationCalls[i] /= n;
+        out.m2RepeatedModels[i] /= n;
+    }
     out.d3dBufferLocks /= n;
     out.d3dBufferMappedBytes /= n;
     if (m2Diagnostics) {
@@ -612,6 +700,7 @@ void SetEnabled(bool enabled) {
 }
 
 void Reset() {
+    FinishAnimationFrame(nullptr);
     g_count = 0;
     g_next = 0;
     g_lastFrameEnd = 0;

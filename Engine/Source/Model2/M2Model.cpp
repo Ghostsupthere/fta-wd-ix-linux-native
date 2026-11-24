@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
@@ -2864,6 +2865,7 @@ void CM2Model::AnimateST() {
         return;
     }
 
+    Profiler::CountM2Animation(this, Profiler::M2AnimationStage::Serial);
     M2Data* data = this->m_shared->m_data;
     CM2Model* parent = this->m_attachParent;
 
@@ -4907,6 +4909,7 @@ void CM2Model::AnimateParticlesMT() {
 // VERIFY: 37a58209 manual
 // OFFSET: 0x0082D6F0
 void CM2Model::AnimateTextureTransformsMT() {
+    Profiler::CountM2Animation(this, Profiler::M2AnimationStage::Texture);
     static C3Vector center(0.5f, 0.5f, 0.0f);
 
     for (uint32_t i = 0; i < this->m_shared->m_data->m_textureTransforms.m_count; i++) {
@@ -5146,6 +5149,7 @@ void CM2Model::AnimateMTSimple(const C44Matrix* view, const C3Vector& diffuse, c
         return;
     }
 
+    Profiler::CountM2Animation(this, Profiler::M2AnimationStage::Parallel);
     M2Data* data = this->m_shared->m_data;
     CM2Model* parent = this->m_attachParent;
 
@@ -5266,6 +5270,7 @@ void CM2Model::AnimateMTSimple(const C44Matrix* view, const C3Vector& diffuse, c
         bone->m_sequence.m_sourceBoneIndex = 0;
     }
 
+    Profiler::CountM2Animation(this, Profiler::M2AnimationStage::Bones);
     *this->m_boneMatrices = this->m_matrixF4;
 
     for (uint32_t i = 0; i < data->m_textureWeights.m_count; i++) {
@@ -5510,6 +5515,7 @@ void CM2Model::AnimateMT(const C44Matrix* view, const C3Vector& diffuse, const C
         return;
     }
 
+    Profiler::CountM2Animation(this, Profiler::M2AnimationStage::Parallel);
     M2Data* data = this->m_shared->m_data;
     CM2Model* parent = this->m_attachParent;
 
@@ -5590,6 +5596,7 @@ void CM2Model::AnimateMT(const C44Matrix* view, const C3Vector& diffuse, const C
         this->m_lastAnimTime = time;
     }
 
+    Profiler::CountM2Animation(this, Profiler::M2AnimationStage::Bones);
     for (uint32_t i = 0; i < data->m_bones.m_count; i++) {
         M2ModelBone* bone = &this->m_bones[i];
         M2CompBone* boneData = &data->m_bones[i];
