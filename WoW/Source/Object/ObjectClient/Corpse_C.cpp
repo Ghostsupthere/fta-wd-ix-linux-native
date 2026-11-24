@@ -86,7 +86,15 @@ void CGCorpse_C::PostInit(uint32_t time, const CClientObjCreate& create, bool a3
 
     this->CGObject_C::PostInit(time, create, a3);
 
+    if (!(this->m_corpse->m_corpseFieldFlags & 0x1) && this->m_corpse->m_corpseFieldOwner == ClntObjMgrGetActivePlayer()) {
+        CGGameUI::SetActiveCorpse(this->m_obj->m_guid);
+    }
+
     CM2Model* model = this->m_worldModel;
+    if (!model) {
+        return;
+    }
+
     int32_t useComponent = 1;
     CreatureDisplayInfoRec* displayRec = g_creatureDisplayInfoDB.GetRecord(this->m_corpse->m_corpseFieldDisplayId);
     CreatureModelDataRec* modelRec = nullptr;
@@ -173,17 +181,8 @@ void CGCorpse_C::PostInit(uint32_t time, const CClientObjCreate& create, bool a3
         }
     }
 
-    if ((this->m_corpse->m_corpseFieldDynamicFlags & 0x1) && !this->m_lootEffect) {
-        const SpellVisualEffectNameRec* effect = GetSpecialSpellVisualEffectNameRec(SPECIALEFFECT_LOOTART);
-        this->m_lootEffect = this->m_worldModel->m_scene->CreateModel(effect->m_fileName, 0);
-
-        if (this->m_lootEffect) {
-            this->m_lootEffect->AttachToParent(this->m_worldModel, 19, nullptr, 0);
-        }
-    }
-
-    if (!(this->m_corpse->m_corpseFieldFlags & 0x1) && this->m_corpse->m_corpseFieldOwner == ClntObjMgrGetActivePlayer()) {
-        CGGameUI::SetActiveCorpse(this->m_obj->m_guid);
+    if (this->m_corpse->m_corpseFieldDynamicFlags & 0x1) {
+        this->ShowLootEffect();
     }
 }
 
@@ -276,14 +275,18 @@ void CGCorpse_C::Initialize() {
 // VERIFY: b1c4d0d1 auto
 // OFFSET: 0x00705900
 void CGCorpse_C::ShowLootEffect() {
-    if (this->m_lootEffect) {
+    if (this->m_lootEffect || !this->m_worldModel) {
         return;
     }
 
     const SpellVisualEffectNameRec* effect = GetSpecialSpellVisualEffectNameRec(SPECIALEFFECT_LOOTART);
+    if (!effect) {
+        return;
+    }
+
     this->m_lootEffect = this->m_worldModel->m_scene->CreateModel(effect->m_fileName, 0);
 
-    if (this->m_lootEffect) {
+    if (this->m_lootEffect || !this->m_worldModel) {
         this->m_lootEffect->AttachToParent(this->m_worldModel, 19, nullptr, 0);
     }
 }
