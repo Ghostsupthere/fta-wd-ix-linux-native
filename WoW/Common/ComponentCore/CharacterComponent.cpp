@@ -1,6 +1,7 @@
 #if defined(WOWDECOMP_LINUX)
 #if defined(WOWDECOMP_LINUX)
 #include "WoW/Common/ComponentCore/CharacterCompositor.hpp"
+#include "WoW/Common/ComponentCore/CharacterSectionCache.hpp"
 #include "Engine/Source/FrameScript/FrameScript.h"
 #endif
 #include "EquipmentFit.h"
@@ -4534,8 +4535,13 @@ void CCharacterComponent::PasteScale(HTEXTURECACHE texture, MipBits* dstMips, co
         while (shift > 1) {
             const unsigned edge = s_textureSize >> mip;
             auto* output = dstMips->m_mip[mip] + pos.y * edge + pos.x;
-            wxl::compositor::ScaleSection(pixels, palette, srcInfo.m_width, srcInfo.m_height,
-                srcInfo.m_alphaSize, x, y, width, height, output, edge, shift);
+            static const bool cacheEnabled = WxlProfileEnabled("WXL_CHARACTER_SECTION_CACHE", false);
+            if (!cacheEnabled || srcInfo.m_alphaSize != 0 ||
+                !wxl::compositor::ReplayOpaqueScale(pixels, palette, srcInfo.m_width, srcInfo.m_height,
+                    x, y, width, height, output, edge, shift)) {
+                wxl::compositor::ScaleSection(pixels, palette, srcInfo.m_width, srcInfo.m_height,
+                    srcInfo.m_alphaSize, x, y, width, height, output, edge, shift);
+            }
             pos.x >>= 1;
             pos.y >>= 1;
             size.x >>= 1;
