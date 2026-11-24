@@ -929,13 +929,18 @@ int32_t CBLPFile::Open(const char* fileName, int32_t flags) {
         return 0;
     }
 
-    s_blpFileLoadBuffer.SetCount(SFileGetFileSize(file, nullptr));
+    const uint32_t size = SFileGetFileSize(file, nullptr);
+    if (size < sizeof(BLPHeader) || size == UINT32_MAX) {
+        SFileCloseFile(file);
+        return 0;
+    }
+    s_blpFileLoadBuffer.SetCount(size);
 
-    uint32_t bytesRead;
-    SFileReadFile(file, s_blpFileLoadBuffer.Ptr(), s_blpFileLoadBuffer.Count(), &bytesRead, nullptr, 0);
+    uint32_t bytesRead = 0;
+    const bool read = SFileReadFile(file, s_blpFileLoadBuffer.Ptr(), size, &bytesRead, nullptr, 0);
     SFileCloseFile(file);
 
-    return this->Source(s_blpFileLoadBuffer.Ptr());
+    return read && bytesRead == size ? this->Source(s_blpFileLoadBuffer.Ptr()) : 0;
 }
 
 // VERIFY: 3d8e87b0 manual
