@@ -53,6 +53,16 @@ def main():
                 .replace("void* param, NETMESSAGE msgId, uint32_t time,", "void*, NETMESSAGE, uint32_t,")
             + portion("Engine/Source/BLPFile/blp.cpp", "int32_t CBLPFile::Open(", "\n}", True)
         )
+        (work / "preview_guard.inc").write_text(
+            portion("WoW/Source/Glue/CharacterSelection.cpp", "        auto* scene = CCharacterSelection::m_modelFrame->GetScene();", "        data.m_flags |= 0x2;")
+        )
+        (work / "pet_guard.inc").write_text(
+            portion("WoW/Source/Ui/PetInfo.cpp", "        CVehicle_C* vehicle = nullptr;\n        if (s_pets.m_count", "            CGActionBar::UpdateTemporaryActionBar")
+        )
+        (work / "name_guard.inc").write_text(
+            portion("WoW/Source/Game/GameClient/PlayerName.cpp", "    if (!(this->m_flags & 0x4) && (!object->m_worldModel", "\n    for ", False)
+                .replace("this->m_flags", "flags").replace("return;", "return false;")
+        )
         for name in ("hardening", "processing", "network", "batch2"):
             executable = work / name
             subprocess.run([*shlex.split(os.environ.get("CXX", "g++")), "-std=c++17", "-O2", "-UNDEBUG",

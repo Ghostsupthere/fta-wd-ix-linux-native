@@ -79,6 +79,62 @@ struct CBLPFile {
     void Close() {}
     int Source(void*, size_t) { ++checkCalls; return 1; }
 };
+struct PreviewModel { bool drawable = true; bool IsDrawable(int, int) const { return drawable; } };
+struct PreviewScene {
+    PreviewModel* model = nullptr;
+    PreviewModel* CreateModel(const char*, int) { return model; }
+};
+struct ModelFrame {
+    PreviewScene* scene = nullptr;
+    PreviewScene* GetScene() const { return scene; }
+};
+struct CCharacterComponent {
+    static inline int allocations = 0;
+    static CCharacterComponent* AllocComponent() { static CCharacterComponent result; ++allocations; return &result; }
+};
+struct CCharacterSelection {
+    static inline ModelFrame* m_modelFrame = nullptr;
+    static inline int s_selectionIndex = 0;
+    static inline struct { CCharacterComponent* m_component; } s_characterList[1]{};
+};
+void CreatePreview() {
+    struct { PreviewModel* m_model; } data;
+    static struct { const char* m_modelName; } record{"fixture.m2"};
+    auto* playerRec = &record;
+#include "preview_guard.inc"
+}
+
+struct VehicleSeatRec { int m_vehicleAbilityDisplay; };
+struct CVehicle_C {
+    VehicleSeatRec* seat;
+    VehicleSeatRec* GetVehicleSeatRec(uint8_t) const { return seat; }
+};
+struct CGUnit_C { CVehicle_C* m_vehicle; };
+CGUnit_C* unit = nullptr;
+CGUnit_C* ClntObjMgrObjectPtr(WOWGUID, int, const char*, int) { return unit; }
+constexpr int TYPE_UNIT = 2;
+struct CGPetInfo { static WOWGUID GetPet(int) { return {42}; } };
+static bool UpdatePet(int& active) {
+    struct { WOWGUID* m_data; int m_count; } s_pets;
+    WOWGUID pet{42};
+    s_pets = {&pet, 1};
+    struct Player {
+        uint64_t GetTransportGUID() const { return 42; }
+        struct { int m_transportSeat; } m_movementData{0};
+    } mock;
+    auto* player = &mock;
+#include "pet_guard.inc"
+        return true;
+    }
+    return false;
+}
+
+bool UpdateName(unsigned flags, PreviewModel* model) {
+    struct { PreviewModel* m_worldModel; } storage{model};
+    auto* object = &storage;
+#include "name_guard.inc"
+    return true;
+}
 #include "batch2.inc"
 
 static void Put32(std::vector<char>& bytes, size_t offset, uint32_t value) {
@@ -126,6 +182,29 @@ int main(int argc, char** argv) {
     empty.Put(uint32_t{0});
     assert(Packet_MSG_BATTLEGROUND_PLAYER_POSITIONS(nullptr, 0, 0, &empty));
     assert(CGBattlefieldInfo::m_numPlayerPositions == 0 && CGBattlefieldInfo::m_flagCarriers[0].m_guid == 0);
+
+    PreviewScene scene;
+    ModelFrame frame{&scene};
+    CCharacterSelection::m_modelFrame = &frame;
+    CreatePreview();
+    assert(!CCharacterComponent::allocations);
+    PreviewModel preview;
+    scene.model = &preview;
+    CreatePreview();
+    assert(CCharacterComponent::allocations == 1 && CCharacterSelection::s_characterList[0].m_component);
+    assert(!UpdateName(0, nullptr) && UpdateName(4, nullptr) && UpdateName(0, &preview));
+    preview.drawable = false;
+    assert(!UpdateName(0, &preview));
+
+    int active = 1;
+    assert(UpdatePet(active) && active == 1); // Transport GUID persists after the pet object unloads.
+    VehicleSeatRec seat{0};
+    CVehicle_C vehicle{&seat};
+    CGUnit_C petUnit{&vehicle};
+    unit = &petUnit;
+    assert(!UpdatePet(active) && active == 0);
+    seat.m_vehicleAbilityDisplay = 1;
+    assert(UpdatePet(active) && active == 1);
 
     CBLPFile blp;
     suppliedSize = 2;
@@ -180,6 +259,11 @@ int main(int argc, char** argv) {
         std::ifstream source(argv[i], std::ios::binary);
         assert(source);
         const std::vector<char> payload((std::istreambuf_iterator<char>(source)), std::istreambuf_iterator<char>{});
-        assert(WdlBounds::Validate(payload.data(), payload.size(), 64));
+        const std::string name = argv[i];
+        if (name.substr(name.size() - 4) == ".blp") {
+            assert(BlpSourceBounds::ReadHeader(payload.data(), payload.size(), parsed));
+        } else {
+            assert(WdlBounds::Validate(payload.data(), payload.size(), 64));
+        }
     }
 }
