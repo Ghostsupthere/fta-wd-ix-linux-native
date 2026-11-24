@@ -197,7 +197,7 @@ struct Source {
     int lampDebugIndex = -1;
 };
 std::vector<Source> sources;
-std::unordered_set<const CM2Model*> liveModels;   // models seen by the last scan, minus those destroyed since
+std::unordered_set<const CM2Model*> liveModels;   // source owners from the last scan, minus those destroyed since
 
 sl::GridBuilder gridBuilder;
 sl::Grid grid;
@@ -213,7 +213,7 @@ bool haveLastUpdate = false;
 struct Stats {
     unsigned models = 0, modelsInRange = 0, modelLights = 0, fromClient = 0, fromWorld = 0, fileColor = 0, merged = 0,
              inRange = 0, active = 0, tableLights = 0, suppressedModels = 0, attachFallbacks = 0, attached = 0;
-    unsigned staticLamps = 0, staticDuplicates = 0, staticWmoMatches = 0, wmoPlacements = 0, meshLamps = 0;
+    unsigned staticLamps = 0, staticDuplicates = 0, staticWmoMatches = 0, meshLamps = 0;
     unsigned lampsBudgetDropped = 0, lampsGroupPending = 0;
     double lampScanMs = 0;
     float farthestResidentLamp = 0;
@@ -322,6 +322,38 @@ bool ParentWorldAtRest(const CM2Model* model, float out[16], int depth) {
     return true;
 }
 
+enum ModelLightPath : uint8_t { CatalogLamp = 1, AuthoredLights = 2 };
+
+uint8_t LightPathFlags(const CM2Shared* shared) {
+    if (!shared || !shared->m_fileName[0]) return 0;
+    const uint64_t key = uint64_t(tables.Generation()) << 1 | uint64_t(lampCatalogTried);
+    if (shared->m_surfaceLightCatalogKey != key) {
+        uint8_t flags = 0;
+        if (!lampCatalog.empty() && lampCatalog.count(sl::NormalizeLampPath(shared->m_fileName)))
+            flags |= CatalogLamp;
+        if (!tables.AllAssignments().empty() && tables.HasModel(sl::NormalizePath(shared->m_fileName)))
+            flags |= AuthoredLights;
+        shared->m_surfaceLightPathFlags = flags;
+        shared->m_surfaceLightCatalogKey = key;
+    }
+    return shared->m_surfaceLightPathFlags;
+}
+
+bool CanSupplyLight(const CM2Model* model, float distance) {
+    const uint8_t flags = LightPathFlags(model->m_shared);
+    if (staticLampsEnabled && (flags & CatalogLamp) && distance <= staticLampRange + 20)
+        return true;
+    if (!(distance <= settings.range)) return false;
+    const auto* data = DataOf(model);
+    return data && ((flags & AuthoredLights) || data->m_lights.m_count);
+}
+
+struct SceneScanCounts {
+    unsigned visited = 0;
+    unsigned inRange = 0;
+    unsigned attached = 0;
+};
+
 struct SceneModel {
     const CM2Model* model = nullptr;
     const M2Data* data = nullptr;
@@ -340,7 +372,8 @@ void Describe(const CM2Model* model, SceneModel& out) {
     if (model->m_shared && model->m_shared->m_fileName[0]) out.path = model->m_shared->m_fileName;
 }
 
-void AddChildren(const CM2Model* parent, const float center[3], float range, std::vector<SceneModel>& out, int depth, unsigned& attached) {
+void AddChildren(const CM2Model* parent, const float center[3], float range, std::vector<SceneModel>& out,
+                 int depth, SceneScanCounts& counts, bool lightOnly) {
     if (depth > kMaxDepth) return;
     unsigned n = 0;
     for (const CM2Model* c = parent->m_attachList; c && n < kMaxChildren; c = c->m_attachNext, ++n) {
@@ -350,47 +383,74 @@ void AddChildren(const CM2Model* parent, const float center[3], float range, std
         if (WorldOf(c, sm.world, sm.animated, depth)) {
             const float dx = sm.world[12] - center[0], dy = sm.world[13] - center[1], dz = sm.world[14] - center[2];
             sm.distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-            if (sm.distance <= range) { Describe(c, sm); out.push_back(sm); ++attached; }
+            if (sm.distance <= range) {
+                ++counts.inRange;
+                ++counts.attached;
+                if (!lightOnly || CanSupplyLight(c, sm.distance)) {
+                    Describe(c, sm);
+                    out.push_back(sm);
+                }
+            }
         }
-        AddChildren(c, center, range, out, depth + 1, attached);
+        AddChildren(c, center, range, out, depth + 1, counts, lightOnly);
     }
 }
 
-// Scene models are independent of map placement ownership. The map also
-// maintains the stable world transform for terrain and WMO doodads.
-unsigned SceneModels(const float center[3], float range, std::vector<SceneModel>& out, unsigned& attached,
-                     std::unordered_set<const CM2Model*>* resident = nullptr) {
+// Scene models are independent of map placements, which can supply their own stable world transform.
+SceneScanCounts SceneModels(const float center[3], float range, std::vector<SceneModel>& out, bool lightOnly = false) {
     constexpr float kChildReach = 30.0f;
     out.clear();
-    attached = 0;
+    SceneScanCounts counts;
     CM2Scene* scene = Scene();
-    if (!scene) return 0;
-    unsigned total = 0;
-    for (const CM2Model* m = scene->m_modelList; m && total < kMaxSceneModels; m = m->m_sceneNext, ++total) {
-        if (resident) resident->insert(m);
+    if (!scene) return counts;
+    for (const CM2Model* m = scene->m_modelList; m && counts.visited < kMaxSceneModels; m = m->m_sceneNext, ++counts.visited) {
         if (m->m_attachParent) continue;
-        SceneModel sm;
-        sm.model = m;
-        std::memcpy(sm.world, Floats(m->m_worldTransform), 64);
-        const float dx = sm.world[12] - center[0], dy = sm.world[13] - center[1], dz = sm.world[14] - center[2];
-        sm.distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-        if (sm.distance <= range) { Describe(m, sm); out.push_back(sm); }
-        if (sm.distance <= range + kChildReach) AddChildren(m, center, range, out, 1, attached);
+        const float* world = Floats(m->m_worldTransform);
+        const float dx = world[12] - center[0], dy = world[13] - center[1], dz = world[14] - center[2];
+        const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance <= range) {
+            ++counts.inRange;
+            if (!lightOnly || CanSupplyLight(m, distance)) {
+                SceneModel sm;
+                sm.model = m;
+                sm.distance = distance;
+                std::memcpy(sm.world, world, sizeof(sm.world));
+                Describe(m, sm);
+                out.push_back(sm);
+            }
+        }
+        if (distance <= range + kChildReach)
+            AddChildren(m, center, range, out, 1, counts, lightOnly);
     }
-    if (resident)
-        for (const SceneModel& sm : out) resident->insert(sm.model);
     std::sort(out.begin(), out.end(), [](const SceneModel& a, const SceneModel& b) { return a.distance < b.distance; });
-    return total;
+    return counts;
 }
 
-unsigned MapDoodadModels(const float center[3], float range, std::vector<SceneModel>& out) {
+SceneScanCounts CollectLightModels(const float center[3], float range, std::vector<SceneModel>& models) {
+    const auto counts = SceneModels(center, range, models, true);
+    // Filtering can change std::sort's ordering of equal distances. Keep the original ordering on ties,
+    // because table-light merging and lamp ranking use candidate order to break them.
+    if (std::adjacent_find(models.begin(), models.end(), [](const auto& a, const auto& b) {
+            return a.distance == b.distance;
+        }) != models.end()) {
+        SceneModels(center, range, models);
+        models.erase(std::remove_if(models.begin(), models.end(), [](const SceneModel& model) {
+            return !CanSupplyLight(model.model, model.distance);
+        }), models.end());
+    }
+    return counts;
+}
+
+unsigned MapDoodadModels(const float center[3], float range, std::vector<SceneModel>& out, bool lampsOnly = false) {
     out.clear();
     unsigned visited = 0;
+    const auto* scene = Scene();
     auto& placements = CMap::doodadDefHash.m_fulllist;
     for (auto* doodad = placements.Head(); doodad && visited < kMaxMapPlacements;
          doodad = placements.Next(doodad), ++visited) {
         const CM2Model* model = doodad->m_model;
-        if (!model || model->m_scene != Scene()) continue;
+        if (!model || model->m_scene != scene) continue;
+        if (lampsOnly && !(LightPathFlags(model->m_shared) & CatalogLamp)) continue;
         const float* world = Floats(doodad->m_mat);
         const float dx = world[12] - center[0], dy = world[13] - center[1], dz = world[14] - center[2];
         const float d2 = dx*dx + dy*dy + dz*dz;
@@ -467,8 +527,7 @@ void ScanStaticLamps(const float center[3], const float forward[3], const std::v
                      bool haveTable, Stats& st) {
     const auto started = std::chrono::steady_clock::now();
     static std::vector<SceneModel> mapModels;
-    MapDoodadModels(center, staticLampRange + 20, mapModels);
-    st.wmoPlacements = std::count_if(mapModels.begin(), mapModels.end(), [](const auto& m) { return m.wmoDoodad; });
+    MapDoodadModels(center, staticLampRange + 20, mapModels, true);
 
     struct Match {
         const CM2Model* model;
@@ -479,7 +538,7 @@ void ScanStaticLamps(const float center[3], const float forward[3], const std::v
     static std::vector<Match> matches;
     matches.clear();
     sl::VisitStaticPlacements(mapModels, sceneModels, [&](const SceneModel& m) {
-        if (!m.path || !*m.path) return;
+        if (!(LightPathFlags(m.model->m_shared) & CatalogLamp)) return;
         auto path = sl::NormalizeLampPath(m.path);
         const auto catalog = lampCatalog.find(path);
         if (catalog == lampCatalog.end()) return;
@@ -563,7 +622,8 @@ void ScanStaticLamps(const float center[3], const float forward[3], const std::v
         lampTransitions.emplace_back(std::string(verb) + " " + lamp.path + fields);
         if (lampTransitions.size() > sl::kMaxStaticLamps * 2) lampTransitions.pop_front();
     };
-    std::vector<LampDebug> previous;
+    static std::vector<LampDebug> previous;
+    previous.clear();
     previous.swap(lampDebug);
     for (unsigned i = 0; i < previousSelected && i < previous.size(); ++i) {
         const auto& old = previous[i];
@@ -596,7 +656,6 @@ void ScanStaticLamps(const float center[3], const float forward[3], const std::v
             for (unsigned channel = 0; channel < 3; ++channel)
                 s.color[channel] = debug.color[channel] * debug.intensity;
             sources.push_back(s);
-            if (s.model) liveModels.insert(s.model);
         }
         lampDebug.push_back(std::move(debug));
     }
@@ -614,24 +673,24 @@ void ScanModels(const float center[3], const float forward[3]) {
     }
     Stats st = stats;
     st.tableLights = st.suppressedModels = st.attachFallbacks = st.modelLights = 0;
-    st.staticLamps = st.staticWmoMatches = st.wmoPlacements = st.meshLamps = st.lampsBudgetDropped = st.lampsGroupPending = 0;
+    st.staticLamps = st.staticWmoMatches = st.meshLamps = st.lampsBudgetDropped = st.lampsGroupPending = 0;
     st.farthestResidentLamp = 0;
     static std::vector<SceneModel> models;
-    unsigned attached = 0;
     const float scanRange = staticLampsEnabled ? std::max(settings.range, staticLampRange + 20) : settings.range;
-    st.models = SceneModels(center, scanRange, models, attached, &liveModels);
-    st.modelsInRange = static_cast<unsigned>(models.size());
-    st.attached = attached;
+    const auto counts = CollectLightModels(center, scanRange, models);
+    st.models = counts.visited;
+    st.modelsInRange = counts.inRange;
+    st.attached = counts.attached;
     const bool haveTable = !tables.AllAssignments().empty();
     if (staticLampsEnabled && (!lampCatalog.empty() || !meshLampCatalog.empty())) ScanStaticLamps(center, forward, models, haveTable, st);
     for (const SceneModel& m : models) {
         if (!m.data || m.distance > settings.range) continue;
         bool suppress = false;
-        const auto* rows = haveTable ? &RowsFor(m.path) : nullptr;
+        const uint8_t pathFlags = LightPathFlags(m.model->m_shared);
+        const auto* rows = pathFlags & AuthoredLights ? &RowsFor(m.path) : nullptr;
         // A lamp that is in the static lamp catalog and also has an authored table light keeps that authored light (its colour, radius and
         // flicker), but the Static lamps controls (strength, distance, on or off) now govern it: it travels through the static lamp path.
-        const bool catalogLamp = staticLampsEnabled && rows && !rows->empty() && m.path && *m.path &&
-                                 lampCatalog.count(sl::NormalizeLampPath(m.path)) != 0;
+        const bool catalogLamp = staticLampsEnabled && rows && !rows->empty() && (pathFlags & CatalogLamp);
         if (rows)
             for (const sl::Assignment* a : *rows) {
                 if (a->flags & sl::kSuppressModelLights) suppress = true;
@@ -667,6 +726,9 @@ void ScanModels(const float center[3], const float forward[3]) {
             sources.push_back(s);
         }
     }
+    // Source, follow and native-light pointers share the same model owner.
+    for (const auto& source : sources)
+        if (source.model) liveModels.insert(source.model);
     stats = st;
 }
 
@@ -728,7 +790,8 @@ void UpdateLights(float dt, const float eye[3], const float forward[3]) {
         ScanModels(eye, forward);
     }
     lightTime += dt;
-    std::vector<sl::Candidate> cands;
+    static std::vector<sl::Candidate> cands;
+    cands.clear();
     struct PendingLamp { sl::Candidate candidate; LampDebug* debug; };
     std::array<PendingLamp, sl::kMaxStaticLamps> lamps;
     unsigned lampCount = 0;
@@ -1561,8 +1624,7 @@ std::string WxlNearbyModelDebug(float maxYards) {
     if (!Finite3(center)) return "Nearby models: position unavailable.";
     const float range = std::clamp(std::isfinite(maxYards) ? maxYards : 12.0f, 1.0f, 256.0f);
     std::vector<SceneModel> map, scene;
-    unsigned attached = 0;
-    const unsigned sceneVisited = SceneModels(center, range, scene, attached);
+    const unsigned sceneVisited = SceneModels(center, range, scene).visited;
     const unsigned mapVisited = MapDoodadModels(center, range, map);
     LoadLampCatalog();
 

@@ -235,6 +235,8 @@ namespace wxl::surfacelights
             return out;
         }
 
+        bool HasModel(const std::string& normalizedPath) const { return byModel_.find(normalizedPath) != byModel_.end(); }
+
         const std::vector<Properties>& AllProperties() const { return properties_; }
         const std::vector<Assignment>& AllAssignments() const { return assignments_; }
         uint32_t Generation() const { return generation_; }

@@ -75,6 +75,9 @@ class CM2Shared {
     bool m_loadFailed = false;
 #if defined(WOWDECOMP_LINUX)
     uint32_t m_loadedSkinProfile = 0xFFFFFFFF;
+    // Owner-thread cache for the model path's authored surface-light lookups.
+    mutable uint64_t m_surfaceLightCatalogKey = UINT64_MAX;
+    mutable uint8_t m_surfaceLightPathFlags = 0;
 #endif
 
     static void LoadFailedCallback(void* param);
