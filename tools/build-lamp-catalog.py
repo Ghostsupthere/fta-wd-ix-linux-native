@@ -20,6 +20,64 @@ MESH_LAMPS = {
 }
 
 
+# Retail replacement lamps (Patch-YD) have no flame emitter: the light is a four-vertex additive
+# glow quad centred on the lantern glass. The light goes where that quad is (read from the
+# model's own geometry), so no offset is typed in by hand. Only these reviewed models get one;
+# the value is (red, green, blue, radius, intensity).
+WARM = (1, 0.73, 0.38, 13, 0.85)
+GLOW_LAMPS = {
+    b"world\\azeroth\\elwynn\\passivedoodads\\lamppost\\lamppost.m2": WARM,
+    b"world\\generic\\human\\passive doodads\\lampposts\\duskwoodlamppost.m2": WARM,
+    b"world\\generic\\human\\passive doodads\\lamps\\tirisfallstreetlamp01.m2": WARM,
+    b"world\\generic\\human\\passive doodads\\lamps\\westernplaguelandslampoststraight.m2": WARM,
+    b"world\\generic\\human\\passive doodads\\lamps\\westernplaguelandslampost01.m2": (0.5, 1, 0.45, 13, 0.85),
+    b"world\\generic\\human\\passive doodads\\lamps\\westernplaguelandslampost02.m2": (0.5, 1, 0.45, 13, 0.85),
+    b"world\\generic\\human\\passive doodads\\lanterns\\generallantern01.m2": (1, 0.62, 0.25, 13, 0.85),
+    b"world\\generic\\human\\passive doodads\\lanterns\\generallantern03.m2": (1, 0.62, 0.25, 13, 0.85),
+}
+
+
+def glow_quad_center(data, skin):
+    """Centre of the 4-vertex additive glow quad of a legacy (version 264) model, or None."""
+    if data[:8] != b"MD20\x08\x01\0\0" or skin[:4] != b"SKIN" or len(data) < 0x130 or len(skin) < 0x2c:
+        return None
+    tex_count, tex_offset = struct.unpack_from("<II", data, 0x50)
+    look_count, look_offset = struct.unpack_from("<II", data, 0x80)
+    flag_count, flag_offset = struct.unpack_from("<II", data, 0x70)
+    vert_count, vert_offset = struct.unpack_from("<II", data, 0x3c)
+    index_count, index_offset = struct.unpack_from("<II", skin, 0x04)
+    sub_count, sub_offset = struct.unpack_from("<II", skin, 0x1c)
+    unit_count, unit_offset = struct.unpack_from("<II", skin, 0x24)
+    if not (0 < sub_count <= 64 and 0 < unit_count <= 64 and (unit_offset - sub_offset) % sub_count == 0):
+        return None
+    sub_size = (unit_offset - sub_offset) // sub_count
+    if sub_size not in (32, 48) or vert_offset + 48 * vert_count > len(data) or index_offset + 2 * index_count > len(skin):
+        return None
+    found = []
+    for i in range(unit_count):
+        _, _, sub, _, _, flags, _, _, texture, _, _, _ = struct.unpack_from("<12H", skin, unit_offset + 24 * i)
+        if sub >= sub_count or texture >= look_count or flags >= flag_count:
+            continue
+        slot = struct.unpack_from("<H", data, look_offset + 2 * texture)[0]
+        blend = struct.unpack_from("<2H", data, flag_offset + 4 * flags)[1]
+        if slot >= tex_count or blend not in ADDITIVE:
+            continue
+        length, name_offset = struct.unpack_from("<II", data, tex_offset + 16 * slot + 8)
+        name = data[name_offset:name_offset + length].rstrip(b"\0").lower()
+        start, count = struct.unpack_from("<HH", skin, sub_offset + sub_size * sub + 4)
+        if count != 4 or b"glow" not in name or start + count > index_count:
+            continue
+        points = []
+        for k in range(count):
+            vertex = struct.unpack_from("<H", skin, index_offset + 2 * (start + k))[0]
+            if vertex >= vert_count:
+                break
+            points.append(struct.unpack_from("<3f", data, vert_offset + 48 * vertex))
+        else:
+            found.append(tuple((min(axis) + max(axis)) / 2 for axis in zip(*points)))
+    return found[0] if len(found) == 1 and all(math.isfinite(v) for v in found[0]) else None
+
+
 # The Razor Hill replacement has the converter's extended 0x1ec emitter
 # records. Other wrapped models still need asset-specific qualification.
 MODERN_LAMPS = {
@@ -290,7 +348,7 @@ def main():
         return next((data for archive in opened if (data := read(archive, name, limit))), None)
 
     try:
-        for name in sorted(names | MESH_LAMPS.keys() | MODERN_LAMPS):
+        for name in sorted(names | MESH_LAMPS.keys() | MODERN_LAMPS | GLOW_LAMPS.keys()):
             if not name.isascii() or b"," in name:
                 continue
             data = read_effective(name, 4 << 20)
@@ -309,6 +367,12 @@ def main():
             elif data and data[:8] == b"MD20\x08\x01\0\0" and len(data) >= 0x130:
                 if not struct.unpack_from("<I", data, 0x108)[0]:
                     light = MESH_LAMPS.get(name)
+                if light is None and name in GLOW_LAMPS:
+                    skin = read_effective(name[:-3] + b"00.skin", 4 << 20)
+                    centre = glow_quad_center(data, skin) if skin else None
+                    if centre is not None:
+                        light = (*centre, *GLOW_LAMPS[name])
+                        decision["glow quad"] = centre
             if light is not None and data:
                 light = inside_bounds(name, data, light)
             if light is not None:
