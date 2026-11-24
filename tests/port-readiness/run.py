@@ -63,7 +63,54 @@ def main():
             portion("WoW/Source/Game/GameClient/PlayerName.cpp", "    if (!(this->m_flags & 0x4) && (!object->m_worldModel", "\n    for ", False)
                 .replace("this->m_flags", "flags").replace("return;", "return false;")
         )
-        for name in ("hardening", "processing", "network", "network_profile", "batch2"):
+        ui = "WoW/Source/Ui/"
+        objects = "WoW/Source/Object/ObjectClient/"
+        (work / "corpse-init.inc").write_text(
+            portion(objects + "Corpse_C.cpp", "    this->CGObject_C::PostInit(time, create, a3);", "    int32_t useComponent")
+                .replace("    this->CGObject_C::PostInit(time, create, a3);\n\n", "")
+        )
+        (work / "corpse-loot.inc").write_text(
+            portion(objects + "Corpse_C.cpp", "void CGCorpse_C::ShowLootEffect(", "\n}", True)
+        )
+        (work / "corpse-replace.inc").write_text(
+            portion(objects + "Corpse_C.cpp", "void CGCorpse_C::OnFlagChanged(", "\n}", True)
+                .replace("uint32_t oldFlags", "uint32_t")
+        )
+        (work / "vehicle-remove.inc").write_text(
+            portion(objects + "Vehicle_C.cpp", "void CVehicle_C::RemoveAllPassengersLocally(", "\n}", True)
+        )
+        (work / "combat-death.inc").write_text(
+            portion(objects + "UnitCombatLog_C.cpp", "void UnitCombatLogUnitDead(", "\n}", True)
+        )
+        (work / "poi-objective.inc").write_text(
+            portion(ui + "QuestLog.h", "inline bool QuestPOIObjectiveMatches(", "\n}", True)
+        )
+        (work / "commentator-roster.inc").write_text(
+            portion(ui + "CommentatorFrame.cpp", "int32_t CGCommentator::OnReceivePlayerInfo(", "\n}", True)
+                .replace("void* param, NETMESSAGE msgId, uint32_t time,", "void*, NETMESSAGE, uint32_t,")
+        )
+        (work / "commentator-faction.inc").write_text(
+            portion(ui + "CommentatorFrame_Scripts.cpp", "    if (faction >= std::size(instance->m_numPlayers))",
+                "    WDataStore msg;")
+        )
+        (work / "gossip.inc").write_text(
+            portion(ui + "GossipInfo.cpp", "int32_t Packet_SMSG_GOSSIP_MESSAGE(", "\n}", True)
+                .replace("void* param, NETMESSAGE msgId, uint32_t time,", "void*, NETMESSAGE, uint32_t,")
+        )
+        trade = ui + "TradeSkillFrame.cpp"
+        (work / "tradeskill-callback.inc").write_text(
+            portion(trade, "static std::unordered_set<int32_t> s_deniedRecipeItems;", "\n}", True)
+                .replace("const WOWGUID& guid, void* param,", "const WOWGUID&, void*,")
+        )
+        (work / "tradeskill-metadata.inc").write_text(
+            portion(trade, "                const int32_t itemId = spell.m_effectItemType[0];",
+                "            } else {\n                info->m_itemClass = -1;")
+        )
+        (work / "tradeskill-link.inc").write_text(
+            portion(trade, "static const char s_base64Encode[]", "\n", True)
+            + portion(trade, "static bool IsTradeSkillLinkPayload(", "\n}", True)
+        )
+        for name in ("hardening", "processing", "network", "network_profile", "batch2", "batch3"):
             executable = work / name
             subprocess.run([*shlex.split(os.environ.get("CXX", "g++")), "-std=c++17", "-O2", "-UNDEBUG",
                 "-Wall", "-Wextra", "-Werror", "-pthread", "-I", str(root), "-I", str(work),

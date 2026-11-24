@@ -307,7 +307,9 @@ int main() {
         Profiler::CountM2BatchOpportunity(Profiler::M2BatchOpportunity::TransformOnly);
     }
     const bool portWork = periodic && optIn("WXL_PROFILE_PORT_WORK");
+    assert(Profiler::PortWorkLoggingEnabled() == ((periodic || spikesEnabled) && optIn("WXL_PROFILE_PORT_WORK")));
     std::thread characterWorker([] {
+        assert(!Profiler::PortWorkLoggingEnabled());
         Profiler::CharacterWorkerScope scope;
         Sleep(2);
     });
