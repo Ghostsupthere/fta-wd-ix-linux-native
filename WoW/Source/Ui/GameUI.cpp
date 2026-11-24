@@ -4008,7 +4008,7 @@ void CGGameUI::SetSummonRequest(WOWGUID summoner, uint32_t area, uint32_t timeou
 void CGGameUI::SetUIScale(float scale) {
     float clamped = 0.64f;
 
-    if (scale > 0.64f) {
+    if (std::isfinite(scale) && scale > 0.64f) {
         clamped = scale;
     }
 
