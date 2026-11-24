@@ -1053,10 +1053,14 @@ void CGPetInfo::UpdatePetTempBar() {
 
     if (player && player->m_obj->m_guid == ClntObjMgrGetActivePlayer() && player->m_player->m_playerFarsight.m_guid && player->GetFarSightGuid() == CGPetInfo::GetPet(0).m_guid && CGPetInfo::IsPetBarUsed()) {
         active = 1;
-        CVehicle_C* vehicle;
-        VehicleSeatRec* seat;
+        CVehicle_C* vehicle = nullptr;
+        if (s_pets.m_count && s_pets.m_data[0].m_guid && player->GetTransportGUID() == s_pets.m_data[0].m_guid) {
+            auto* unit = static_cast<CGUnit_C*>(ClntObjMgrObjectPtr(CGPetInfo::GetPet(0), TYPE_UNIT, __FILE__, __LINE__));
+            if (unit) vehicle = unit->m_vehicle;
+        }
+        auto* seat = vehicle ? vehicle->GetVehicleSeatRec(static_cast<uint8_t>(player->m_movementData.m_transportSeat)) : nullptr;
 
-        if (!s_pets.m_count || !s_pets.m_data[0].m_guid || player->GetTransportGUID() != s_pets.m_data[0].m_guid || !(vehicle = static_cast<CGUnit_C*>(ClntObjMgrObjectPtr(CGPetInfo::GetPet(0), TYPE_UNIT, __FILE__, __LINE__))->m_vehicle) || !(seat = vehicle->GetVehicleSeatRec(static_cast<uint8_t>(player->m_movementData.m_transportSeat))) || (active = seat->m_vehicleAbilityDisplay == 1) != 0) {
+        if (!seat || (active = seat->m_vehicleAbilityDisplay == 1) != 0) {
             CGActionBar::UpdateTemporaryActionBar(PetTempActionBarCallback, nullptr);
         }
     }
