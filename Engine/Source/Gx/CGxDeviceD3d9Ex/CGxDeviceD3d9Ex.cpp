@@ -197,6 +197,12 @@ char* CGxDeviceD3d9Ex::IBufLock(CGxBuf* buf) {
             break;
     }
 
+#if defined(WOWDECOMP_LINUX)
+    static const bool skipBufferProbe = [] {
+        const char* value = std::getenv("WXL_D3D9_SKIP_BUFFER_PROBE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+#endif
     if (SUCCEEDED(result) && buf->m_size) {
 #ifndef WOWDECOMP_LINUX
         __try {
@@ -211,14 +217,15 @@ char* CGxDeviceD3d9Ex::IBufLock(CGxBuf* buf) {
             result = E_FAIL;
         }
 #else
-        // No SEH off Windows; the probe is a best-effort lock validation, so
-        // run it directly and trust the pointer the driver returned.
-        volatile char* probe = data;
-
-        if (pool->m_usage == GxPoolUsage_Stream) {
-            *probe = 0;
-        } else {
-            *probe = *probe;
+        // The native API already reports lock failure. The legacy probe reads
+        // from write-only mappings for non-stream pools and validates no range.
+        if (!skipBufferProbe) {
+            volatile char* probe = data;
+            if (pool->m_usage == GxPoolUsage_Stream) {
+                *probe = 0;
+            } else {
+                *probe = *probe;
+            }
         }
 #endif
     }
@@ -228,6 +235,7 @@ char* CGxDeviceD3d9Ex::IBufLock(CGxBuf* buf) {
         return static_cast<char*>(this->m_emergencyMem[pool->m_target].Lock(buf->m_size));
     }
 
+    if (data) Profiler::CountD3dBufferLock(buf->m_size);
     return data;
 }
 

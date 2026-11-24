@@ -151,6 +151,8 @@ struct Summary {
     double gpuRenderMs;  // GPU timestamp span averaged over sampled frames
     ZoneLine zones[Count];
     MovementTotals movement;
+    double d3dBufferLocks;
+    double d3dBufferMappedBytes;
 };
 
 struct Scope {
@@ -218,6 +220,7 @@ private:
     bool m_collecting = false;
 };
 
+void CountD3dBufferLock(uint32_t bytes);
 bool M2DiagnosticsEnabled();
 bool UiDetailEnabled();
 Id UiDetailZone(Id detail, Id parent);

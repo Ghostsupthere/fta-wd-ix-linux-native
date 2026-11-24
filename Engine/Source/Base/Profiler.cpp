@@ -68,6 +68,8 @@ struct FrameRecord {
     double gpuRenderMs;
     bool gpuRenderSample;
     MovementWorkScope::Counters movement;
+    uint32_t d3dBufferLocks;
+    uint64_t d3dBufferMappedBytes;
 };
 
 uint64_t NowNs() {
@@ -111,6 +113,14 @@ bool PeriodicLoggingEnabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("WXL_PROFILE_LOG");
         return value && std::atof(value) > 0.0;
+    }();
+    return enabled;
+}
+
+bool BufferWritesEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_PROFILE_BUFFER_WRITES");
+        return PeriodicLoggingEnabled() && value && std::strcmp(value, "1") == 0;
     }();
     return enabled;
 }
@@ -212,6 +222,10 @@ void LogSummary() {
             work.relinkDisplacement[0], work.relinkDisplacement[1], work.relinkDisplacement[2],
             work.relinkDisplacement[3], work.relinkDisplacement[4],
             work.candidateHit, work.candidateMiss, work.candidateDeferred, work.candidateUnsupportedRay, work.candidateSmallLeaf);
+    }
+    if (BufferWritesEnabled()) {
+        std::fprintf(stderr, " | D3D9 buffer/frame locks=%.2f mappedBytes=%.2f",
+            s.d3dBufferLocks, s.d3dBufferMappedBytes);
     }
     if (M2DiagnosticsEnabled()) {
         std::fprintf(stderr, " | M2 draws/frame");
@@ -425,6 +439,12 @@ void MovementWorkScope::Counters::ObserveDisplacement(double squared, bool relin
     if (relinked) ++relinkDisplacement[bin];
 }
 
+void CountD3dBufferLock(uint32_t bytes) {
+    if (!BufferWritesEnabled() || !Enabled() || !OnOwnerThread()) return;
+    ++g_open.d3dBufferLocks;
+    g_open.d3dBufferMappedBytes += bytes;
+}
+
 bool M2DiagnosticsEnabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("WXL_PROFILE_M2_DRAWS");
@@ -512,6 +532,8 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
         const FrameRecord& r = g_ring[(g_next + kKeptFrames - 1 - k) % kKeptFrames];
         frameNs += static_cast<double>(r.frameNs);
         draws += r.draws;
+        out.d3dBufferLocks += r.d3dBufferLocks;
+        out.d3dBufferMappedBytes += r.d3dBufferMappedBytes;
         triangles += static_cast<double>(r.triangles);
         out.movement.units += r.movement.units;
         out.movement.changed += r.movement.changed;
@@ -550,6 +572,8 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
     out.frameMs = frameNs / n * 1.0e-6;
     out.fps = out.frameMs > 0.0 ? 1000.0 / out.frameMs : 0.0;
     out.drawCalls = draws / n;
+    out.d3dBufferLocks /= n;
+    out.d3dBufferMappedBytes /= n;
     if (m2Diagnostics) {
         for (double& count : out.m2DrawsByType) count /= n;
     }
