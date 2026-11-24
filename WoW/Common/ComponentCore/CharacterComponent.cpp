@@ -3952,7 +3952,9 @@ void CCharacterComponent::RenderPrepAll() {
 // VERIFY: 9391fea1 manual
 // OFFSET: 0x004EE380
 int32_t CCharacterComponent::UpdateTextureSlot(COMPONENT_SECTIONS section, const ItemDisplayInfoRec* displayRec, int32_t layer) {
-    if (this->m_data.m_flags & 0x1) {
+    if (!displayRec || static_cast<uint32_t>(section) >= std::size(displayRec->m_texture) ||
+        static_cast<uint32_t>(layer) >= std::size(this->m_section[0].m_layerTex) ||
+        (this->m_data.m_flags & 0x1)) {
         return 0;
     }
 
