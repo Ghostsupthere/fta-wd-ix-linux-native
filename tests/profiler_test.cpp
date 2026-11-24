@@ -306,9 +306,21 @@ int main() {
     if (Profiler::M2BatchProbeEnabled()) {
         Profiler::CountM2BatchOpportunity(Profiler::M2BatchOpportunity::TransformOnly);
     }
+    const bool portWork = periodic && optIn("WXL_PROFILE_PORT_WORK");
+    std::thread characterWorker([] {
+        Profiler::CharacterWorkerScope scope;
+        Sleep(2);
+    });
+    characterWorker.join();
+    {
+        Profiler::Scope network(Profiler::PortWorkZone(Profiler::NetworkPoll));
+    }
     Profiler::RecordStaticCullReuse(34, 6, 24);
     Profiler::EndFrame();
     assert(Profiler::Summarize(1, s) == 1);
+    assert(s.characterWorkerRequests == (portWork ? 1.0 : 0.0));
+    assert(portWork ? s.characterWorkerMs >= 1.5 : s.characterWorkerMs == 0.0);
+    assert(s.zones[Profiler::NetworkPoll].calls == (portWork || spikesEnabled ? 1.0 : 0.0));
     assert(s.staticCullPasses == (periodic ? 1.0 : 0.0));
     assert(s.staticCullHits == (periodic ? 34.0 : 0.0));
     assert(s.staticCullMisses == (periodic ? 6.0 : 0.0));
