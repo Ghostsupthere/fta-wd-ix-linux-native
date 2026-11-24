@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shlex
 import subprocess
+import sys
 import tempfile
 
 here = Path(__file__).resolve().parent
@@ -45,12 +46,19 @@ def main():
             + portion(network, "void NETEVENTQUEUE::ReleaseNode(", "// VERIFY: 75864678")
                 .replace("void* connection, NetClient* client", "void*, NetClient* client")
         )
-        for name in ("hardening", "processing", "network"):
+        (work / "batch2.inc").write_text(
+            portion("WoW/Source/Ui/ReputationInfo_Scripts.cpp", "static uint32_t GetFactionListIndex(", "\n}", True)
+            + portion("WoW/Source/Ui/RuneInfo.cpp", "bool CGRuneInfo::IsRuneIndexValid(", "// VERIFY: c02488c7")
+            + portion("WoW/Source/Ui/BattlefieldInfo.cpp", "int32_t Packet_MSG_BATTLEGROUND_PLAYER_POSITIONS(", "\n}", True)
+                .replace("void* param, NETMESSAGE msgId, uint32_t time,", "void*, NETMESSAGE, uint32_t,")
+            + portion("Engine/Source/BLPFile/blp.cpp", "int32_t CBLPFile::Open(", "\n}", True)
+        )
+        for name in ("hardening", "processing", "network", "batch2"):
             executable = work / name
             subprocess.run([*shlex.split(os.environ.get("CXX", "g++")), "-std=c++17", "-O2", "-UNDEBUG",
                 "-Wall", "-Wextra", "-Werror", "-pthread", "-I", str(root), "-I", str(work),
                 str(here / (name + ".cpp")), "-o", str(executable)], check=True)
-            subprocess.run([executable], check=True)
+            subprocess.run([executable, *(sys.argv[1:] if name == "batch2" else [])], check=True)
 
 
 if __name__ == "__main__":
