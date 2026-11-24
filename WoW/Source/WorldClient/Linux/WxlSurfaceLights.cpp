@@ -627,10 +627,17 @@ void ScanModels(const float center[3], const float forward[3]) {
         if (!m.data || m.distance > settings.range) continue;
         bool suppress = false;
         const auto* rows = haveTable ? &RowsFor(m.path) : nullptr;
+        // A lamp that is in the static lamp catalog and also has an authored table light keeps that authored light (its colour, radius and
+        // flicker), but the Static lamps controls (strength, distance, on or off) now govern it: it travels through the static lamp path.
+        const bool catalogLamp = staticLampsEnabled && rows && !rows->empty() && m.path && *m.path &&
+                                 lampCatalog.count(sl::NormalizeLampPath(m.path)) != 0;
         if (rows)
             for (const sl::Assignment* a : *rows) {
                 if (a->flags & sl::kSuppressModelLights) suppress = true;
-                if (a->lightId) AddTableLight(*a, m, st);
+                if (!a->lightId) continue;
+                const size_t before = sources.size();
+                AddTableLight(*a, m, st);
+                if (catalogLamp && sources.size() > before) sources.back().staticLamp = true;
             }
         const uint32_t count = m.data->m_lights.m_count;
         if (suppress) { ++st.suppressedModels; continue; }
@@ -801,6 +808,7 @@ void UpdateLights(float dt, const float eye[3], const float forward[3]) {
             c.staticLamp = true;
             c.distanceFade = sl::StaticLampFade(std::sqrt(distanceSquared), staticLampRange);
             c.indoorOverride = s.indoorOverride;
+            if (lampCount >= lamps.size()) continue;
             lamps[lampCount++] = {c, debug};
         } else {
             cands.push_back(c);
