@@ -235,6 +235,40 @@ int main(int argc, char** argv) {
     std::memcpy(raw.data(), &source, BlpSourceBounds::FixedHeaderBytes);
     assert(!BlpSourceBounds::ReadHeader(raw.data(), raw.size(), parsed));
 
+    // Shipped textures whose last mip entries lie past the end of the file (cut off by the authoring tool) must
+    // still load, with the chain shortened to the levels that exist. Level 0 outside the file is still rejected.
+    {
+        BLPHeader cut{};
+        cut.m_magic = BLP_MAGIC_BLP2;
+        cut.m_formatVersion = 1;
+        cut.m_width = cut.m_height = 2;
+        cut.m_colorEncoding = COLOR_RAW;
+        cut.m_hasMips = 1;
+        cut.m_mipOffsets[0] = BlpSourceBounds::FixedHeaderBytes;
+        cut.m_mipSizes[0] = 16;
+        cut.m_mipOffsets[1] = BlpSourceBounds::FixedHeaderBytes + 16; // the 1x1 level starts at the end of the file
+        cut.m_mipSizes[1] = 4;
+        std::array<char, BlpSourceBounds::FixedHeaderBytes + 16> body{};
+        std::memcpy(body.data(), &cut, BlpSourceBounds::FixedHeaderBytes);
+        bool truncated = false;
+        BLPHeader out{};
+        assert(BlpSourceBounds::ReadHeader(body.data(), body.size(), out, &truncated) && truncated);
+        assert(out.m_mipSizes[0] == 16 && !out.m_mipSizes[1] && !out.m_mipOffsets[1]);
+        cut.m_mipSizes[1] = 0xFFFF53ACu; // the garbage size seen on the repair-icon and sun textures
+        std::memcpy(body.data(), &cut, BlpSourceBounds::FixedHeaderBytes);
+        assert(BlpSourceBounds::ReadHeader(body.data(), body.size(), out, &truncated) && truncated && !out.m_mipSizes[1]);
+        assert(!BlpSourceBounds::ReadHeader(body.data(), body.size() - 1, out, &truncated)); // level 0 itself cut
+        // A complete chain is untouched, and a wrong (doubled) size field does not matter: the loader reads by
+        // dimensions, so a block-compressed level that fits is accepted.
+        cut.m_colorEncoding = COLOR_DXT;
+        cut.m_preferredFormat = 0; // DXT1: 8 bytes per 4x4 block
+        cut.m_width = cut.m_height = 4;
+        cut.m_mipSizes[0] = 99999;
+        cut.m_mipSizes[1] = 0;
+        std::memcpy(body.data(), &cut, BlpSourceBounds::FixedHeaderBytes);
+        assert(BlpSourceBounds::ReadHeader(body.data(), body.size(), out, &truncated) && !truncated && out.m_mipSizes[0] == 99999);
+    }
+
     const size_t tileTable = 4096 * 4;
     const size_t height = 20 + tileTable;
     std::vector<char> file(height + 8 + 1090);

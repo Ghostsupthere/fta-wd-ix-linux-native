@@ -103,10 +103,17 @@ int32_t CBLPFile::ValidateHeader(const BLPHeader& header) {
 // OFFSET: 0x006AE900
 int32_t CBLPFile::Source(void* data, size_t bytes) {
     this->Close();
-    if (!BlpSourceBounds::ReadHeader(data, bytes, this->m_header)) return 0;
+    bool truncated = false;
+    if (!BlpSourceBounds::ReadHeader(data, bytes, this->m_header, &truncated)) return 0;
 
     this->m_numLevels = this->HasMips() ? CalcLevelCount(this->m_header.m_width, this->m_header.m_height) : 1;
     if (this->m_numLevels > BLP_MIP_SLOTS) return 0;
+    if (truncated) {
+        // The file ends before its smallest levels: keep only the leading levels that are really there.
+        uint32_t present = 0;
+        while (present < this->m_numLevels && this->m_header.m_mipSizes[present]) ++present;
+        if (present && present < this->m_numLevels) this->m_numLevels = present;
+    }
 
     this->m_inMemoryNeedsFree = 0;
     this->m_inMemoryImage = data;
