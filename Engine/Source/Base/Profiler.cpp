@@ -578,21 +578,21 @@ void ObserveCullCamera(int32_t mapId, const C3Vector& position, const C44Matrix&
     static_assert(sizeof(C44Matrix) == 16 * sizeof(float));
     static uint64_t previousFrame = 0;
     static int32_t previousMap = 0;
-    static C3Vector previousPosition;
-    static C44Matrix previousView;
-    static C44Matrix previousProjection;
+    static unsigned char previousPosition[sizeof(position)];
+    static unsigned char previousView[sizeof(view)];
+    static unsigned char previousProjection[sizeof(projection)];
     g_open.cullCameraSample = true;
     if (previousFrame && previousFrame + 1 == frameId && previousMap == mapId) {
         g_open.cullCameraComparison = true;
-        g_open.cullCameraUnchanged = std::memcmp(&position, &previousPosition, sizeof(position)) == 0 &&
-            std::memcmp(&view, &previousView, sizeof(view)) == 0 &&
-            std::memcmp(&projection, &previousProjection, sizeof(projection)) == 0;
+        g_open.cullCameraUnchanged = std::memcmp(&position, previousPosition, sizeof(position)) == 0 &&
+            std::memcmp(&view, previousView, sizeof(view)) == 0 &&
+            std::memcmp(&projection, previousProjection, sizeof(projection)) == 0;
     }
     previousFrame = frameId;
     previousMap = mapId;
-    previousPosition = position;
-    previousView = view;
-    previousProjection = projection;
+    std::memcpy(previousPosition, &position, sizeof(position));
+    std::memcpy(previousView, &view, sizeof(view));
+    std::memcpy(previousProjection, &projection, sizeof(projection));
 }
 
 bool M2BatchProbeEnabled() {

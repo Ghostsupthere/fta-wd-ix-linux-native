@@ -106,8 +106,9 @@ float staticLampRange = 100;
 sl::StaticLampCatalog lampCatalog;
 sl::StaticWmoLampCatalog meshLampCatalog;
 namespace Profiler {
-    enum { SurfaceLightScan };
+    enum { SurfaceLightScan, StaticLampScan };
     int WorkZone(int zone) { return zone; }
+    [[maybe_unused]] int NightLightsZone(int zone) { return zone; }
     struct Scope { explicit Scope(int) {} };
 }
 #include "scan.inc"
