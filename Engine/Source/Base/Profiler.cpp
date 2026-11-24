@@ -51,7 +51,7 @@ constexpr const char* kNames[Count] = {
     "Movement idle", "Unit movement updates", "Movement map relinks", "Cull sort", "Cull occlusion queries",
     "Cull occlusion writes", "Surface light scan",
     "Static lamp scan", "Liquid draw", "Modern water preparation", "Water glint selection", "Modern water composite", "Water reflection preparation",
-    "Particle vertex prebuild", "Particle vertex inline build", "Network event poll"
+    "Particle vertex prebuild", "Particle vertex inline build", "Network event poll", "Texture async admission"
 };
 
 constexpr uint32_t kM2DrawTypes = static_cast<uint32_t>(M2DrawType::Count);
@@ -323,7 +323,7 @@ void LogSummary() {
     }
     if (PortWorkEnabled()) {
         for (const Id id : {CharacterCompose, CharacterTexturePublish, CharacterPublicationLock, TextureDecode,
-                            D3dTextureUpload, ParticleVertexPrebuild, ParticleVertexInline, NetworkPoll}) {
+                            D3dTextureUpload, TextureAsyncAdmission, ParticleVertexPrebuild, ParticleVertexInline, NetworkPoll}) {
             const auto& zone = s.zones[id];
             if (zone.calls) std::fprintf(stderr, " | %s %.3f/%.3f ms (%.2f calls)",
                 zone.name, zone.selfMs, zone.totalMs, zone.calls);

@@ -3,6 +3,7 @@
 #endif
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 #include "Engine/Source/Base/Profiler.h"
@@ -21,6 +22,7 @@
 #include "Engine/Source/Services/AsyncFile.h"
 #include "Engine/Source/Services/SysMessage.h"
 #include "Engine/Source/Services/Texture.h"
+#include "Engine/Source/Services/TextureAsyncBudget.h"
 #include "Engine/Source/Services/TextureBlob.h"
 #include "Engine/Source/Services/TextureInt.h"
 #include "Engine/Source/Storm/H/storm.h"
@@ -133,7 +135,24 @@ static int32_t s_gxTexCacheSize;
 static int32_t s_gxTexCacheMaxSize;
 
 // STATIC: 0x00B49CA0
-static uint32_t s_asyncLoadBufferUsed;
+static uint64_t s_asyncLoadBufferUsed;
+
+static bool UseBoundedTextureAdmission() {
+#if defined(WOWDECOMP_LINUX)
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_TEXTURE_ASYNC_BUDGET");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    return enabled;
+#else
+    return false;
+#endif
+}
+
+static void ReleaseAsyncTextureBytes(uint32_t size) {
+    if (UseBoundedTextureAdmission()) TextureAsyncBudget::Release(s_asyncLoadBufferUsed, size);
+    else s_asyncLoadBufferUsed = static_cast<uint32_t>(s_asyncLoadBufferUsed) - size;
+}
 
 // STATIC: 0x00B49CA4
 static TSHashTableReuse<CTexture, HASHKEY_TEXTUREFILE> s_textureCache;
@@ -189,7 +208,7 @@ void CTextureAtlas::Update(CTexture* texture) {
 // VERIFY: 89c9895e manual
 // OFFSET: 0x004B5130
 void AsyncTextureDestroyedCallback(CAsyncObject* object) {
-    s_asyncLoadBufferUsed -= object->m_size;
+    ReleaseAsyncTextureBytes(object->m_size);
     void* buffer = object->m_buffer;
     AsyncFileReadDestroyObject(object);
     SMemFree(buffer, __FILE__, __LINE__, 0);
@@ -288,7 +307,7 @@ MipBits* GetDefaultTexture(uint32_t width, uint32_t height) {
 // OFFSET: 0x004B5300
 void AsyncTextureFailureCallback(CTexture* texture) {
     CAsyncObject* object = texture->m_asyncObject;
-    s_asyncLoadBufferUsed -= object->m_size;
+    ReleaseAsyncTextureBytes(object->m_size);
     void* buffer = object->m_buffer;
     AsyncFileReadDestroyObject(object);
     SMemFree(buffer, __FILE__, __LINE__, 0);
@@ -1279,14 +1298,20 @@ void FillInSolidTexture(const CImVector& color, CTexture* texture) {
 // VERIFY: f77dd4dd manual
 // OFFSET: 0x004B69E0
 void AsyncTextureHandler() {
-    uint32_t available = 0x400000 - s_asyncLoadBufferUsed;
+    Profiler::Scope profile(Profiler::PortWorkZone(Profiler::TextureAsyncAdmission));
+    const bool bounded = UseBoundedTextureAdmission();
+    uint32_t available = TextureAsyncBudget::Limit - static_cast<uint32_t>(s_asyncLoadBufferUsed);
+    const auto admit = [&](uint32_t bytes) {
+        return bounded ? TextureAsyncBudget::CanAdmit(s_asyncLoadBufferUsed, bytes) : bytes <= available;
+    };
 
     for (CAsyncObject* object = s_asyncLoadList.Head(); !s_asyncLoadList.IsEnd(object); ) {
         CAsyncObject* next = s_asyncLoadList.RawNext(object);
 
-        if (available >= object->m_size) {
+        if (admit(object->m_size)) {
+            const uint32_t size = object->m_size;
             AsyncTextureProcess(object, 0);
-            available -= object->m_size;
+            if (!bounded) available -= size;
         }
 
         object = next;
@@ -1295,9 +1320,10 @@ void AsyncTextureHandler() {
     for (CAsyncObject* object = s_asyncTextureList.Head(); !s_asyncTextureList.IsEnd(object); ) {
         CAsyncObject* next = s_asyncTextureList.RawNext(object);
 
-        if (available >= object->m_size) {
+        if (admit(object->m_size)) {
+            const uint32_t size = object->m_size;
             AsyncTextureProcess(object, 0);
-            available -= object->m_size;
+            if (!bounded) available -= size;
         }
 
         object = next;
@@ -1953,7 +1979,7 @@ void AsyncTextureSuccessCallback(CTexture* texture) {
         void* replacement = SMemAlloc(converted.size(), __FILE__, __LINE__, 0);
         if (replacement) {
             memcpy(replacement, converted.data(), converted.size());
-            s_asyncLoadBufferUsed -= texture->m_asyncObject->m_size;
+            ReleaseAsyncTextureBytes(texture->m_asyncObject->m_size);
             SMemFree(texture->m_asyncObject->m_buffer, __FILE__, __LINE__, 0);
             texture->m_asyncObject->m_buffer = replacement;
             texture->m_asyncObject->m_size = static_cast<uint32_t>(converted.size());
@@ -1974,7 +2000,7 @@ void AsyncTextureSuccessCallback(CTexture* texture) {
 
     SFileCloseFile(texture->m_asyncObject->m_file);
     texture->m_asyncObject->m_file = nullptr;
-    s_asyncLoadBufferUsed -= texture->m_asyncObject->m_size;
+    ReleaseAsyncTextureBytes(texture->m_asyncObject->m_size);
     SMemFree(texture->m_asyncObject->m_buffer, __FILE__, __LINE__, 0);
     AsyncFileReadDestroyObject(texture->m_asyncObject);
     texture->m_asyncObject = nullptr;
@@ -2234,8 +2260,9 @@ CTexture::~CTexture() {
         } else {
             void* buffer = this->m_asyncObject->m_buffer;
 
+            const uint32_t size = this->m_asyncObject->m_size;
             if (AsyncFile::Cancel(this->m_asyncObject, AsyncTextureDestroyedCallback)) {
-                s_asyncLoadBufferUsed -= this->m_asyncObject->m_size;
+                if (buffer || !UseBoundedTextureAdmission()) ReleaseAsyncTextureBytes(size);
                 SMemFree(buffer, __FILE__, __LINE__, 0);
             }
         }
@@ -2375,7 +2402,10 @@ CTexture* CreateBlpAsync(char* extension, const char* fileName, uint32_t flags, 
 
     CAsyncObject* object = texture->m_asyncObject;
 
-    if (0x400000 - s_asyncLoadBufferUsed < object->m_size) {
+    const bool admit = UseBoundedTextureAdmission()
+        ? TextureAsyncBudget::CanAdmit(s_asyncLoadBufferUsed, object->m_size)
+        : object->m_size <= TextureAsyncBudget::Limit - static_cast<uint32_t>(s_asyncLoadBufferUsed);
+    if (!admit) {
         s_asyncTextureList.LinkNode(object, 2, nullptr);
     } else {
         AsyncTextureProcess(object, 0);

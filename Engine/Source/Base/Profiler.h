@@ -116,6 +116,7 @@ enum Id : uint32_t {
     ParticleVertexPrebuild,
     ParticleVertexInline,
     NetworkPoll,
+    TextureAsyncAdmission,
     Count
 };
 

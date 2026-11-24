@@ -1,5 +1,6 @@
 #include "WoW/Common/ComponentCore/CharacterSectionCache.hpp"
 #include "Engine/Source/BLPFile/ExpandPalette.h"
+#include "Engine/Source/Services/TextureAsyncBudget.h"
 #include <array>
 #include <cassert>
 #include <chrono>
@@ -7,6 +8,17 @@
 #include <vector>
 
 int main() {
+    using TextureAsyncBudget::CanAdmit;
+    using TextureAsyncBudget::Limit;
+    assert(CanAdmit(0, Limit + 1));
+    assert(CanAdmit(Limit - 1, 1));
+    assert(!CanAdmit(Limit - 1, 2));
+    assert(!CanAdmit(Limit + 1, 1));
+    uint64_t charged = 160;
+    TextureAsyncBudget::Release(charged, 100);
+    assert(charged == 60);
+    TextureAsyncBudget::Release(charged, 100);
+    assert(charged == 0);
     std::array<BlpPalPixel, 256> palette{};
     for (unsigned i = 0; i < palette.size(); ++i)
         palette[i] = {uint8_t(i), uint8_t(i ^ 0xa3), uint8_t(i / 2), uint8_t(i ^ 0x57)};
