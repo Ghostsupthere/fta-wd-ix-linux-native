@@ -59,7 +59,7 @@ void CGRuneInfo::InitializeGame() {
 // VERIFY: 2b125080 manual
 // OFFSET: 0x005EDFC0
 bool CGRuneInfo::IsRuneIndexValid(int32_t index) {
-    if (index > 7) {
+    if (index < 0 || index > 7) {
         return false;
     }
 
@@ -73,6 +73,7 @@ bool CGRuneInfo::IsRuneIndexValid(int32_t index) {
 // VERIFY: afb005fb auto
 // OFFSET: 0x005EDFF0
 int32_t CGRuneInfo::GetRuneTypeByIndex(int32_t index, bool base) {
+    if (!IsRuneIndexValid(index)) return 0;
     if (base) {
         return CGRuneInfo::m_baseRunes[index];
     }
@@ -83,6 +84,7 @@ int32_t CGRuneInfo::GetRuneTypeByIndex(int32_t index, bool base) {
 // VERIFY: e47d74df manual
 // OFFSET: 0x005EE1F0
 uint32_t CGRuneInfo::GetRuneRechargeTime(int32_t index) {
+    if (!IsRuneIndexValid(index)) return 0;
     if (!ClntObjMgrObjectPtr(ClntObjMgrGetActivePlayer(), TYPE_PLAYER, __FILE__, __LINE__) || ((1 << index) & CGRuneInfo::m_predictedRunes)) {
         return 0;
     }
