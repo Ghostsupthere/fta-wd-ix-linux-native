@@ -1,4 +1,6 @@
 #include "Engine/Source/Base/Profiler.h"
+#include "Engine/Source/Tempest/C3Vector.h"
+#include "Engine/Source/Tempest/C44Matrix.h"
 
 #include <algorithm>
 #include <atomic>
@@ -75,6 +77,9 @@ struct FrameRecord {
     uint32_t m2RepeatedModels[M2AnimationStages];
     uint32_t m2MaxRepeats[M2AnimationStages];
     uint32_t m2AnimationDropped;
+    bool cullCameraSample;
+    bool cullCameraComparison;
+    bool cullCameraUnchanged;
 };
 
 uint64_t NowNs() {
@@ -171,6 +176,14 @@ void FinishAnimationFrame(FrameRecord* frame) {
     if (frame) frame->m2AnimationDropped = g_animationDropped;
     g_animationUsed = 0;
     g_animationDropped = 0;
+}
+
+bool CullStabilityEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_PROFILE_CULL_STABILITY");
+        return PeriodicLoggingEnabled() && value && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
 }
 
 uint64_t SpikeBaseline() {
@@ -282,6 +295,10 @@ void LogSummary() {
             std::fprintf(stderr, " %sCalls=%.2f %sRepeated=%.2f %sMaxRepeats=%u",
                 stages[i], s.m2AnimationCalls[i], stages[i], s.m2RepeatedModels[i], stages[i], s.m2MaxRepeats[i]);
         }
+    }
+    if (CullStabilityEnabled()) {
+        std::fprintf(stderr, " | cull camera/frame samples=%.3f compared=%.3f unchanged=%.3f",
+            s.cullCameraSamples, s.cullCameraComparisons, s.cullCameraUnchanged);
     }
     if (M2DiagnosticsEnabled()) {
         std::fprintf(stderr, " | M2 draws/frame");
@@ -521,6 +538,30 @@ void CountM2Animation(const void* model, M2AnimationStage stage) {
     ++g_animationDropped;
 }
 
+void ObserveCullCamera(const C3Vector& position, const C44Matrix& view, const C44Matrix& projection) {
+    if (!CullStabilityEnabled()) return;
+    const auto frameId = CurrentFrameId();
+    if (!frameId || g_open.cullCameraSample) return;
+
+    static_assert(sizeof(C3Vector) == 3 * sizeof(float));
+    static_assert(sizeof(C44Matrix) == 16 * sizeof(float));
+    static uint64_t previousFrame = 0;
+    static C3Vector previousPosition;
+    static C44Matrix previousView;
+    static C44Matrix previousProjection;
+    g_open.cullCameraSample = true;
+    if (previousFrame && previousFrame + 1 == frameId) {
+        g_open.cullCameraComparison = true;
+        g_open.cullCameraUnchanged = std::memcmp(&position, &previousPosition, sizeof(position)) == 0 &&
+            std::memcmp(&view, &previousView, sizeof(view)) == 0 &&
+            std::memcmp(&projection, &previousProjection, sizeof(projection)) == 0;
+    }
+    previousFrame = frameId;
+    previousPosition = position;
+    previousView = view;
+    previousProjection = projection;
+}
+
 bool M2DiagnosticsEnabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("WXL_PROFILE_M2_DRAWS");
@@ -609,6 +650,9 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
         const FrameRecord& r = g_ring[(g_next + kKeptFrames - 1 - k) % kKeptFrames];
         frameNs += static_cast<double>(r.frameNs);
         draws += r.draws;
+        out.cullCameraSamples += r.cullCameraSample;
+        out.cullCameraComparisons += r.cullCameraComparison;
+        out.cullCameraUnchanged += r.cullCameraUnchanged;
         out.m2AnimationDropped += r.m2AnimationDropped;
         for (uint32_t i = 0; i < M2AnimationStages; ++i) {
             out.m2AnimationCalls[i] += r.m2AnimationCalls[i];
@@ -655,6 +699,9 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
     out.frameMs = frameNs / n * 1.0e-6;
     out.fps = out.frameMs > 0.0 ? 1000.0 / out.frameMs : 0.0;
     out.drawCalls = draws / n;
+    out.cullCameraSamples /= n;
+    out.cullCameraComparisons /= n;
+    out.cullCameraUnchanged /= n;
     out.m2AnimationDropped /= n;
     for (uint32_t i = 0; i < M2AnimationStages; ++i) {
         out.m2AnimationCalls[i] /= n;

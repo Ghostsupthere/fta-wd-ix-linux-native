@@ -3,6 +3,9 @@
 
 #include <cstdint>
 
+class C3Vector;
+class C44Matrix;
+
 // A small frame profiler for the native Linux client: where the main thread's time goes, plus draw calls and
 // triangles per frame. Zones nest; each reports self time (without nested zones) and total time. Everything runs
 // on the main thread: a Scope created on any other thread, or while the profiler is disabled, does nothing.
@@ -160,6 +163,9 @@ struct Summary {
     double m2RepeatedModels[M2AnimationStages];
     uint32_t m2MaxRepeats[M2AnimationStages];
     double m2AnimationDropped;
+    double cullCameraSamples;
+    double cullCameraComparisons;
+    double cullCameraUnchanged;
 };
 
 struct Scope {
@@ -229,6 +235,7 @@ private:
 
 void CountD3dBufferLock(uint32_t bytes);
 void CountM2Animation(const void* model, M2AnimationStage stage);
+void ObserveCullCamera(const C3Vector& position, const C44Matrix& view, const C44Matrix& projection);
 bool M2DiagnosticsEnabled();
 bool UiDetailEnabled();
 Id UiDetailZone(Id detail, Id parent);
