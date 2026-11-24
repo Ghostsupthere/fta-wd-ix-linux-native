@@ -294,6 +294,15 @@ void CGCorpse_C::ShowLootEffect() {
 // VERIFY: 865254c2 auto
 // OFFSET: 0x00706120
 void CGCorpse_C::OnFlagChanged(uint32_t oldFlags) {
+    const char* fileName;
+    if (!World::s_m2Scene || !this->GetModelFileName(&fileName)) {
+        return;
+    }
+    CM2Model* model = World::s_m2Scene->CreateModel(fileName, 0);
+    if (!model) {
+        return;
+    }
+
     if (this->m_lootEffect) {
         if (this->m_lootEffect->m_attachParent) {
             this->m_lootEffect->DetachFromParent();
@@ -311,22 +320,13 @@ void CGCorpse_C::OnFlagChanged(uint32_t oldFlags) {
     }
 
     this->m_corpseFlags &= ~0x1;
-    const char* fileName;
-
-    if (!this->GetModelFileName(&fileName)) {
-        return;
-    }
-
-    CM2Model* model = World::s_m2Scene->CreateModel(fileName, 0);
     this->SetModel(model);
 
     if (this->m_corpse->m_corpseFieldDynamicFlags & 0x1) {
         this->ShowLootEffect();
     }
 
-    if (model) {
-        model->Release();
-    }
+    model->Release();
 
     this->AddWorldObject();
 }
