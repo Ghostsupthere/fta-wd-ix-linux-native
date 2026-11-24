@@ -1,5 +1,7 @@
 #include "CommentatorFrame.h"
+#include <algorithm>
 #include <cmath>
+#include <iterator>
 #include "Engine/Source/Base/CDataStore.h"
 #include "Engine/Source/Tempest/C33Matrix.h"
 #include "Engine/Source/Tempest/CMath.h"
@@ -489,13 +491,15 @@ uint64_t CGCommentator::GetArenaMember(int32_t index) {
 // VERIFY: 5a8913ac manual
 // OFFSET: 0x0056B280
 int32_t CGCommentator::OnReceivePlayerInfo(void* param, NETMESSAGE msgId, uint32_t time, CDataStore* msg) {
-    uint32_t mapID;
-    CommentatorInstanceKey key;
+    uint32_t mapID = 0;
+    CommentatorInstanceKey key{};
     msg->Get(mapID);
     key.Read(msg);
 
-    WOWGUID guid;
+    WOWGUID guid{};
     msg->Get(guid.m_guid);
+
+    if (msg->m_read > msg->m_size) return 1;
 
     CGCommentator::InstanceInfo* instance = nullptr;
 
@@ -516,14 +520,14 @@ int32_t CGCommentator::OnReceivePlayerInfo(void* param, NETMESSAGE msgId, uint32
         return 1;
     }
 
-    int32_t count = 0;
-    msg->Get(reinterpret_cast<uint32_t&>(count));
-    instance->m_numPlayers[0] = 0;
-    instance->m_numPlayers[1] = 0;
+    uint32_t count = 0;
+    msg->Get(count);
+    if (msg->m_read > msg->m_size) return 1;
 
-    CGCommentator::PlayerInfo info;
-
-    for (int32_t i = 0; i < count; i++) {
+    decltype(instance->m_players) players{};
+    decltype(instance->m_numPlayers) counts{};
+    for (uint32_t i = 0; i < count; ++i) {
+        CGCommentator::PlayerInfo info{};
         msg->Get(info.m_guid.m_guid);
         msg->GetString(info.m_name, sizeof(info.m_name));
         msg->Get(info.unk_0070);
@@ -545,10 +549,21 @@ int32_t CGCommentator::OnReceivePlayerInfo(void* param, NETMESSAGE msgId, uint32
         msg->Get(value);
         info.unk_003C = value;
 
-        if (info.m_faction < 2) {
-            instance->m_players[info.m_faction][instance->m_numPlayers[info.m_faction]] = info;
-            instance->m_numPlayers[info.m_faction]++;
+        if (msg->m_read > msg->m_size) {
+            return 1;
         }
+        if (info.m_faction < std::size(players)) {
+            auto& team = players[info.m_faction];
+            auto& size = counts[info.m_faction];
+            if (size < std::size(team)) {
+                team[size++] = info;
+            }
+        }
+    }
+
+    for (size_t faction = 0; faction < std::size(players); ++faction) {
+        std::copy_n(players[faction], counts[faction], instance->m_players[faction]);
+        instance->m_numPlayers[faction] = counts[faction];
     }
 
     FrameScript_SignalEvent(SCRIPT_EVENT_COMMENTATOR_PLAYER_UPDATE, nullptr);
