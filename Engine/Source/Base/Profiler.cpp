@@ -50,7 +50,8 @@ constexpr const char* kNames[Count] = {
     "Fog ground floor upload", "D3D9 texture upload", "D3D9 buffer lock", "M2 worker wait", "Character publication lock",
     "Movement idle", "Unit movement updates", "Movement map relinks", "Cull sort", "Cull occlusion queries",
     "Cull occlusion writes", "Surface light scan",
-    "Static lamp scan", "Liquid draw", "Modern water preparation", "Water glint selection", "Modern water composite", "Water reflection preparation"
+    "Static lamp scan", "Liquid draw", "Modern water preparation", "Water glint selection", "Modern water composite", "Water reflection preparation",
+    "Particle vertex prebuild", "Particle vertex inline build", "Network event poll"
 };
 
 constexpr uint32_t kM2DrawTypes = static_cast<uint32_t>(M2DrawType::Count);
@@ -85,6 +86,8 @@ struct FrameRecord {
     uint32_t staticCullHits;
     uint32_t staticCullMisses;
     uint32_t staticCullProjectionHits;
+    uint64_t characterWorkerNs;
+    uint32_t characterWorkerRequests;
     uint32_t m2BatchCounts[M2BatchOpportunities];
 };
 
@@ -192,6 +195,29 @@ bool CullStabilityEnabled() {
     return enabled;
 }
 
+bool PortWorkEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_PROFILE_PORT_WORK");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+
+std::mutex g_characterWorkerLock;
+uint64_t g_characterWorkerNs = 0;
+uint32_t g_characterWorkerRequests = 0;
+
+void TakeCharacterWorkerSample(FrameRecord* frame) {
+    if (!PortWorkEnabled()) return;
+    std::lock_guard<std::mutex> lock(g_characterWorkerLock);
+    if (frame) {
+        frame->characterWorkerNs = g_characterWorkerNs;
+        frame->characterWorkerRequests = g_characterWorkerRequests;
+    }
+    g_characterWorkerNs = 0;
+    g_characterWorkerRequests = 0;
+}
+
 uint64_t SpikeBaseline() {
     if (g_count < kSpikeWarmupFrames) return 0;
     // Use an odd number of prior frames so the median is an observed frame time.
@@ -294,6 +320,16 @@ void LogSummary() {
         const auto& zone = s.zones[i];
         if (zone.calls) std::fprintf(stderr, " | %s %.3f/%.3f ms (%.2f calls)",
             zone.name, zone.selfMs, zone.totalMs, zone.calls);
+    }
+    if (PortWorkEnabled()) {
+        for (const Id id : {CharacterCompose, CharacterTexturePublish, CharacterPublicationLock, TextureDecode,
+                            D3dTextureUpload, ParticleVertexPrebuild, ParticleVertexInline, NetworkPoll}) {
+            const auto& zone = s.zones[id];
+            if (zone.calls) std::fprintf(stderr, " | %s %.3f/%.3f ms (%.2f calls)",
+                zone.name, zone.selfMs, zone.totalMs, zone.calls);
+        }
+        std::fprintf(stderr, " | Character worker %.3f/%.3f ms (%.2f calls)",
+            s.characterWorkerMs, s.characterWorkerMs, s.characterWorkerRequests);
     }
     if (BufferWritesEnabled()) {
         const auto& zone = s.zones[D3dBufferLock];
@@ -498,6 +534,21 @@ Id WorkZone(Id zone) {
     return SpikeLoggingEnabled() || PeriodicLoggingEnabled() ? zone : Count;
 }
 
+Id PortWorkZone(Id zone) {
+    return PortWorkEnabled() ? WorkZone(zone) : SpikeZone(zone);
+}
+
+CharacterWorkerScope::CharacterWorkerScope()
+    : m_started(PortWorkEnabled() && Enabled() && PeriodicLoggingEnabled() ? NowNs() : 0) {}
+
+CharacterWorkerScope::~CharacterWorkerScope() {
+    if (!m_started || !Enabled()) return;
+    const auto elapsed = NowNs() - m_started;
+    std::lock_guard<std::mutex> lock(g_characterWorkerLock);
+    g_characterWorkerNs += elapsed;
+    ++g_characterWorkerRequests;
+}
+
 Id NightLightsZone(Id zone) {
     static const bool enabled = [] {
         const char* value = std::getenv("WXL_PROFILE_NIGHT_LIGHTS");
@@ -652,6 +703,7 @@ void EndFrame() {
     if (!g_enabled.load(std::memory_order_relaxed) || !OnOwnerThread()) return;
     const uint64_t now = NowNs();
     FinishAnimationFrame(&g_open);
+    TakeCharacterWorkerSample(&g_open);
     g_open.frameId = g_frameId++;
     uint64_t medianNs = 0;
     if (g_lastFrameEnd) {
@@ -719,6 +771,8 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
         out.staticCullHits += r.staticCullHits;
         out.staticCullMisses += r.staticCullMisses;
         out.staticCullProjectionHits += r.staticCullProjectionHits;
+        out.characterWorkerMs += r.characterWorkerNs * 1.0e-6;
+        out.characterWorkerRequests += r.characterWorkerRequests;
         out.m2AnimationDropped += r.m2AnimationDropped;
         for (uint32_t i = 0; i < M2AnimationStages; ++i) {
             out.m2AnimationCalls[i] += r.m2AnimationCalls[i];
@@ -773,6 +827,8 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
     out.staticCullHits /= n;
     out.staticCullMisses /= n;
     out.staticCullProjectionHits /= n;
+    out.characterWorkerMs /= n;
+    out.characterWorkerRequests /= n;
     out.m2AnimationDropped /= n;
     for (uint32_t i = 0; i < M2AnimationStages; ++i) {
         out.m2AnimationCalls[i] /= n;
@@ -819,6 +875,7 @@ void SetEnabled(bool enabled) {
 
 void Reset() {
     FinishAnimationFrame(nullptr);
+    TakeCharacterWorkerSample(nullptr);
     g_count = 0;
     g_next = 0;
     g_lastFrameEnd = 0;

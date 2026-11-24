@@ -1690,7 +1690,7 @@ CTextureAtlas* CTextureAtlas::Get(CTexture* texture) {
 // VERIFY: b9a802ce manual
 // OFFSET: 0x004B78A0
 int32_t LoadTgaMips(char* fileName, char* extension, int32_t flags, MipBits** images, uint32_t* width, uint32_t* height, EGxTexFormat* gxTexFormat, int32_t* opaque, uint32_t* alphaBits, PIXEL_FORMAT* pixelFormat) {
-    Profiler::Scope scope(Profiler::SpikeZone(Profiler::TextureDecode));
+    Profiler::Scope scope(Profiler::PortWorkZone(Profiler::TextureDecode));
     if (extension) {
         strcpy(extension, ".tga");
     }

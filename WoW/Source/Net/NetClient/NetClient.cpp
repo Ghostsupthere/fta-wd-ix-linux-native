@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include "NetClient.h"
 #include <cstdio>
 #include <cstdlib>
@@ -130,6 +131,7 @@ NETEVENTQUEUE::NETEVENTQUEUE(NetClient* client) {
 // VERIFY: eb4e833d manual
 // OFFSET: 0x006334F0
 void NETEVENTQUEUE::Poll() {
+    Profiler::Scope profile(Profiler::PortWorkZone(Profiler::NetworkPoll));
     this->m_critSect.Enter();
 
     bool destroyed = false;

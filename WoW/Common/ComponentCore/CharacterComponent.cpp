@@ -3868,7 +3868,7 @@ void CCharacterComponent::GeosRenderPrep() {
 // VERIFY: f3bbc113 manual
 // OFFSET: 0x004EE0D0
 void CCharacterComponent::PrepSections() {
-    Profiler::Scope scope(Profiler::SpikeZone(Profiler::CharacterCompose));
+    Profiler::Scope scope(Profiler::PortWorkZone(Profiler::CharacterCompose));
     for (int32_t section = 0; section < NUM_COMPONENT_SECTIONS; section++) {
         if (!((1 << section) & this->m_dirtySections)) {
             continue;
@@ -3922,7 +3922,7 @@ CComponentMipBits* CCharacterComponent::AllocComponentMipBits(EGxTexFormat forma
 // VERIFY: 7bf610ab manual
 // OFFSET: 0x004EE2A0
 void CCharacterComponent::RenderPrepAll() {
-    Profiler::Scope scope(Profiler::SpikeZone(Profiler::CharacterCompose));
+    Profiler::Scope scope(Profiler::PortWorkZone(Profiler::CharacterCompose));
     this->SetTexturesDirty();
     this->m_dirtySections = 0xFFFFFFFF;
 
@@ -5390,7 +5390,7 @@ void CCharacterComponent::RenderPrepFO() {
 // VERIFY: 3f0fe5f0 auto
 // OFFSET: 0x004F0E80
 void CCharacterComponent::ProcessFinishedRequest() {
-    Profiler::Scope scope(Profiler::SpikeZone(Profiler::CharacterTexturePublish));
+    Profiler::Scope scope(Profiler::PortWorkZone(Profiler::CharacterTexturePublish));
     CCharacterComponent::s_bInRenderPrep = 1;
 
     if (this->m_flags & 0x4) {
@@ -5413,6 +5413,7 @@ void CCharacterComponent::ProcessFinishedRequest() {
 // VERIFY: f8ef570f auto
 // OFFSET: 0x004F0EE0
 void CCharacterComponent::ProcessComponentRequest(CComponentRequest* request) {
+    Profiler::CharacterWorkerScope profile;
     MipBits* dstMips = request->m_mipBits->m_mipBits;
 
     if (request->m_format == GxTex_Dxt1) {
@@ -5479,7 +5480,7 @@ CComponentRequest* CCharacterComponent::AllocComponentRequest() {
 // OFFSET: 0x004F1180
 void CCharacterComponent::ProcessComponentFinishedList(int32_t all) {
     {
-        Profiler::Scope profile(Profiler::SpikeZone(Profiler::CharacterPublicationLock));
+        Profiler::Scope profile(Profiler::PortWorkZone(Profiler::CharacterPublicationLock));
         s_finishedListCritSect.Enter();
     }
 
@@ -5492,7 +5493,7 @@ void CCharacterComponent::ProcessComponentFinishedList(int32_t all) {
 
             if (request->m_mipBits) {
                 {
-                    Profiler::Scope profile(Profiler::SpikeZone(Profiler::CharacterPublicationLock));
+                    Profiler::Scope profile(Profiler::PortWorkZone(Profiler::CharacterPublicationLock));
                     s_mipBitsCritSect.Enter();
                 }
 

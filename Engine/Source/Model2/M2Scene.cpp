@@ -294,6 +294,7 @@ void CM2Scene::PrebuildParticleVertices() {
     view.Translate(*reinterpret_cast<const C3Vector*>(&this->m_viewInv.d0));
 
     const bool threads = (this->m_cache->m_flags.load(std::memory_order_relaxed) & 4) && this->m_cache->m_workerCount != 0;
+    Profiler::Scope profile(Profiler::PortWorkZone(Profiler::ParticleVertexPrebuild));
     M2ParticleBuild::Prebuild(this, s_items.data(), static_cast<uint32_t>(s_items.size()), view, &CM2Scene::DispatchParticleWork, this->m_cache, threads);
 }
 #endif

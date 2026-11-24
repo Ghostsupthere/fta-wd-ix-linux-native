@@ -4322,7 +4322,7 @@ void CGxDeviceD3d9Ex::ITexUploadRect(CGxTex* texId, uint32_t face, uint32_t leve
 // VERIFY: 01bc9a37 manual
 // OFFSET: 0x006A6260
 void CGxDeviceD3d9Ex::ITexUploadAll(CGxTex* texId) {
-    Profiler::Scope profile(Profiler::SpikeZone(Profiler::D3dTextureUpload));
+    Profiler::Scope profile(Profiler::PortWorkZone(Profiler::D3dTextureUpload));
     uint32_t width;
     uint32_t height;
     uint32_t baseMip;
@@ -4388,7 +4388,7 @@ void CGxDeviceD3d9Ex::ITexUploadAll(CGxTex* texId) {
 // VERIFY: 87b48313 manual
 // OFFSET: 0x006A63E0
 void CGxDeviceD3d9Ex::ITexUpload(CGxTex* texId) {
-    Profiler::Scope profile(Profiler::SpikeZone(Profiler::D3dTextureUpload));
+    Profiler::Scope profile(Profiler::PortWorkZone(Profiler::D3dTextureUpload));
     uint32_t texelStrideInBytes;
     const void* texels = nullptr;
     texId->m_userFunc(GxTex_Lock, texId->m_width, texId->m_height, 0, 0, texId->m_userArg, texelStrideInBytes, texels);

@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -2521,6 +2522,7 @@ void CParticleEmitter2::RenderParticles(const C44Matrix* frameOfReference, void*
     // Vertices built ahead of time on the worker threads (CM2Scene::PrebuildParticleVertices) are copied in when they
     // were built for exactly this view, frame of reference, format and particle count; otherwise build them here.
     if (!M2ParticleBuild::Apply(this, frameOfReference, view, format, count, buffer, vertex)) {
+        Profiler::Scope profile(Profiler::PortWorkZone(Profiler::ParticleVertexInline));
         this->BuildParticleVertices(vertex, count, view.AffineInverse());
     }
 #else

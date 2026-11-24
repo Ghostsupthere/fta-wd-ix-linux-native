@@ -113,6 +113,9 @@ enum Id : uint32_t {
     WaterGlintSelect,
     WaterComposite,
     WaterReflectionPrepare,
+    ParticleVertexPrebuild,
+    ParticleVertexInline,
+    NetworkPoll,
     Count
 };
 
@@ -181,6 +184,8 @@ struct Summary {
     double staticCullHits;
     double staticCullMisses;
     double staticCullProjectionHits;
+    double characterWorkerMs;
+    double characterWorkerRequests;
     double m2BatchCounts[M2BatchOpportunities];
 };
 
@@ -217,6 +222,16 @@ Id SpikeZone(Id zone);
 Id ProbeChildZone(Id zone, Id parent);
 Id WorkZone(Id zone);
 Id NightLightsZone(Id zone);
+Id PortWorkZone(Id zone);
+
+struct CharacterWorkerScope {
+    CharacterWorkerScope();
+    ~CharacterWorkerScope();
+    CharacterWorkerScope(const CharacterWorkerScope&) = delete;
+    CharacterWorkerScope& operator=(const CharacterWorkerScope&) = delete;
+private:
+    uint64_t m_started;
+};
 
 struct MovementWorkScope {
     struct Counters {
