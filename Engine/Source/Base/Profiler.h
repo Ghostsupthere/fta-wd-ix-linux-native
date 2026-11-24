@@ -107,6 +107,12 @@ enum Id : uint32_t {
     CullOcclusionQuery,
     CullOcclusionWrite,
     SurfaceLightScan,
+    StaticLampScan,
+    LiquidDraw,
+    WaterPrepare,
+    WaterGlintSelect,
+    WaterComposite,
+    WaterReflectionPrepare,
     Count
 };
 
@@ -206,6 +212,7 @@ Id SpikeZone(Id zone);
 // Terrain child timing is scoped to its passes. Work probes also support periodic profiling.
 Id ProbeChildZone(Id zone, Id parent);
 Id WorkZone(Id zone);
+Id NightLightsZone(Id zone);
 
 struct MovementWorkScope {
     struct Counters {

@@ -976,6 +976,7 @@ bool WxlBeginVisualWorld(bool underwater,const float* target) {
 }
 void WxlBeginModernWater() {
     if(!worldActive||!config.water||waterActive)return;
+    Profiler::Scope profile(Profiler::NightLightsZone(Profiler::WaterPrepare));
     FrameInputs frame={};if(!CaptureFrame(frame))return;
     WaterInputs inputs={};const auto* info=DayNight::GetInfo();
     for(unsigned i=0;i<6;++i)inputs.skyColors[i]=Colour(info->m_bands.m_skyColors[i]);
@@ -1012,6 +1013,7 @@ void WxlTagModernWater(const Liquid::CMaterialSettings* settings) {
 }
 void WxlEndModernWater() {
     if(!waterActive)return;
+    Profiler::Scope profile(Profiler::NightLightsZone(Profiler::WaterComposite));
     RestoreWaterDepthWrite();waterActive=false;
     const bool shaded=water.End(device,Depth());
     worldDepthReady |= shaded;

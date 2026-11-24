@@ -525,6 +525,7 @@ void LoadLampCatalog() {
 
 void ScanStaticLamps(const float center[3], const float forward[3], const std::vector<SceneModel>& sceneModels,
                      bool haveTable, Stats& st) {
+    Profiler::Scope profile(Profiler::NightLightsZone(Profiler::StaticLampScan));
     const auto started = std::chrono::steady_clock::now();
     static std::vector<SceneModel> mapModels;
     MapDoodadModels(center, staticLampRange + 20, mapModels, true);
@@ -1333,6 +1334,7 @@ bool WxlSurfaceLightsAvailable() {
 }
 
 void WxlSelectWaterLamps(const float* eye, WaterLamp (&lamps)[2]) {
+    Profiler::Scope profile(Profiler::NightLightsZone(Profiler::WaterGlintSelect));
     const auto& lantern = WxlFrameLantern();
     unsigned first = 0;
     if (lantern.strength > 0) {

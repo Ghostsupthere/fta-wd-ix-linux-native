@@ -49,7 +49,8 @@ constexpr const char* kNames[Count] = {
     "Terrain streaming buffers", "Resident fog floor", "Ground mist",
     "Fog ground floor upload", "D3D9 texture upload", "D3D9 buffer lock", "M2 worker wait", "Character publication lock",
     "Movement idle", "Unit movement updates", "Movement map relinks", "Cull sort", "Cull occlusion queries",
-    "Cull occlusion writes", "Surface light scan"
+    "Cull occlusion writes", "Surface light scan",
+    "Static lamp scan", "Liquid draw", "Modern water preparation", "Water glint selection", "Modern water composite", "Water reflection preparation"
 };
 
 constexpr uint32_t kM2DrawTypes = static_cast<uint32_t>(M2DrawType::Count);
@@ -285,6 +286,11 @@ void LogSummary() {
             work.relinkDisplacement[3], work.relinkDisplacement[4],
             work.candidateHit, work.candidateMiss, work.candidateDeferred, work.candidateUnsupportedRay, work.candidateSmallLeaf);
     }
+    for (uint32_t i = StaticLampScan; i <= WaterReflectionPrepare; ++i) {
+        const auto& zone = s.zones[i];
+        if (zone.calls) std::fprintf(stderr, " | %s %.3f/%.3f ms (%.2f calls)",
+            zone.name, zone.selfMs, zone.totalMs, zone.calls);
+    }
     if (BufferWritesEnabled()) {
         std::fprintf(stderr, " | D3D9 buffer/frame locks=%.2f mappedBytes=%.2f",
             s.d3dBufferLocks, s.d3dBufferMappedBytes);
@@ -479,6 +485,14 @@ Id ProbeChildZone(Id zone, Id parent) {
 
 Id WorkZone(Id zone) {
     return SpikeLoggingEnabled() || PeriodicLoggingEnabled() ? zone : Count;
+}
+
+Id NightLightsZone(Id zone) {
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_PROFILE_NIGHT_LIGHTS");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    return enabled ? WorkZone(zone) : Count;
 }
 
 thread_local MovementWorkScope::Counters* MovementWorkScope::s_active = nullptr;

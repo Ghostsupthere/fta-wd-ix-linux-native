@@ -1,4 +1,7 @@
 #if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/Base/Profiler.h"
+#endif
+#if defined(WOWDECOMP_LINUX)
 #define WOWDECOMP_GX_DXVK
 #include <d3d9.h>
 #endif
@@ -1310,6 +1313,9 @@ void WaterRenderer::FillClassConstants(ShadingConstants& c, const WaterPreset& p
 
 void WaterRenderer::BuildReflectionFog()
 {
+#if defined(WOWDECOMP_LINUX)
+    Profiler::Scope profile(Profiler::NightLightsZone(Profiler::WaterReflectionPrepare));
+#endif
     m_reflectionFog = {};
     if (m_water.stockFogApplies)
         return;

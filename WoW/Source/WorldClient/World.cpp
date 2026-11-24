@@ -1991,6 +1991,7 @@ void CWorldScene::UpdateViewerLiquid() {
 // VERIFY: a0789a2d auto
 // OFFSET: 0x00790A80
 void CWorldScene::RenderLiquidPass() {
+    Profiler::Scope profile(Profiler::NightLightsZone(Profiler::LiquidDraw));
     CWorldScene::ApplyFogState();
 
     if ((CWorld::enables & Enable_Water) && CWorldScene::s_liquidRenderer) {
