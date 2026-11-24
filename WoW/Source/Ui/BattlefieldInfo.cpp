@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <iterator>
 #include "BattlefieldInfo.h"
 #include "WoW/Source/DB/DBClient/DBClient.h"
 #include "WoW/Source/DB/Rec/BattlemasterListRec.h"
@@ -647,40 +649,47 @@ int32_t Packet_SMSG_GROUP_JOINED_BATTLEGROUND(void* param, NETMESSAGE msgId, uin
 // VERIFY: ded4dbc4 auto
 // OFFSET: 0x0054B3F0
 int32_t Packet_MSG_BATTLEGROUND_PLAYER_POSITIONS(void* param, NETMESSAGE msgId, uint32_t time, CDataStore* msg) {
-    msg->Get(CGBattlefieldInfo::m_numPlayerPositions);
+    constexpr uint32_t positionBytes = sizeof(uint64_t) + 2 * sizeof(float);
+    constexpr auto playerCapacity = std::size(CGBattlefieldInfo::m_playerPositions);
+    constexpr auto flagCapacity = std::size(CGBattlefieldInfo::m_flagPositions);
+    static_assert(playerCapacity == std::size(CGBattlefieldInfo::m_playerPositionGuids));
+    static_assert(flagCapacity == std::size(CGBattlefieldInfo::m_flagCarriers));
+    const auto canRead = [msg](uint32_t bytes) {
+        return msg && msg->m_read <= msg->m_size && bytes <= msg->m_size - msg->m_read;
+    };
+    if (!canRead(sizeof(uint32_t))) return 0;
 
-    for (uint32_t i = 0; i < CGBattlefieldInfo::m_numPlayerPositions; i++) {
-        msg->Get(CGBattlefieldInfo::m_playerPositionGuids[i].m_guid);
-        msg->Get(CGBattlefieldInfo::m_playerPositions[i].x);
-        msg->Get(CGBattlefieldInfo::m_playerPositions[i].y);
+    uint32_t players;
+    msg->Get(players);
+    if (players > playerCapacity || !canRead(players * positionBytes + sizeof(uint32_t))) return 0;
+
+    WOWGUID playerGuids[playerCapacity];
+    C2Vector playerPositions[playerCapacity];
+    for (uint32_t i = 0; i < players; ++i) {
+        msg->Get(playerGuids[i].m_guid);
+        msg->Get(playerPositions[i].x);
+        msg->Get(playerPositions[i].y);
     }
 
-    int32_t numFlags;
-    msg->Get(reinterpret_cast<uint32_t&>(numFlags));
+    uint32_t flags;
+    msg->Get(flags);
+    if (flags > flagCapacity || !canRead(flags * positionBytes)) return 0;
 
-    if (numFlags > 0) {
-        if (numFlags < 2) {
-            CGBattlefieldInfo::m_flagCarriers[1] = WOWGUID();
-            CGBattlefieldInfo::m_flagPositions[1].x = 0.0f;
-            CGBattlefieldInfo::m_flagPositions[1].y = 0.0f;
-        }
-
-        do {
-            numFlags--;
-            msg->Get(CGBattlefieldInfo::m_flagCarriers[numFlags].m_guid);
-            msg->Get(CGBattlefieldInfo::m_flagPositions[numFlags].x);
-            msg->Get(CGBattlefieldInfo::m_flagPositions[numFlags].y);
-        } while (numFlags > 0);
-
-        return 1;
+    WOWGUID flagGuids[flagCapacity]{};
+    C2Vector flagPositions[flagCapacity]{};
+    // The wire's first flag record occupies the last active slot.
+    for (uint32_t i = flags; i > 0; --i) {
+        msg->Get(flagGuids[i - 1].m_guid);
+        msg->Get(flagPositions[i - 1].x);
+        msg->Get(flagPositions[i - 1].y);
     }
+    if (!canRead(0)) return 0;
 
-    CGBattlefieldInfo::m_flagPositions[0].x = 0.0f;
-    CGBattlefieldInfo::m_flagPositions[0].y = 0.0f;
-    CGBattlefieldInfo::m_flagCarriers[0] = WOWGUID();
-    CGBattlefieldInfo::m_flagPositions[1].x = 0.0f;
-    CGBattlefieldInfo::m_flagCarriers[1] = WOWGUID();
-    CGBattlefieldInfo::m_flagPositions[1].y = 0.0f;
+    std::copy_n(playerGuids, players, CGBattlefieldInfo::m_playerPositionGuids);
+    std::copy_n(playerPositions, players, CGBattlefieldInfo::m_playerPositions);
+    std::copy_n(flagGuids, flagCapacity, CGBattlefieldInfo::m_flagCarriers);
+    std::copy_n(flagPositions, flagCapacity, CGBattlefieldInfo::m_flagPositions);
+    CGBattlefieldInfo::m_numPlayerPositions = players;
     return 1;
 }
 
