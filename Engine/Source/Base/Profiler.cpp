@@ -81,6 +81,10 @@ struct FrameRecord {
     bool cullCameraSample;
     bool cullCameraComparison;
     bool cullCameraUnchanged;
+    uint32_t staticCullPasses;
+    uint32_t staticCullHits;
+    uint32_t staticCullMisses;
+    uint32_t staticCullProjectionHits;
     uint32_t m2BatchCounts[M2BatchOpportunities];
 };
 
@@ -309,6 +313,10 @@ void LogSummary() {
     if (CullStabilityEnabled()) {
         std::fprintf(stderr, " | cull camera/frame samples=%.3f compared=%.3f unchanged=%.3f",
             s.cullCameraSamples, s.cullCameraComparisons, s.cullCameraUnchanged);
+    }
+    if (s.staticCullPasses) {
+        std::fprintf(stderr, " | static cull/frame passes=%.2f hits=%.2f misses=%.2f projectedHits=%.2f",
+            s.staticCullPasses, s.staticCullHits, s.staticCullMisses, s.staticCullProjectionHits);
     }
     if (M2BatchProbeEnabled()) {
         constexpr const char* names[M2BatchOpportunities] = {
@@ -595,6 +603,14 @@ void ObserveCullCamera(int32_t mapId, const C3Vector& position, const C44Matrix&
     std::memcpy(previousProjection, &projection, sizeof(projection));
 }
 
+void RecordStaticCullReuse(uint32_t hits, uint32_t misses, uint32_t projectionHits) {
+    if (!PeriodicLoggingEnabled() || !Enabled() || !OnOwnerThread()) return;
+    ++g_open.staticCullPasses;
+    g_open.staticCullHits += hits;
+    g_open.staticCullMisses += misses;
+    g_open.staticCullProjectionHits += projectionHits;
+}
+
 bool M2BatchProbeEnabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("WXL_PROFILE_M2_BATCHING");
@@ -699,6 +715,10 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
         out.cullCameraSamples += r.cullCameraSample;
         out.cullCameraComparisons += r.cullCameraComparison;
         out.cullCameraUnchanged += r.cullCameraUnchanged;
+        out.staticCullPasses += r.staticCullPasses;
+        out.staticCullHits += r.staticCullHits;
+        out.staticCullMisses += r.staticCullMisses;
+        out.staticCullProjectionHits += r.staticCullProjectionHits;
         out.m2AnimationDropped += r.m2AnimationDropped;
         for (uint32_t i = 0; i < M2AnimationStages; ++i) {
             out.m2AnimationCalls[i] += r.m2AnimationCalls[i];
@@ -749,6 +769,10 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
     out.cullCameraSamples /= n;
     out.cullCameraComparisons /= n;
     out.cullCameraUnchanged /= n;
+    out.staticCullPasses /= n;
+    out.staticCullHits /= n;
+    out.staticCullMisses /= n;
+    out.staticCullProjectionHits /= n;
     out.m2AnimationDropped /= n;
     for (uint32_t i = 0; i < M2AnimationStages; ++i) {
         out.m2AnimationCalls[i] /= n;

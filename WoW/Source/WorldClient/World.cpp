@@ -4185,7 +4185,7 @@ void CWorldScene::CullChunks(CSortEntry* entry, uint32_t index) {
 
         chunk->m_sortListLink.Unlink();
 
-        if (CWorldScene::frustumStack[CWorldScene::frustumIndex].Cull(chunk->m_bbox) && !CWorldOcclusion::QueryVolumes(&chunk->m_sphere) && !CWorldOcclusion::QueryBuffer(&chunk->m_bbox, 0)) {
+        if (CWorldOcclusion::StaticBoxVisible(CWorldScene::frustumStack[CWorldScene::frustumIndex], chunk->m_bbox, &chunk->m_sphere)) {
             if (ShouldCullFog()) {
                 float maxFogRenderDist = CWorld::farFog + CWorldScene::s_fogFovPadding + 33.333332f;
                 if (chunk->m_distToCamera > maxFogRenderDist) {
@@ -4201,7 +4201,7 @@ void CWorldScene::CullChunks(CSortEntry* entry, uint32_t index) {
 
             CWorldScene::CullDoodadsExterior(&chunk->m_doodadDefLinkList, CWorldView::GetFadeLevelForDistance(chunk->m_distToCamera));
 
-            if (CWorldScene::frustumStack[CWorldScene::frustumIndex].Cull(chunk->m_bbox2) && !CWorldOcclusion::QueryBuffer(&chunk->m_bbox2, 0)) {
+            if (CWorldOcclusion::StaticBoxVisible(CWorldScene::frustumStack[CWorldScene::frustumIndex], chunk->m_bbox2, nullptr)) {
                 if (chunk->m_header->m_holes != 0xFFFF) {
                     CWorldScene::s_chunksRendered++;
                     chunk->RenderPrep();
@@ -4294,7 +4294,7 @@ void CWorldScene::CullMapObjDefGroups(CSortEntry* entry, CRect* rect, uint32_t i
 
         CMapObjDef* mapObjDef = static_cast<CMapObjDef*>(group->m_parentLinkList.Head()->m_ref);
 
-        if (CWorldScene::frustumStack[CWorldScene::frustumIndex].Cull(group->m_bbox) && !CWorldOcclusion::QueryVolumes(&group->m_sphere) && !CWorldOcclusion::QueryBuffer(&group->m_bbox, 0)) {
+        if (CWorldOcclusion::StaticBoxVisible(CWorldScene::frustumStack[CWorldScene::frustumIndex], group->m_bbox, &group->m_sphere)) {
             mapObjDef->CullMapObjDefGroupFromExterior(group, rect, 0);
             CWorldScene::AddDoodadDefs(&group->m_doodadDefLinkList, index);
         }
@@ -4350,6 +4350,7 @@ void CWorldScene::CullSortTable(CRect* rect) {
     CWorldScene::frustumIndex++;
     CWorldScene::frustumStack[CWorldScene::frustumIndex] = CWorldScene::frustumStack[CWorldScene::frustumIndex - 1];
     CWorldScene::FrustumSet(rect);
+    CWorldOcclusion::BeginStaticBoxPass(CWorldScene::frustumStack[CWorldScene::frustumIndex]);
 
     CSortEntry* entry = CWorldScene::sortTable.m_table;
 
@@ -4363,6 +4364,7 @@ void CWorldScene::CullSortTable(CRect* rect) {
         entry++;
     }
 
+    CWorldOcclusion::EndStaticBoxPass();
     CWorldScene::CullHorizon(rect);
     CWorldScene::frustumIndex--;
 }

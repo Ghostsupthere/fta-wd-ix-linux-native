@@ -177,6 +177,10 @@ struct Summary {
     double cullCameraSamples;
     double cullCameraComparisons;
     double cullCameraUnchanged;
+    double staticCullPasses;
+    double staticCullHits;
+    double staticCullMisses;
+    double staticCullProjectionHits;
     double m2BatchCounts[M2BatchOpportunities];
 };
 
@@ -250,6 +254,7 @@ Id BufferLockZone();
 void CountD3dBufferLock(uint32_t bytes);
 void CountM2Animation(const void* model, M2AnimationStage stage);
 void ObserveCullCamera(int32_t mapId, const C3Vector& position, const C44Matrix& view, const C44Matrix& projection);
+void RecordStaticCullReuse(uint32_t hits, uint32_t misses, uint32_t projectionHits);
 bool M2BatchProbeEnabled();
 void CountM2BatchOpportunity(M2BatchOpportunity kind);
 bool M2DiagnosticsEnabled();

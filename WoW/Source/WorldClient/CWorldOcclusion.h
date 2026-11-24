@@ -10,6 +10,7 @@
 class C3Vector;
 class CAaBox;
 class CAaSphere;
+class CFrustum;
 
 class CWorldOccluder {
     public:
@@ -42,6 +43,10 @@ class CWorldOcclusion {
     public:
     static TSGrowableArray<C4Plane> planeArray;
     static TSGrowableArray<CClipVolume> clipVolumeArray;
+
+    static void BeginStaticBoxPass(CFrustum& frustum);
+    static void EndStaticBoxPass();
+    static bool StaticBoxVisible(CFrustum& frustum, CAaBox& box, CAaSphere* sphere);
 
     static void ClearVolumes();
     static uint32_t GetClipVolumeCount();

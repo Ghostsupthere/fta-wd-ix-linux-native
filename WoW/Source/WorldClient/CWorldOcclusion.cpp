@@ -1,8 +1,11 @@
 #include "Engine/Source/Base/Profiler.h"
 #include "CWorldOcclusion.h"
+#include "StaticCullReuse.h"
 #include <malloc.h>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
 #include "Engine/Source/Tempest/C44Matrix.h"
 #include "Engine/Source/Tempest/CAaBox.h"
 #include "Engine/Source/Tempest/CAaSphere.h"
@@ -529,25 +532,27 @@ uint32_t CWorldOcclusion::QueryBuffer(const C3Vector& center, float radius, uint
     return 2;
 }
 
-// VERIFY: 3ac5bc19 auto
-// OFFSET: 0x0078FDC0
-uint32_t CWorldOcclusion::QueryBuffer(CAaBox* box, uint8_t flags) {
-    Profiler::Scope profile(Profiler::WorkZone(Profiler::CullOcclusionQuery));
-    if (!(CWorld::enables & Enable_Culling) || CWorldScene::camVec.z < -0.89999998f || CWorldScene::camVec.z > 0.89999998f) {
-        return 0;
-    }
+namespace {
 
+using StaticCullReuse::BoxQuery;
+
+bool ClipBufferEnabled() {
+    return (CWorld::enables & Enable_Culling) &&
+        !(CWorldScene::camVec.z < -0.89999998f || CWorldScene::camVec.z > 0.89999998f);
+}
+
+BoxQuery ProjectBox(const CAaBox& box, uint8_t flags) {
     float minX = 3.4028235e38f;
     float maxX = -3.4028235e38f;
     float maxY = -3.4028235e38f;
-    const C3Vector* corners[2] = { &box->b, &box->t };
+    const C3Vector* corners[2] = { &box.b, &box.t };
 
     for (uint32_t i = 0; i < 8; i++) {
         C3Vector corner(corners[aabbCornerSelectX[i]]->x, corners[aabbCornerSelectY[i]]->y, corners[aabbCornerSelectZ[i]]->z);
         corner = corner * CWorldScene::s_clipBufferMatrix;
 
         if (!(flags & 0x8) && corner.z < 50.0f) {
-            return 0;
+            return {};
         }
 
         float scale = 1.0f / corner.z;
@@ -571,7 +576,7 @@ uint32_t CWorldOcclusion::QueryBuffer(CAaBox* box, uint8_t flags) {
     int32_t last = CMath::fint_(maxX * CBSCALE - 0.5f) + 193;
 
     if (first >= 384 || last < 0) {
-        return 0;
+        return {};
     }
 
     if (first < 0) {
@@ -582,13 +587,110 @@ uint32_t CWorldOcclusion::QueryBuffer(CAaBox* box, uint8_t flags) {
         last = 383;
     }
 
-    for (int32_t i = first; i <= last; i++) {
-        if (maxY > CWorldScene::s_clipBuffer[i]) {
-            return 0;
+    return {maxY, first, last, -1, true};
+}
+
+enum class ReuseMode { Off, On, Verify };
+
+ReuseMode StaticBoxMode() {
+#if defined(WOWDECOMP_LINUX)
+    static const auto mode = [] {
+        const char* value = std::getenv("WXL_CULL_REUSE");
+        if (value && std::strcmp(value, "1") == 0) return ReuseMode::On;
+        if (value && std::strcmp(value, "2") == 0) return ReuseMode::Verify;
+        return ReuseMode::Off;
+    }();
+    return mode;
+#else
+    return ReuseMode::Off;
+#endif
+}
+
+// All members are fully initialized and consist of 32-bit scalars.
+struct StaticBoxView {
+    int32_t map;
+    C3Vector camera;
+    C3Vector direction;
+    C44Matrix view;
+    C44Matrix projection;
+    C44Matrix clip;
+    C4Plane planes[NUM_PLANES];
+};
+static_assert(sizeof(StaticBoxView) == sizeof(uint32_t) * (1 + 6 + 48 + 4 * NUM_PLANES));
+StaticCullReuse::Cache<StaticBoxView, 8192> staticBoxes;
+ReuseMode staticBoxPass = ReuseMode::Off;
+uint32_t staticHits = 0, staticMisses = 0, projectionHits = 0;
+
+} // namespace
+
+// VERIFY: 3ac5bc19 auto
+// OFFSET: 0x0078FDC0
+uint32_t CWorldOcclusion::QueryBuffer(CAaBox* box, uint8_t flags) {
+    Profiler::Scope profile(Profiler::WorkZone(Profiler::CullOcclusionQuery));
+    if (!ClipBufferEnabled()) return 0;
+    return ProjectBox(*box, flags).Hidden(CWorldScene::s_clipBuffer) ? 2 : 0;
+}
+
+void CWorldOcclusion::BeginStaticBoxPass(CFrustum& frustum) {
+    staticBoxPass = StaticBoxMode();
+    if (staticBoxPass == ReuseMode::Off) return;
+    if (!g_theGxDevicePtr) {
+        staticBoxPass = ReuseMode::Off;
+        return;
+    }
+    const auto& view = g_theGxDevicePtr->m_xforms[GxXform_View];
+    StaticBoxView key{s_mapId, CWorldScene::s_activeWorldView, CWorldScene::camVec,
+        view.m_mtx[view.m_level], g_theGxDevicePtr->m_projNative, CWorldScene::s_clipBufferMatrix, {}};
+    std::memcpy(key.planes, frustum.planes, sizeof(key.planes));
+    staticBoxes.Begin(static_cast<uint32_t>(g_theGxDevicePtr->m_frameCount), key);
+    staticHits = staticMisses = projectionHits = 0;
+}
+
+void CWorldOcclusion::EndStaticBoxPass() {
+    if (staticBoxPass == ReuseMode::Off) return;
+    Profiler::RecordStaticCullReuse(staticHits, staticMisses, projectionHits);
+    staticBoxPass = ReuseMode::Off;
+}
+
+bool CWorldOcclusion::StaticBoxVisible(CFrustum& frustum, CAaBox& box, CAaSphere* sphere) {
+    const auto stock = [&] {
+        return frustum.Cull(box) && (!sphere || !QueryVolumes(sphere)) && !QueryBuffer(&box, 0);
+    };
+    if (staticBoxPass == ReuseMode::Off) return stock();
+
+    bool hit;
+    const auto& b = box.b;
+    const auto& t = box.t;
+    auto& entry = staticBoxes.Lookup(reinterpret_cast<uintptr_t>(&box), {b.x, b.y, b.z, t.x, t.y, t.z}, hit);
+    if (hit) {
+        ++staticHits;
+    } else {
+        ++staticMisses;
+        entry.inFrustum = frustum.Cull(box) != WorldCull_outside;
+    }
+
+    bool visible = entry.inFrustum && (!sphere || !QueryVolumes(sphere));
+    if (visible) {
+        Profiler::Scope profile(Profiler::WorkZone(Profiler::CullOcclusionQuery));
+        if (ClipBufferEnabled()) {
+            if (!entry.projected) {
+                entry.query = ProjectBox(box, 0);
+                entry.projected = true;
+            } else {
+                ++projectionHits;
+            }
+            visible = !entry.query.Hidden(CWorldScene::s_clipBuffer);
         }
     }
 
-    return 2;
+    if (staticBoxPass == ReuseMode::On) return visible;
+    const bool expected = stock();
+    static bool mismatchLogged = false;
+    if (visible != expected && !mismatchLogged) {
+        mismatchLogged = true;
+        std::fprintf(stderr, "WarcraftXL: static cull reuse verification mismatch on map %d\n", s_mapId);
+    }
+    return expected;
 }
 
 // VERIFY: c855a200 auto
