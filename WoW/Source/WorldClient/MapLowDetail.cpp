@@ -1,3 +1,4 @@
+#include "WoW/Source/WorldClient/WdlBounds.h"
 #include "MapLowDetail.h"
 #include "WoW/Source/WorldClient/WorldConstants.h"
 #include <cmath>
@@ -119,7 +120,7 @@ void CMapLowDetail::CullHorizonAreas(const C3Vector* pos) {
 // OFFSET: 0x007CC310
 void CMapLowDetail::Load(const char* mapPath, const char* mapName) {
     char fileName[256];
-    SFileImpl* file;
+    SFileImpl* file = nullptr;
 
     SStrPrintf(fileName, sizeof(fileName), "%s\\%s.wdl", mapPath, mapName);
     SFileOpenFile(fileName, &file);
@@ -128,10 +129,18 @@ void CMapLowDetail::Load(const char* mapPath, const char* mapName) {
         return;
     }
 
-    uint32_t size = SFileGetFileSize(file, nullptr);
-    this->m_data = static_cast<char*>(SMemAlloc(size, __FILE__, __LINE__, 0));
-    SFileReadFile(file, this->m_data, size, nullptr, nullptr, 0);
+    static_assert(sizeof(SMMapObjDef) == 64);
+    const uint32_t size = SFileGetFileSize(file, nullptr);
+    char* buffer = size >= 8 && size != UINT32_MAX
+        ? static_cast<char*>(SMemAlloc(size, __FILE__, __LINE__, 0)) : nullptr;
+    uint32_t bytesRead = 0;
+    const bool read = buffer && SFileReadFile(file, buffer, size, &bytesRead, nullptr, 0) && bytesRead == size;
     SFileCloseFile(file);
+    if (!read || !WdlBounds::Validate(buffer, size, sizeof(SMMapObjDef))) {
+        if (buffer) SMemFree(buffer, __FILE__, __LINE__, 0);
+        return;
+    }
+    this->m_data = buffer;
 
     uint32_t* chunk = reinterpret_cast<uint32_t*>(this->m_data + reinterpret_cast<uint32_t*>(this->m_data)[1] + 8);
     char* data = this->m_data + reinterpret_cast<uint32_t*>(this->m_data)[1] + 16;
@@ -157,7 +166,7 @@ void CMapLowDetail::Load(const char* mapPath, const char* mapName) {
                 CMapAreaLow* area = CMap::AllocAreaLow();
                 this->m_areas[index] = area;
                 area->m_heights = reinterpret_cast<int16_t*>(mare + 8);
-                uint32_t* next = reinterpret_cast<uint32_t*>(mare + reinterpret_cast<uint32_t*>(mare)[1] + 8);
+                char* next = mare + WdlBounds::Read32(mare + 4) + 8;
 
                 int32_t minHeight = 100000;
                 int32_t maxHeight = -100000;
@@ -197,8 +206,8 @@ void CMapLowDetail::Load(const char* mapPath, const char* mapName) {
                 float dx = area->m_bbox.t.x - area->m_sphere.c.x;
                 area->m_sphere.r = sqrtf(dx * dx + dy * dy + dz * dz);
 
-                if (next[0] == 0x4D41484F) {
-                    uint16_t* holes = reinterpret_cast<uint16_t*>(next + 2);
+                if (this->m_data + size - next >= 8 && WdlBounds::Read32(next) == 0x4D41484F) {
+                    uint16_t* holes = reinterpret_cast<uint16_t*>(next + 8);
                     area->m_holes = holes;
                     area->m_indexCount = 0;
 
