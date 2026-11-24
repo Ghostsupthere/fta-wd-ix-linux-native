@@ -1,4 +1,6 @@
 #include "Engine/Source/Base/Profiler.h"
+#include <chrono>
+#include <cstdlib>
 #include "NetClient.h"
 #include <cstdio>
 #include <cstdlib>
@@ -128,10 +130,26 @@ NETEVENTQUEUE::NETEVENTQUEUE(NetClient* client) {
     this->m_client = client;
 }
 
+static bool NetBatchPollEnabled() {
+#if defined(WOWDECOMP_LINUX)
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_NET_BATCH_POLL");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    return enabled;
+#else
+    return false;
+#endif
+}
+
 // VERIFY: eb4e833d manual
 // OFFSET: 0x006334F0
 void NETEVENTQUEUE::Poll() {
     Profiler::Scope profile(Profiler::PortWorkZone(Profiler::NetworkPoll));
+    if (NetBatchPollEnabled()) {
+        this->PollBatch();
+        return;
+    }
     this->m_critSect.Enter();
 
     bool destroyed = false;
@@ -191,6 +209,92 @@ void NETEVENTQUEUE::Poll() {
 
     this->m_eventQueue.Clear();
     this->m_critSect.Leave();
+}
+
+void NETEVENTQUEUE::PollBatch() {
+    TSList<NETEVENTQUEUENODE> batch;
+    this->m_critSect.Enter();
+    if (this->m_polling || this->m_retired) {
+        this->m_critSect.Leave();
+        return;
+    }
+    this->m_polling = true;
+    NetClient* client = this->m_client;
+    client->m_refCount.Increment(); // Pins the owner through callbacks and queue cleanup.
+    const uint64_t generation = this->m_generation.load();
+    batch.Combine(&this->m_eventQueue, 2, nullptr); // Constant-time FIFO handoff.
+    this->m_critSect.Leave();
+
+    struct Completion {
+        NETEVENTQUEUE* queue;
+        TSList<NETEVENTQUEUENODE>& batch;
+        ~Completion() { queue->FinishPoll(batch); }
+    } completion{this, batch};
+
+    // Arrivals (including callback-enqueued events) belong to the next outer poll.
+    // Clear/Disconnect invalidates the uncalled remainder, including across reconnect.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(4);
+    bool dataDispatched = false;
+    while (NETEVENTQUEUENODE* node = batch.Head()) {
+        if (!client->m_deleteMe && generation == this->m_generation.load()) {
+            switch (node->m_eventId) {
+                case EVENT_ID_NET_DATA:
+                    client->HandleData(node->m_timeReceived, node->m_data, node->m_dataSize);
+                    dataDispatched = true;
+                    break;
+                case EVENT_ID_NET_CONNECT:
+                    client->HandleConnect();
+                    break;
+                case EVENT_ID_NET_DISCONNECT:
+                    client->HandleDisconnect();
+                    break;
+                case EVENT_ID_NET_CANTCONNECT:
+                    client->HandleCantConnect();
+                    break;
+                case EVENT_ID_NET_DESTROY:
+                    client->m_deleteMe = true;
+                    break;
+                case EVENT_ID_NET_AUTH_CHALLENGE:
+                    client->HandleAuthChallenge(static_cast<AuthenticationChallenge*>(node->m_data));
+                    break;
+                default:
+                    break;
+            }
+        }
+        this->ReleaseNode(batch, node);
+
+        if (dataDispatched && !batch.IsEmpty() && std::chrono::steady_clock::now() >= deadline) {
+            // Yield to the game loop. Older events retain their order ahead of new arrivals.
+            this->m_critSect.Enter();
+            if (!client->m_deleteMe && generation == this->m_generation.load()) {
+                this->m_eventQueue.Combine(&batch, 1, nullptr);
+            }
+            this->m_critSect.Leave();
+            break;
+        }
+    }
+    if (!client->m_deleteMe && generation == this->m_generation.load()) {
+        client->HandleIdle();
+    }
+}
+
+void NETEVENTQUEUE::FinishPoll(TSList<NETEVENTQUEUENODE>& batch) {
+    NetClient* client = this->m_client;
+    // Also balances skipped events if a native callback unwinds dispatch.
+    while (NETEVENTQUEUENODE* node = batch.Head()) {
+        this->ReleaseNode(batch, node);
+    }
+    this->m_critSect.Enter();
+    this->m_polling = false;
+    const bool retired = this->m_retired;
+    this->m_critSect.Leave();
+    if (retired) {
+        delete this;
+    }
+    // Deleting the client may delete this queue. Never access either after releasing the pin.
+    if (client->m_refCount.Decrement() == 0 && client->m_deleteMe) {
+        delete client;
+    }
 }
 
 // VERIFY: dd90b2c3 auto
@@ -736,8 +840,13 @@ void NetClient::Destroy() {
     memset(this->m_handlers, 0, sizeof(this->m_handlers));
     memset(this->m_handlerParams, 0, sizeof(this->m_handlerParams));
 
-    delete this->m_netEventQueue;
+    auto* queue = this->m_netEventQueue;
     this->m_netEventQueue = nullptr;
+    if (queue && NetBatchPollEnabled()) {
+        queue->Retire();
+    } else {
+        delete queue;
+    }
 
     if (--NetClient::s_clientCount == 0) {
         OsSleep(1);
@@ -766,16 +875,42 @@ NetClient::~NetClient() {
 
 // VERIFY: 4136bd3d auto
 // OFFSET: 0x00633630
+void NETEVENTQUEUE::ReleaseNode(TSList<NETEVENTQUEUENODE>& queue, NETEVENTQUEUENODE* node) {
+    if (node->m_data) SMemFree(node->m_data, __FILE__, __LINE__, 0);
+    queue.DeleteNode(node);
+    this->m_client->m_refCount.Decrement();
+}
+
+void NETEVENTQUEUE::ClearBatchLocked() {
+    ++this->m_generation;
+    while (auto* node = this->m_eventQueue.Head()) this->ReleaseNode(this->m_eventQueue, node);
+}
+
 void NETEVENTQUEUE::Clear() {
     this->m_critSect.Enter();
-    this->m_eventQueue.Clear();
+    if (NetBatchPollEnabled()) this->ClearBatchLocked();
+    else this->m_eventQueue.Clear();
     this->m_critSect.Leave();
+}
+
+void NETEVENTQUEUE::Retire() {
+    this->m_critSect.Enter();
+    this->m_retired = true;
+    this->ClearBatchLocked();
+    const bool polling = this->m_polling;
+    this->m_critSect.Leave();
+    if (!polling) delete this;
 }
 
 // VERIFY: 796de75c manual
 // OFFSET: 0x00633650
 void NETEVENTQUEUE::AddEvent(EVENTID eventId, void* connection, NetClient* client, const void* data, uint32_t size) {
     this->m_critSect.Enter();
+    if (NetBatchPollEnabled() && (this->m_retired || client != this->m_client || (size && !data))) {
+        this->m_critSect.Leave();
+        return;
+    }
+
 
     NETEVENTQUEUENODE* node = this->m_eventQueue.NewNode(2, 0, 8);
     node->m_eventId = eventId;
@@ -798,9 +933,7 @@ void NETEVENTQUEUE::AddEvent(EVENTID eventId, void* connection, NetClient* clien
 // VERIFY: 4d2c7b3d manual
 // OFFSET: 0x00633730
 NETEVENTQUEUE::~NETEVENTQUEUE() {
-    this->m_critSect.Enter();
-    this->m_eventQueue.Clear();
-    this->m_critSect.Leave();
+    this->Clear();
 }
 
 // VERIFY: 75864678 auto

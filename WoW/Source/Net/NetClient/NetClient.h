@@ -1,6 +1,7 @@
 #ifndef WOW_SOURCE_NET_NETCLIENT_NETCLIENT_H
 #define WOW_SOURCE_NET_NETCLIENT_NETCLIENT_H
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include "Engine/Source/Base/CDataStore.h"
@@ -69,6 +70,16 @@ class NETEVENTQUEUE {
     void AddEvent(EVENTID eventId, void* connection, NetClient* client, const void* data, uint32_t size);
     void Clear();
     void Poll();
+    void Retire();
+
+private:
+    void PollBatch();
+    void FinishPoll(TSList<NETEVENTQUEUENODE>& batch);
+    void ClearBatchLocked();
+    void ReleaseNode(TSList<NETEVENTQUEUENODE>& queue, NETEVENTQUEUENODE* node);
+    std::atomic<uint64_t> m_generation{0};
+    bool m_polling = false; // Both flags are protected by m_critSect.
+    bool m_retired = false;
 };
 
 class NetClient : public WowConnectionResponse {
