@@ -1,8 +1,10 @@
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include "Engine/Source/Base/Profiler.h"
 #include "Engine/Source/BlizzardCore/SFile2-Core.h"
 #include "Engine/Source/BLPFile/blp.h"
+#include "Engine/Source/BLPFile/ExpandPalette.h"
 #include "Engine/Source/Gx/Blit.h"
 #include "Engine/Source/Images/MippedImg.h"
 #include "Engine/Source/Storm/H/storm.h"
@@ -137,6 +139,19 @@ void CBLPFile::DecompPalFastPath(uint8_t* out, const void* in, uint32_t count) {
 void CBLPFile::DecompPalARGB8888(uint8_t* out, const void* in, uint32_t count) {
     BlpPalPixel* pixels = reinterpret_cast<BlpPalPixel*>(out);
     const uint8_t* indices = static_cast<const uint8_t*>(in);
+
+#if defined(WOWDECOMP_LINUX)
+    if (this->m_header.m_alphaSize == ALPHA_8) {
+        static const bool fusedPalette = [] {
+            const char* value = std::getenv("WXL_BLP_FUSED_PALETTE");
+            return value && std::strcmp(value, "1") == 0;
+        }();
+        if (fusedPalette) {
+            BlpDecode::ExpandAlpha8(pixels, indices, this->m_header.m_extended.m_palette, count);
+            return;
+        }
+    }
+#endif
 
     for (uint32_t i = 0; i < count; i++) {
         pixels[i] = this->m_header.m_extended.m_palette[*indices];
