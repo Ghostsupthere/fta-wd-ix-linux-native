@@ -642,7 +642,11 @@ void CWorldOcclusion::BeginStaticBoxPass(CFrustum& frustum) {
     StaticBoxView key{s_mapId, CWorldScene::s_activeWorldView, CWorldScene::camVec,
         view.m_mtx[view.m_level], g_theGxDevicePtr->m_projNative, CWorldScene::s_clipBufferMatrix, {}};
     std::memcpy(key.planes, frustum.planes, sizeof(key.planes));
-    staticBoxes.Begin(static_cast<uint32_t>(g_theGxDevicePtr->m_frameCount), key);
+    if (!staticBoxes.Begin(static_cast<uint32_t>(g_theGxDevicePtr->m_frameCount), key)) {
+        // Moving frames run stock without paying per-box cache lookup and insertion.
+        staticBoxPass = ReuseMode::Off;
+        return;
+    }
     staticHits = staticMisses = projectionHits = 0;
 }
 

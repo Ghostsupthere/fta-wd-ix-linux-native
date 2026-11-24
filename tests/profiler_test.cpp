@@ -306,8 +306,13 @@ int main() {
     if (Profiler::M2BatchProbeEnabled()) {
         Profiler::CountM2BatchOpportunity(Profiler::M2BatchOpportunity::TransformOnly);
     }
+    Profiler::RecordStaticCullReuse(34, 6, 24);
     Profiler::EndFrame();
     assert(Profiler::Summarize(1, s) == 1);
+    assert(s.staticCullPasses == (periodic ? 1.0 : 0.0));
+    assert(s.staticCullHits == (periodic ? 34.0 : 0.0));
+    assert(s.staticCullMisses == (periodic ? 6.0 : 0.0));
+    assert(s.staticCullProjectionHits == (periodic ? 24.0 : 0.0));
     assert(s.cullCameraSamples == (cull ? 1.0 : 0.0) && s.cullCameraComparisons == 0.0);
     assert(s.m2AnimationCalls[parallel] == (animation ? 3.0 : 0.0));
     assert(s.m2RepeatedModels[parallel] == (animation ? 1.0 : 0.0));
@@ -325,6 +330,7 @@ int main() {
     Profiler::CountM2Animation(&model, Stage::Parallel);
     Profiler::EndFrame();
     assert(Profiler::Summarize(1, s) == 1);
+    assert(s.staticCullPasses == 0.0);
     assert(s.cullCameraUnchanged == (cull ? 1.0 : 0.0));
     assert(s.m2AnimationCalls[parallel] == (animation ? 1.0 : 0.0));
     assert(s.m2MaxRepeats[parallel] == 0); // table clears between presented frames

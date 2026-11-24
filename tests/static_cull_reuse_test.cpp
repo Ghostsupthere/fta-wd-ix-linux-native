@@ -41,27 +41,28 @@ int main() {
     bool hit = true;
     const Bounds bounds{0, 0, 0, 1, 2, 3};
     View view{0, 10, 11};
-    cache.Begin(10, view);
+    assert(!cache.Begin(10, view));
+    assert(cache.Begin(11, view));
     auto& first = cache.Lookup(0x1000, bounds, hit);
     assert(!hit);
     first.inFrustum = true;
     first.projected = true;
     first.query = query;
-    cache.Begin(11, view);
+    assert(cache.Begin(12, view));
     const auto& next = cache.Lookup(0x1000, bounds, hit);
     assert(hit && next.projected && next.inFrustum);
     auto replaced = bounds;
     replaced[3] += 0.25f;
     cache.Lookup(0x1000, replaced, hit);
     assert(!hit); // a moved or reloaded object at the same address
-    cache.Begin(12, {1, 10, 11});
+    assert(!cache.Begin(13, {1, 10, 11}));
     cache.Lookup(0x1000, replaced, hit);
     assert(!hit); // map change
     view = {1, 10, 12};
-    cache.Begin(13, view);
+    assert(!cache.Begin(14, view));
     cache.Lookup(0x1000, replaced, hit);
     assert(!hit); // camera/projection change
-    cache.Begin(15, view);
+    assert(!cache.Begin(16, view));
     cache.Lookup(0x1000, replaced, hit);
     assert(!hit); // gap in world render frames
 }

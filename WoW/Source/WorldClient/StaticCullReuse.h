@@ -47,9 +47,10 @@ public:
         BoxQuery query;
     };
 
-    void Begin(uint32_t frame, const ViewKey& view) {
+    bool Begin(uint32_t frame, const ViewKey& view) {
         const bool consecutive = m_generation && m_frame + 1 == frame;
-        if (!consecutive || std::memcmp(&view, &m_view, sizeof(view)) != 0) {
+        const bool unchanged = consecutive && std::memcmp(&view, &m_view, sizeof(view)) == 0;
+        if (!unchanged) {
             if (++m_generation == 0) {
                 m_entries = {};
                 ++m_generation;
@@ -57,6 +58,7 @@ public:
         }
         m_frame = frame;
         std::memcpy(&m_view, &view, sizeof(view));
+        return unchanged;
     }
 
     Entry& Lookup(uintptr_t source, const Bounds& bounds, bool& hit) {
