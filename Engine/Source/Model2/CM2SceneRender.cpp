@@ -5,6 +5,7 @@
 #include "Engine/Source/ModernAssets/NativeVisualHooks.h"
 #include "Engine/Source/Base/Profiler.h"
 #include <optional>
+#include <cstring>
 #endif
 #if defined(WOWDECOMP_LINUX)
 #include "Engine/Source/Model2/WxlBoneBudget.h"
@@ -714,6 +715,9 @@ void CM2SceneRender::DrawBatchDoodad(M2Element* elements, uint32_t* indices) {
 
     if (CShaderEffect::s_enableShaders) {
         this->m_curShared->SetVertices(0);
+#if defined(WOWDECOMP_LINUX)
+        const bool profileBatching = Profiler::M2BatchProbeEnabled();
+#endif
 
         for (uint32_t done = 0; done < total; done += instances) {
             if (done + instances > total) {
@@ -761,6 +765,14 @@ void CM2SceneRender::DrawBatchDoodad(M2Element* elements, uint32_t* indices) {
             batch.m_count = instances * this->m_curSkinSection->m_indexCount;
             batch.m_maxIndex = static_cast<uint16_t>(instances * this->m_curShared->m_skinData->m_vertices.m_count - 1);
             g_theGxDevicePtr->Draw(&batch, 1);
+#if defined(WOWDECOMP_LINUX)
+            if (profileBatching) {
+                Profiler::CountM2BatchOpportunity(Profiler::M2BatchOpportunity::DoodadDraw);
+                if (done && this->m_curSkinSection->m_boneCount == 1 && this->m_data->m_bones.m_count == 1) {
+                    Profiler::CountM2BatchOpportunity(Profiler::M2BatchOpportunity::RigidDoodadSplit);
+                }
+            }
+#endif
         }
     } else {
         for (uint32_t done = 0; done < total; done += instances) {
@@ -1070,6 +1082,47 @@ void CM2SceneRender::DrawCallback() {
     CShaderEffect::UpdateProjMatrix();
 }
 
+#if defined(WOWDECOMP_LINUX)
+static void ProfileM2BatchNeighbor(const CM2SceneRender& render) {
+    if (render.m_curShared != render.m_prevShared ||
+        render.m_curSkinSection != render.m_prevSkinSection || render.m_curBatch != render.m_prevBatch) return;
+
+    const auto* current = render.m_curModel;
+    const auto* previous = render.m_prevModel;
+    const auto* batch = render.m_curBatch;
+    const auto* data = render.m_data;
+    for (uint32_t i = 0; i < batch->m_textureCount; ++i) {
+        const uint32_t combo = data->m_textureCombos[batch->m_textureComboIndex + i];
+        if (combo < data->m_textures.m_count && current->m_textures[combo] != previous->m_textures[combo]) return;
+    }
+    Profiler::CountM2BatchOpportunity(Profiler::M2BatchOpportunity::SameMeshTextures);
+
+    const auto* element = render.m_curElement;
+    const auto* previousElement = render.m_prevElement;
+    if (current == previous || data->m_bones.m_count != 1 || render.m_curSkinSection->m_boneCount != 1 ||
+        current->m_bodyShapeVertices || previous->m_bodyShapeVertices ||
+        data->m_textureTransforms.m_count || batch->m_colorIndex < data->m_colors.m_count ||
+        (element->m_flags | previousElement->m_flags) & 7 ||
+        element->m_flags != previousElement->m_flags || element->m_effect != previousElement->m_effect ||
+        element->m_vertexPermute != previousElement->m_vertexPermute ||
+        element->m_pixelPermute != previousElement->m_pixelPermute ||
+        element->m_alpha != previousElement->m_alpha || element->m_shadowValue != previousElement->m_shadowValue ||
+        render.m_curMaterial->m_blendMode > M2BLEND_ALPHA_KEY ||
+        render.m_curMaterial->m_flags & (8 | 0x10) ||
+        render.m_curFogMode != render.m_prevFogMode ||
+        (current->m_currentLighting != previous->m_currentLighting &&
+            (render.m_curLocalLighting || render.m_curFogMode)) ||
+        current->m_diffuseColor != previous->m_diffuseColor ||
+        current->m_emissiveColor != previous->m_emissiveColor) return;
+
+    const auto& transform = GetModelBoneMatrix(render.m_curModel, render.m_data, render.m_curSkinSection->m_boneComboIndex);
+    const auto& previousTransform = GetModelBoneMatrix(render.m_prevModel, render.m_data, render.m_curSkinSection->m_boneComboIndex);
+    if (std::memcmp(&transform, &previousTransform, sizeof(transform)) != 0) {
+        Profiler::CountM2BatchOpportunity(Profiler::M2BatchOpportunity::TransformOnly);
+    }
+}
+#endif
+
 // VERIFY: ae7d8da4 manual
 // OFFSET: 0x00823130
 void CM2SceneRender::Draw(M2PASS pass, M2Element* elements, uint32_t* indices, uint32_t count) {
@@ -1118,6 +1171,8 @@ void CM2SceneRender::Draw(M2PASS pass, M2Element* elements, uint32_t* indices, u
     this->m_pass = pass;
 #if defined(WOWDECOMP_LINUX)
     const bool diagnose = Profiler::M2DiagnosticsEnabled() && Profiler::Enabled();
+    const bool profileBatching = CShaderEffect::s_enableShaders && Profiler::M2BatchProbeEnabled();
+    bool previousOrdinary = false;
 #endif
 
     for (uint32_t i = 0; i < count; i++) {
@@ -1147,6 +1202,12 @@ void CM2SceneRender::Draw(M2PASS pass, M2Element* elements, uint32_t* indices, u
         switch (this->m_curElement->m_type) {
             case 0:
                 this->DrawBatch();
+#if defined(WOWDECOMP_LINUX)
+                if (profileBatching) {
+                    Profiler::CountM2BatchOpportunity(Profiler::M2BatchOpportunity::OrdinaryDraw);
+                    if (previousOrdinary) ProfileM2BatchNeighbor(*this);
+                }
+#endif
                 break;
             case 1:
                 this->DrawBatchProj();
@@ -1168,6 +1229,9 @@ void CM2SceneRender::Draw(M2PASS pass, M2Element* elements, uint32_t* indices, u
                 continue;
         }
 
+#if defined(WOWDECOMP_LINUX)
+        previousOrdinary = this->m_curType == 0;
+#endif
         this->m_prevElement = this->m_curElement;
         this->m_prevType = this->m_curType;
         this->m_prevModel = this->m_curModel;

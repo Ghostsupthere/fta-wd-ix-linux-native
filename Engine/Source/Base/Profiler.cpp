@@ -80,6 +80,7 @@ struct FrameRecord {
     bool cullCameraSample;
     bool cullCameraComparison;
     bool cullCameraUnchanged;
+    uint32_t m2BatchCounts[M2BatchOpportunities];
 };
 
 uint64_t NowNs() {
@@ -299,6 +300,15 @@ void LogSummary() {
     if (CullStabilityEnabled()) {
         std::fprintf(stderr, " | cull camera/frame samples=%.3f compared=%.3f unchanged=%.3f",
             s.cullCameraSamples, s.cullCameraComparisons, s.cullCameraUnchanged);
+    }
+    if (M2BatchProbeEnabled()) {
+        constexpr const char* names[M2BatchOpportunities] = {
+            "ordinary", "sameMeshTextures", "transformOnly", "doodad", "rigidDoodadSplit"
+        };
+        std::fprintf(stderr, " | M2 batching/frame");
+        for (uint32_t i = 0; i < M2BatchOpportunities; ++i) {
+            std::fprintf(stderr, " %s=%.2f", names[i], s.m2BatchCounts[i]);
+        }
     }
     if (M2DiagnosticsEnabled()) {
         std::fprintf(stderr, " | M2 draws/frame");
@@ -562,6 +572,18 @@ void ObserveCullCamera(const C3Vector& position, const C44Matrix& view, const C4
     previousProjection = projection;
 }
 
+bool M2BatchProbeEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_PROFILE_M2_BATCHING");
+        return PeriodicLoggingEnabled() && value && std::strcmp(value, "1") == 0;
+    }();
+    return enabled && Enabled();
+}
+
+void CountM2BatchOpportunity(M2BatchOpportunity kind) {
+    if (OnOwnerThread()) ++g_open.m2BatchCounts[static_cast<uint32_t>(kind)];
+}
+
 bool M2DiagnosticsEnabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("WXL_PROFILE_M2_DRAWS");
@@ -650,6 +672,7 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
         const FrameRecord& r = g_ring[(g_next + kKeptFrames - 1 - k) % kKeptFrames];
         frameNs += static_cast<double>(r.frameNs);
         draws += r.draws;
+        for (uint32_t i = 0; i < M2BatchOpportunities; ++i) out.m2BatchCounts[i] += r.m2BatchCounts[i];
         out.cullCameraSamples += r.cullCameraSample;
         out.cullCameraComparisons += r.cullCameraComparison;
         out.cullCameraUnchanged += r.cullCameraUnchanged;
@@ -699,6 +722,7 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
     out.frameMs = frameNs / n * 1.0e-6;
     out.fps = out.frameMs > 0.0 ? 1000.0 / out.frameMs : 0.0;
     out.drawCalls = draws / n;
+    for (double& count : out.m2BatchCounts) count /= n;
     out.cullCameraSamples /= n;
     out.cullCameraComparisons /= n;
     out.cullCameraUnchanged /= n;

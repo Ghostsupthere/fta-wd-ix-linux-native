@@ -146,6 +146,11 @@ struct MovementTotals {
 enum class M2AnimationStage : uint32_t { Parallel, Serial, Bones, Texture, Count };
 inline constexpr uint32_t M2AnimationStages = static_cast<uint32_t>(M2AnimationStage::Count);
 
+enum class M2BatchOpportunity : uint32_t {
+    OrdinaryDraw, SameMeshTextures, TransformOnly, DoodadDraw, RigidDoodadSplit, Count
+};
+inline constexpr uint32_t M2BatchOpportunities = static_cast<uint32_t>(M2BatchOpportunity::Count);
+
 struct Summary {
     double frameMs;      // average time between frames
     double fps;
@@ -166,6 +171,7 @@ struct Summary {
     double cullCameraSamples;
     double cullCameraComparisons;
     double cullCameraUnchanged;
+    double m2BatchCounts[M2BatchOpportunities];
 };
 
 struct Scope {
@@ -236,6 +242,8 @@ private:
 void CountD3dBufferLock(uint32_t bytes);
 void CountM2Animation(const void* model, M2AnimationStage stage);
 void ObserveCullCamera(const C3Vector& position, const C44Matrix& view, const C44Matrix& projection);
+bool M2BatchProbeEnabled();
+void CountM2BatchOpportunity(M2BatchOpportunity kind);
 bool M2DiagnosticsEnabled();
 bool UiDetailEnabled();
 Id UiDetailZone(Id detail, Id parent);
