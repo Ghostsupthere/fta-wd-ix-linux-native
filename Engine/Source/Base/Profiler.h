@@ -103,6 +103,7 @@ enum Id : uint32_t {
     CullSort,
     CullOcclusionQuery,
     CullOcclusionWrite,
+    SurfaceLightScan,
     Count
 };
 
@@ -122,7 +123,12 @@ struct MovementTotals {
     double units;
     double changed;
     double relinks;
-    double wmoTriangleTests;
+    double positionChanged;
+    double facingChanged;
+    double pitchChanged;
+    double rayTriangleTests;
+    double linkTriangleTests;
+    double linkBspFaces;
 };
 
 struct Summary {
@@ -176,7 +182,12 @@ struct MovementWorkScope {
         uint32_t units;
         uint32_t changed;
         uint32_t relinks;
-        uint32_t wmoTriangleTests;
+        uint32_t positionChanged;
+        uint32_t facingChanged;
+        uint32_t pitchChanged;
+        uint32_t rayTriangleTests;
+        uint32_t linkTriangleTests;
+        uint32_t linkBspFaces;
     };
     MovementWorkScope();
     ~MovementWorkScope();

@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include <cfloat>
 #include <cmath>
 #include <cstdint>
@@ -330,6 +331,7 @@ bool NTempest::Intersect(const C3Vector& point, const C3Vector* verts, uint32_t 
 // VERIFY: 855783c5 auto
 // OFFSET: 0x00983490
 bool NTempest::Intersect(const C3Ray& ray, const C3Vector* verts, const uint16_t* indices, float* t, C2Vector* uv, float tolerance) {
+    if (auto* work = Profiler::MovementWorkScope::Active()) ++work->rayTriangleTests;
     float minBound = -tolerance;
     float maxBound = tolerance + 1.0f;
 
@@ -389,6 +391,7 @@ bool NTempest::Intersect(const C3Ray& ray, const C3Vector* verts, const uint16_t
 // VERIFY: 94d97d2a auto
 // OFFSET: 0x009836B0
 bool NTempest::Intersect(const C3Ray& ray, const C3Vector* verts, const uint32_t* indices, float* t, C2Vector* uv, float tolerance) {
+    if (auto* work = Profiler::MovementWorkScope::Active()) ++work->rayTriangleTests;
     float minBound = -tolerance;
     float maxBound = tolerance + 1.0f;
 

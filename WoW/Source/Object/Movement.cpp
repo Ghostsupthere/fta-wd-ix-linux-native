@@ -5442,6 +5442,11 @@ void CMovement_C::MoveUnits(uint32_t time, uint32_t lastUpdateTime) {
                 mover->m_facing != facing || mover->m_pitch != pitch) {
                 ++counts->changed;
             }
+            constexpr float positionThreshold = 0.001f;
+            constexpr float angleThreshold = 0.001f;
+            counts->positionChanged += (after - before).SquaredMag() >= positionThreshold * positionThreshold;
+            counts->facingChanged += std::abs(CMath::normalizeAngleNegPiToPi_(mover->m_facing - facing)) >= angleThreshold;
+            counts->pitchChanged += std::abs(CMath::normalizeAngleNegPiToPi_(mover->m_pitch - pitch)) >= angleThreshold;
         }
         mover = next;
     }

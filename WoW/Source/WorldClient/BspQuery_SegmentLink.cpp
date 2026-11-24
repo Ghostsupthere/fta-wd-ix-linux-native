@@ -1,4 +1,5 @@
 #include "BspQuery_SegmentLink.h"
+#include "Engine/Source/Base/Profiler.h"
 #include <cmath>
 #include "Engine/Source/Tempest/NTempest.h"
 #include "WoW/Source/WorldClient/Types.h"
@@ -35,6 +36,8 @@ BspQuery_SegmentLink::BspQuery_SegmentLink(SMOPoly* faces, C3Vector* vertexList,
 
 // OFFSET: 0x007C6600
 void BspQuery_SegmentLink::operator()(uint16_t face) {
+    auto* work = Profiler::MovementWorkScope::Active();
+    if (work) ++work->linkBspFaces;
     uint8_t flags = this->m_faces[face].m_flags;
 
     if (flags & this->m_faceIgnoreFlags) {
@@ -50,6 +53,7 @@ void BspQuery_SegmentLink::operator()(uint16_t face) {
 
     float t = 0.0f;
 
+    if (work) ++work->linkTriangleTests;
     if (!NTempest::Intersect(this->m_ray, this->m_vertexList, &this->m_indices[3 * face], &t, nullptr, 0.0020000001f)) {
         return;
     }
@@ -196,6 +200,7 @@ bool BspQuery_SegmentLink::GetFaceIndicesUsingCache(const CAaBsp& aaBsp, const C
     }
 
     for (uint32_t i = 0; i < digest->m_nFaces; i++) {
+        if (auto* work = Profiler::MovementWorkScope::Active()) ++work->linkBspFaces;
         uint16_t face = digest->m_faceIndices[i];
         uint32_t flags = this->m_faces[face].m_flags;
 
@@ -218,6 +223,7 @@ bool BspQuery_SegmentLink::GetFaceIndicesUsingCache(const CAaBsp& aaBsp, const C
 
         float t = 0.0f;
 
+        if (auto* work = Profiler::MovementWorkScope::Active()) ++work->linkTriangleTests;
         if (!NTempest::Intersect(this->m_ray, digest->m_vertices, verts, &t, nullptr, 0.0020000001f)) {
             continue;
         }

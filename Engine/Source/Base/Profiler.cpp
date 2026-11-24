@@ -44,7 +44,7 @@ constexpr const char* kNames[Count] = {
     "Terrain streaming buffers", "Resident fog floor", "Ground mist",
     "Fog ground floor upload", "D3D9 texture upload", "D3D9 buffer lock", "M2 worker wait", "Character publication lock",
     "Movement idle", "Unit movement updates", "Movement map relinks", "Cull sort", "Cull occlusion queries",
-    "Cull occlusion writes"
+    "Cull occlusion writes", "Surface light scan"
 };
 
 constexpr uint32_t kM2DrawTypes = static_cast<uint32_t>(M2DrawType::Count);
@@ -148,8 +148,9 @@ void LogSpike(const FrameRecord& frame, uint64_t medianNs) {
         const auto& work = frame.movement;
         const double perUnitUs = work.units ? frame.total[MoveUnitUpdates] * 1.0e-3 / work.units : 0.0;
         std::snprintf(line + used, sizeof(line) - used,
-            " | movement units=%u changed=%u relinks=%u wmoTris=%u us/unit=%.2f",
-            work.units, work.changed, work.relinks, work.wmoTriangleTests, perUnitUs);
+            " | movement units=%u changed=%u relinks=%u rayTris=%u linkTris=%u bspFaces=%u position=%u facing=%u pitch=%u us/unit=%.2f",
+            work.units, work.changed, work.relinks, work.rayTriangleTests, work.linkTriangleTests,
+            work.linkBspFaces, work.positionChanged, work.facingChanged, work.pitchChanged, perUnitUs);
     }
     std::fprintf(stderr, "%s\n", line);
     // Keep this synchronous write from triggering a spike on the next frame.
@@ -183,17 +184,18 @@ void LogSummary() {
         if (i >= UiCallbackWorld) std::fprintf(stderr, " (%.2f calls)", s.zones[i].calls);
         if (s.zones[i].selfDraws >= 0.5) std::fprintf(stderr, " (%.0f draws)", s.zones[i].selfDraws);
     }
-    if (s.zones[MovementIdle].calls || s.zones[CullSort].calls) {
+    if (s.zones[MovementIdle].calls || s.zones[CullSort].calls || s.zones[SurfaceLightScan].calls) {
         std::fprintf(stderr, " | work probes");
-        for (uint32_t i = MovementIdle; i < Count; ++i) {
+        for (uint32_t i = MovementIdle; i <= SurfaceLightScan; ++i) {
             const auto& zone = s.zones[i];
             if (zone.calls) std::fprintf(stderr, " | %s %.3f/%.3f ms (%.2f calls)", zone.name,
                 zone.selfMs, zone.totalMs, zone.calls);
         }
         const auto& work = s.movement;
         const double perUnitUs = work.units ? s.zones[MoveUnitUpdates].totalMs * 1000 / work.units : 0.0;
-        std::fprintf(stderr, " | movement/frame units=%.2f changed=%.2f relinks=%.2f wmoTris=%.2f us/unit=%.2f",
-            work.units, work.changed, work.relinks, work.wmoTriangleTests, perUnitUs);
+        std::fprintf(stderr, " | movement/frame units=%.2f changed=%.2f relinks=%.2f rayTris=%.2f linkTris=%.2f bspFaces=%.2f position=%.2f facing=%.2f pitch=%.2f us/unit=%.2f",
+            work.units, work.changed, work.relinks, work.rayTriangleTests, work.linkTriangleTests,
+            work.linkBspFaces, work.positionChanged, work.facingChanged, work.pitchChanged, perUnitUs);
     }
     if (M2DiagnosticsEnabled()) {
         std::fprintf(stderr, " | M2 draws/frame");
@@ -379,7 +381,12 @@ MovementWorkScope::~MovementWorkScope() {
     g_open.movement.units += m_counters.units;
     g_open.movement.changed += m_counters.changed;
     g_open.movement.relinks += m_counters.relinks;
-    g_open.movement.wmoTriangleTests += m_counters.wmoTriangleTests;
+    g_open.movement.positionChanged += m_counters.positionChanged;
+    g_open.movement.facingChanged += m_counters.facingChanged;
+    g_open.movement.pitchChanged += m_counters.pitchChanged;
+    g_open.movement.rayTriangleTests += m_counters.rayTriangleTests;
+    g_open.movement.linkTriangleTests += m_counters.linkTriangleTests;
+    g_open.movement.linkBspFaces += m_counters.linkBspFaces;
 }
 
 bool M2DiagnosticsEnabled() {
@@ -473,7 +480,12 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
         out.movement.units += r.movement.units;
         out.movement.changed += r.movement.changed;
         out.movement.relinks += r.movement.relinks;
-        out.movement.wmoTriangleTests += r.movement.wmoTriangleTests;
+        out.movement.positionChanged += r.movement.positionChanged;
+        out.movement.facingChanged += r.movement.facingChanged;
+        out.movement.pitchChanged += r.movement.pitchChanged;
+        out.movement.rayTriangleTests += r.movement.rayTriangleTests;
+        out.movement.linkTriangleTests += r.movement.linkTriangleTests;
+        out.movement.linkBspFaces += r.movement.linkBspFaces;
         if (m2Diagnostics) {
             for (uint32_t i = 0; i < kM2DrawTypes; ++i) out.m2DrawsByType[i] += r.m2DrawsByType[i];
         }
@@ -500,7 +512,12 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
     out.movement.units /= n;
     out.movement.changed /= n;
     out.movement.relinks /= n;
-    out.movement.wmoTriangleTests /= n;
+    out.movement.positionChanged /= n;
+    out.movement.facingChanged /= n;
+    out.movement.pitchChanged /= n;
+    out.movement.rayTriangleTests /= n;
+    out.movement.linkTriangleTests /= n;
+    out.movement.linkBspFaces /= n;
     if (out.gpuRenderSamples) out.gpuRenderMs /= out.gpuRenderSamples;
     for (uint32_t i = 0; i < Count; ++i) {
         out.zones[i].selfMs = self[i] / n * 1.0e-6;

@@ -663,6 +663,7 @@ void ScanStaticLamps(const float center[3], const float forward[3], const std::v
 }
 
 void ScanModels(const float center[3], const float forward[3]) {
+    Profiler::Scope profile(Profiler::WorkZone(Profiler::SurfaceLightScan));
     if (staticLampsEnabled) LoadLampCatalog();
     sources.clear();
     liveModels.clear();

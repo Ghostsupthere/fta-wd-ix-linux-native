@@ -198,7 +198,7 @@ int main() {
         auto* counters = Profiler::MovementWorkScope::Active();
         assert((counters != nullptr) == workEnabled);
         if (counters) {
-            *counters = {4, 2, 3, 56};
+            *counters = {4, 2, 3, 2, 1, 1, 56, 41, 60};
             Profiler::MovementWorkScope nested;
             assert(nested.Active() == counters);
             ++counters->relinks;
@@ -224,7 +224,12 @@ int main() {
     assert(s.movement.units == (workEnabled ? 2.0 : 0.0));
     assert(s.movement.changed == (workEnabled ? 1.0 : 0.0));
     assert(s.movement.relinks == (workEnabled ? 2.0 : 0.0));
-    assert(s.movement.wmoTriangleTests == (workEnabled ? 28.0 : 0.0));
+    assert(s.movement.positionChanged == (workEnabled ? 1.0 : 0.0));
+    assert(s.movement.facingChanged == (workEnabled ? 0.5 : 0.0));
+    assert(s.movement.pitchChanged == (workEnabled ? 0.5 : 0.0));
+    assert(s.movement.rayTriangleTests == (workEnabled ? 28.0 : 0.0));
+    assert(s.movement.linkTriangleTests == (workEnabled ? 20.5 : 0.0));
+    assert(s.movement.linkBspFaces == (workEnabled ? 30.0 : 0.0));
     assert(s.zones[Profiler::MoveUnitUpdates].calls == (workEnabled ? 0.5 : 0.0));
     assert(s.zones[Profiler::TerrainD3dSubmit].calls == (spikesEnabled ? 0.5 : 0.0));
     assert(s.zones[Profiler::TerrainD3dSubmit].selfDraws == (spikesEnabled ? 0.5 : 0.0));
