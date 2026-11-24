@@ -292,6 +292,9 @@ void LogSummary() {
             zone.name, zone.selfMs, zone.totalMs, zone.calls);
     }
     if (BufferWritesEnabled()) {
+        const auto& zone = s.zones[D3dBufferLock];
+        std::fprintf(stderr, " | %s %.3f/%.3f ms (%.2f calls)",
+            zone.name, zone.selfMs, zone.totalMs, zone.calls);
         std::fprintf(stderr, " | D3D9 buffer/frame locks=%.2f mappedBytes=%.2f",
             s.d3dBufferLocks, s.d3dBufferMappedBytes);
     }
@@ -536,6 +539,10 @@ void MovementWorkScope::Counters::ObserveDisplacement(double squared, bool relin
     if (relinked) ++relinkDisplacement[bin];
 }
 
+Id BufferLockZone() {
+    return BufferWritesEnabled() ? D3dBufferLock : SpikeZone(D3dBufferLock);
+}
+
 void CountD3dBufferLock(uint32_t bytes) {
     if (!BufferWritesEnabled() || !Enabled() || !OnOwnerThread()) return;
     ++g_open.d3dBufferLocks;
@@ -562,7 +569,7 @@ void CountM2Animation(const void* model, M2AnimationStage stage) {
     ++g_animationDropped;
 }
 
-void ObserveCullCamera(const C3Vector& position, const C44Matrix& view, const C44Matrix& projection) {
+void ObserveCullCamera(int32_t mapId, const C3Vector& position, const C44Matrix& view, const C44Matrix& projection) {
     if (!CullStabilityEnabled()) return;
     const auto frameId = CurrentFrameId();
     if (!frameId || g_open.cullCameraSample) return;
@@ -570,17 +577,19 @@ void ObserveCullCamera(const C3Vector& position, const C44Matrix& view, const C4
     static_assert(sizeof(C3Vector) == 3 * sizeof(float));
     static_assert(sizeof(C44Matrix) == 16 * sizeof(float));
     static uint64_t previousFrame = 0;
+    static int32_t previousMap = 0;
     static C3Vector previousPosition;
     static C44Matrix previousView;
     static C44Matrix previousProjection;
     g_open.cullCameraSample = true;
-    if (previousFrame && previousFrame + 1 == frameId) {
+    if (previousFrame && previousFrame + 1 == frameId && previousMap == mapId) {
         g_open.cullCameraComparison = true;
         g_open.cullCameraUnchanged = std::memcmp(&position, &previousPosition, sizeof(position)) == 0 &&
             std::memcmp(&view, &previousView, sizeof(view)) == 0 &&
             std::memcmp(&projection, &previousProjection, sizeof(projection)) == 0;
     }
     previousFrame = frameId;
+    previousMap = mapId;
     previousPosition = position;
     previousView = view;
     previousProjection = projection;

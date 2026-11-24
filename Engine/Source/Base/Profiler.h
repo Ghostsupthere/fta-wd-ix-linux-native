@@ -246,9 +246,10 @@ private:
     bool m_collecting = false;
 };
 
+Id BufferLockZone();
 void CountD3dBufferLock(uint32_t bytes);
 void CountM2Animation(const void* model, M2AnimationStage stage);
-void ObserveCullCamera(const C3Vector& position, const C44Matrix& view, const C44Matrix& projection);
+void ObserveCullCamera(int32_t mapId, const C3Vector& position, const C44Matrix& view, const C44Matrix& projection);
 bool M2BatchProbeEnabled();
 void CountM2BatchOpportunity(M2BatchOpportunity kind);
 bool M2DiagnosticsEnabled();

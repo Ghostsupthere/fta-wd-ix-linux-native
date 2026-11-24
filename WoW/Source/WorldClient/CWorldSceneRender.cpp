@@ -78,7 +78,7 @@ void CWorldScene::RenderCollisionDebug() {
 void CWorldScene::Render(const C3Vector& cameraPos, float time) {
     Profiler::Scope profileScope(Profiler::WorldScene);
     const auto& view = g_theGxDevicePtr->m_xforms[GxXform_View];
-    Profiler::ObserveCullCamera(cameraPos, view.m_mtx[view.m_level], g_theGxDevicePtr->m_projNative);
+    Profiler::ObserveCullCamera(s_mapId, cameraPos, view.m_mtx[view.m_level], g_theGxDevicePtr->m_projNative);
     if (!CWorldScene::s_viewerMapObjDef) {
         CWorldScene::ComputeExteriorSortDistances();
     }

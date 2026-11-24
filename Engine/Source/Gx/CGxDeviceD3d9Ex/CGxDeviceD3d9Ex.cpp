@@ -9,6 +9,7 @@
 #include "Engine/Source/Base/Profiler.h"
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <malloc.h>
 #include <new>
@@ -146,7 +147,7 @@ int32_t CGxDeviceD3d9Ex::BufUnlock(CGxBuf* buf, uint32_t size) {
 // VERIFY: 054f73c7 manual
 // OFFSET: 0x0068FB10
 char* CGxDeviceD3d9Ex::IBufLock(CGxBuf* buf) {
-    Profiler::Scope profile(Profiler::SpikeZone(Profiler::D3dBufferLock));
+    Profiler::Scope profile(Profiler::BufferLockZone());
     CGxPool* pool = buf->m_pool;
 
     if (!this->m_context) {
