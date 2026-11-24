@@ -1327,6 +1327,10 @@ void CGTradeSkillInfo::SetItemLevelFilter(int32_t minLevel, int32_t maxLevel) {
     }
 }
 
+static bool IsTradeSkillLinkPayload(const char* link, size_t length) {
+    return std::strspn(link, s_base64Encode) == length && link[length] == '\0';
+}
+
 // VERIFY: 51532fda manual
 // OFFSET: 0x005DE120
 void CGTradeSkillInfo::SetTradeSkill(int32_t spellId, const WOWGUID& guid, const char* link, int32_t skillRank, int32_t skillMaxRank) {
@@ -1354,7 +1358,7 @@ void CGTradeSkillInfo::SetTradeSkill(int32_t spellId, const WOWGUID& guid, const
             chars++;
         }
 
-        if (chars != SStrLen(link)) {
+        if (!IsTradeSkillLinkPayload(link, chars)) {
             return;
         }
     }
