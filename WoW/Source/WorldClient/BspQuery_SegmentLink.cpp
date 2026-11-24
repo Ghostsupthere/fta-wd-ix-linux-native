@@ -144,10 +144,22 @@ bool BspQuery_SegmentLink::VisitFilteredLeaf(const CAaBsp& bsp, const CAaBspNode
         return false;
 
     RelinkCandidates::Cell cell;
-    if (!RelinkCandidates::CellForRay(m_ray, cell)) return false;
+    auto* work = Profiler::MovementWorkScope::Active();
+    if (!RelinkCandidates::CellForRay(m_ray, cell)) {
+        if (work) ++work->candidateUnsupportedRay;
+        return false;
+    }
     const auto* faces = bsp.m_nodeFaceIndices + node.m_faceStart;
     const RelinkCandidates::GeometryView mesh{m_indices, m_indexCount, m_vertexList, m_vertexCount};
-    const auto* mask = RelinkCandidates::GetMask(bsp.m_relinkGeometryId, node.m_faceStart, cell, faces, node.m_nFaces, mesh);
+    RelinkCandidates::Lookup lookup;
+    const auto* mask = RelinkCandidates::GetMask(bsp.m_relinkGeometryId, node.m_faceStart, cell,
+        faces, node.m_nFaces, mesh, work ? &lookup : nullptr);
+    if (work) {
+        using RelinkCandidates::Lookup;
+        work->candidateHit += lookup == Lookup::Hit;
+        work->candidateMiss += lookup == Lookup::Built || lookup == Lookup::Deferred;
+        work->candidateDeferred += lookup == Lookup::Deferred;
+    }
     if (!mask) return false;
     // Preserve visit order, dynamic flags, duplicate suppression and the query-wide face cap.
     for (uint32_t i = 0; i < node.m_nFaces; ++i) VisitFace(faces[i], mask[i] != 0);
@@ -158,6 +170,9 @@ bool BspQuery_SegmentLink::VisitFilteredLeaf(const CAaBsp& bsp, const CAaBspNode
 // OFFSET: 0x007C6790
 bool BspQuery_SegmentLink::GetFaceIndicesUsingCache(const CAaBsp& aaBsp, const CAaBspNode* node) {
     if (m_sample) ++m_sample->leaves;
+    if (m_candidateMode != RelinkCandidates::Mode::Off && node->m_nFaces <= 300) {
+        if (auto* work = Profiler::MovementWorkScope::Active()) ++work->candidateSmallLeaf;
+    }
     if (!g_BspDigestCache) return VisitFilteredLeaf(aaBsp, *node);
 
     CAaBspNodeDigest* digest = g_BspDigestCache->GetDigest(aaBsp, node, this->m_faces, this->m_vertexList, this->m_indices);

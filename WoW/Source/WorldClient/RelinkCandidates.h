@@ -30,9 +30,11 @@ struct GeometryView {
 // A mask of the original leaf order. Zero certifies a horizontal rejection for every ray in the cell.
 void BuildMask(Cell cell, const uint16_t* faces, uint32_t count, GeometryView mesh, uint8_t* mask);
 
+enum class Lookup { Unavailable, Hit, Built, Deferred };
+
 // A miss may defer filling to limit the cost of cold geometry or entering a new cell.
 const uint8_t* GetMask(uint64_t geometry, uint32_t faceStart, Cell cell,
-                       const uint16_t* faces, uint32_t count, GeometryView mesh);
+                       const uint16_t* faces, uint32_t count, GeometryView mesh, Lookup* lookup = nullptr);
 
 } // namespace RelinkCandidates
 #endif

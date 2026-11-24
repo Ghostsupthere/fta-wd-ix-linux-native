@@ -131,6 +131,11 @@ struct MovementTotals {
     double rayTriangleTests;
     double linkTriangleTests;
     double linkBspFaces;
+    double candidateHit;
+    double candidateMiss;
+    double candidateDeferred;
+    double candidateUnsupportedRay;
+    double candidateSmallLeaf;
     double displacement[MovementDisplacementBins];
     double relinkDisplacement[MovementDisplacementBins];
 };
@@ -192,6 +197,11 @@ struct MovementWorkScope {
         uint32_t rayTriangleTests;
         uint32_t linkTriangleTests;
         uint32_t linkBspFaces;
+        uint32_t candidateHit;
+        uint32_t candidateMiss;
+        uint32_t candidateDeferred;
+        uint32_t candidateUnsupportedRay;
+        uint32_t candidateSmallLeaf;
         uint32_t displacement[MovementDisplacementBins];
         uint32_t relinkDisplacement[MovementDisplacementBins];
         void ObserveDisplacement(double squared, bool relinked);

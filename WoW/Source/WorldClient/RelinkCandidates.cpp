@@ -126,22 +126,31 @@ void BuildMask(Cell cell, const uint16_t* faces, uint32_t count, GeometryView me
 }
 
 const uint8_t* GetMask(uint64_t geometry, uint32_t faceStart, Cell cell,
-                       const uint16_t* faces, uint32_t count, GeometryView mesh) {
+                       const uint16_t* faces, uint32_t count, GeometryView mesh, Lookup* lookup) {
+    if (lookup) *lookup = Lookup::Unavailable;
     if (!geometry || !faces || count > MaxFaces || count <= 300 || !mesh.indices || !mesh.vertices ||
         !mesh.indexCount || !mesh.vertexCount)
         return nullptr;
     const Key key{geometry, faceStart, count, cell};
     const size_t bucket = Bucket(key);
-    for (const auto& entry : cache[bucket])
-        if (entry.key == key) return entry.mask.data();
+    for (const auto& entry : cache[bucket]) {
+        if (entry.key == key) {
+            if (lookup) *lookup = Lookup::Hit;
+            return entry.mask.data();
+        }
+    }
 
     const auto now = std::chrono::steady_clock::now();
-    if (now < nextBuild) return nullptr;
+    if (now < nextBuild) {
+        if (lookup) *lookup = Lookup::Deferred;
+        return nullptr;
+    }
     auto& entry = cache[bucket][replaceWay[bucket]];
     replaceWay[bucket] ^= 1;
     BuildMask(cell, faces, count, mesh, entry.mask.data());
     entry.key = key;
     nextBuild = std::chrono::steady_clock::now() + std::chrono::milliseconds(4);
+    if (lookup) *lookup = Lookup::Built;
     return entry.mask.data();
 }
 } // namespace RelinkCandidates
