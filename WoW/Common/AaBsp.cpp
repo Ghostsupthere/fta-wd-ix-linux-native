@@ -1,3 +1,4 @@
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -15,6 +16,8 @@ int32_t CAaBspDigestCache::s_digestReplaceIndex;
 // VERIFY: d3f1a428 auto
 // OFFSET: 0x0079ADC0
 void CAaBsp::Set(CAaBspNode* nodes, uint32_t nNodes, uint16_t* nodeFaceIndices, uint32_t nNodeFaceIndices, const CAaBox& aaBox) {
+    static std::atomic<uint64_t> nextGeometryId{1};
+    this->m_relinkGeometryId = nextGeometryId.fetch_add(1, std::memory_order_relaxed);
     this->m_nodes = nodes;
     this->m_rootNode = nodes;
     this->m_nNodes = nNodes;
@@ -124,6 +127,7 @@ CAaBsp::CAaBsp() {
 // VERIFY: d4f35ea3 manual
 // OFFSET: 0x0079B0D0
 void CAaBsp::Free() {
+    this->m_relinkGeometryId = 0;
     if (g_BspDigestCache) {
         for (uint32_t i = 0; i < this->m_nNodes; i++) {
             if (this->m_nodes[i].m_flags & 0x4) {

@@ -2381,6 +2381,11 @@ bool CMapObjGroup::GetFacesForLinking(C3Segment& seg, float* t0, int32_t* face0,
                                          RelinkProbe::Faces* sample) {
     BspQuery_SegmentLink query(this->m_polyList, this->m_vertexList, this->m_indices, seg, *t0, *t1);
     query.m_sample = sample;
+    query.m_candidateMode = RelinkCandidates::Setting();
+    if (query.m_candidateMode != RelinkCandidates::Mode::Off && this->m_indicesCount > 0 && this->m_vertexListCount > 0) {
+        query.m_indexCount = this->m_indicesCount;
+        query.m_vertexCount = this->m_vertexListCount;
+    }
     CAaBsp_Query_Segment<BspQuery_SegmentLink> bspQuery;
     bspQuery.m_aaBsp = &this->m_cAaBspNodePtr1;
     bspQuery.m_f = &query;

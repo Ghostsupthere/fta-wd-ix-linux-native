@@ -2,6 +2,7 @@
 #include "WoW/Source/WorldClient/RelinkProbe.h"
 #include "Engine/Source/Base/Profiler.h"
 #include <cmath>
+#include <cstdio>
 #include "Engine/Source/Tempest/NTempest.h"
 #include "WoW/Source/WorldClient/Types.h"
 #include "WoW/Common/AaBsp.h"
@@ -37,6 +38,10 @@ BspQuery_SegmentLink::BspQuery_SegmentLink(SMOPoly* faces, C3Vector* vertexList,
 
 // OFFSET: 0x007C6600
 void BspQuery_SegmentLink::operator()(uint16_t face) {
+    VisitFace(face, true);
+}
+
+void BspQuery_SegmentLink::VisitFace(uint16_t face, bool candidate) {
     auto* work = Profiler::MovementWorkScope::Active();
     if (work) ++work->linkBspFaces;
     uint8_t flags = this->m_faces[face].m_flags;
@@ -52,6 +57,8 @@ void BspQuery_SegmentLink::operator()(uint16_t face) {
     BspQuery::testFaces[BspQuery::testFaceSub++] = face;
     this->m_faces[face].m_flags |= 0x80;
 
+    if (!candidate && m_candidateMode != RelinkCandidates::Mode::Verify) return;
+
     float t = 0.0f;
 
     if (work) ++work->linkTriangleTests;
@@ -59,6 +66,13 @@ void BspQuery_SegmentLink::operator()(uint16_t face) {
         return;
     }
 
+    if (!candidate) {
+        static bool reported = false;
+        if (!reported) {
+            std::fprintf(stderr, "WarcraftXL relink candidates: verification found a rejected face hit\n");
+            reported = true;
+        }
+    }
     if (flags & 0x20) {
         if (t < 0.0f) {
             return;
@@ -123,19 +137,32 @@ bool BspQuery_SegmentLink::GetHits(float* interiorT, int32_t* interiorFace, floa
     return true;
 }
 
+bool BspQuery_SegmentLink::VisitFilteredLeaf(const CAaBsp& bsp, const CAaBspNode& node) {
+    if (m_candidateMode == RelinkCandidates::Mode::Off || node.m_nFaces <= 300 || !m_indices || !m_vertexList ||
+        !bsp.m_nodeFaceIndices || node.m_faceStart > bsp.m_nNodeFaceIndices ||
+        node.m_nFaces > bsp.m_nNodeFaceIndices - node.m_faceStart)
+        return false;
+
+    RelinkCandidates::Cell cell;
+    if (!RelinkCandidates::CellForRay(m_ray, cell)) return false;
+    const auto* faces = bsp.m_nodeFaceIndices + node.m_faceStart;
+    const RelinkCandidates::GeometryView mesh{m_indices, m_indexCount, m_vertexList, m_vertexCount};
+    const auto* mask = RelinkCandidates::GetMask(bsp.m_relinkGeometryId, node.m_faceStart, cell, faces, node.m_nFaces, mesh);
+    if (!mask) return false;
+    // Preserve visit order, dynamic flags, duplicate suppression and the query-wide face cap.
+    for (uint32_t i = 0; i < node.m_nFaces; ++i) VisitFace(faces[i], mask[i] != 0);
+    return true;
+}
+
 // VERIFY: 62c67e6e manual
 // OFFSET: 0x007C6790
 bool BspQuery_SegmentLink::GetFaceIndicesUsingCache(const CAaBsp& aaBsp, const CAaBspNode* node) {
     if (m_sample) ++m_sample->leaves;
-    if (!g_BspDigestCache) {
-        return false;
-    }
+    if (!g_BspDigestCache) return VisitFilteredLeaf(aaBsp, *node);
 
     CAaBspNodeDigest* digest = g_BspDigestCache->GetDigest(aaBsp, node, this->m_faces, this->m_vertexList, this->m_indices);
 
-    if (!digest) {
-        return false;
-    }
+    if (!digest) return VisitFilteredLeaf(aaBsp, *node);
 
     if (m_sample) ++m_sample->digests;
     float maxX = this->m_seg.t.x;

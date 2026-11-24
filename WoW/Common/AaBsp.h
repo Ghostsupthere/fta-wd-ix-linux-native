@@ -33,6 +33,7 @@ class CAaBsp {
     /* 0048 */ int32_t m_bFree;
     /* 004C */ CAaBox m_aaBox;
     /* 0064 */ int32_t unused_0064;
+    uint64_t m_relinkGeometryId = 0;
 
     CAaBsp();
     ~CAaBsp();
