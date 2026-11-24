@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include "MapObjGroup.h"
 #include "WoW/Source/WorldClient/WorldConstants.h"
 #include "WoW/Source/WorldClient/BspQuery_SegmentLink.h"
@@ -341,6 +342,7 @@ void BspQuery_Segment::operator()(uint16_t face) {
 
     float t = 0.0f;
 
+    if (auto* work = Profiler::MovementWorkScope::Active()) ++work->wmoTriangleTests;
     if (!NTempest::Intersect(this->m_ray, this->m_vertexList, &this->m_indices[3 * face], &t, nullptr, 0.0020000001f)) {
         return;
     }
@@ -475,6 +477,7 @@ bool BspQuery_Segment::GetFaceIndicesUsingCache(const CAaBsp& aaBsp, const CAaBs
 
         float t = 0.0f;
 
+        if (auto* work = Profiler::MovementWorkScope::Active()) ++work->wmoTriangleTests;
         if (!NTempest::Intersect(this->m_ray, digest->m_vertices, verts, &t, nullptr, 0.0020000001f)) {
             continue;
         }

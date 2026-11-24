@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include "CWorldOcclusion.h"
 #include <malloc.h>
 #include <cmath>
@@ -331,6 +332,7 @@ void CWorldOccluder::Initialize() {
 // VERIFY: 4db2afc6 manual
 // OFFSET: 0x0078F6A0
 void CWorldOcclusion::UpdateBufferChunk(const C3Vector* verts, const float* heights, const uint32_t* indices, int32_t count, const C3Vector* offset, int32_t holes) {
+    Profiler::Scope profile(Profiler::WorkZone(Profiler::CullOcclusionWrite));
     if (!(CWorld::enables & Enable_Culling) || CWorldScene::camVec.z < -0.89999998f || CWorldScene::camVec.z > 0.89999998f) {
         return;
     }
@@ -485,6 +487,7 @@ void CWorldOcclusion::UpdateBuffer(const C3Vector* points, int32_t count, uint32
 // VERIFY: a0f63ed4 manual
 // OFFSET: 0x0078FC40
 uint32_t CWorldOcclusion::QueryBuffer(const C3Vector& center, float radius, uint8_t flags) {
+    Profiler::Scope profile(Profiler::WorkZone(Profiler::CullOcclusionQuery));
     if (!(CWorld::enables & Enable_Culling) || fabs(radius) < 2.3841858e-07f || CWorldScene::camVec.z < -0.89999998f || CWorldScene::camVec.z > 0.89999998f) {
         return 0;
     }
@@ -529,6 +532,7 @@ uint32_t CWorldOcclusion::QueryBuffer(const C3Vector& center, float radius, uint
 // VERIFY: 3ac5bc19 auto
 // OFFSET: 0x0078FDC0
 uint32_t CWorldOcclusion::QueryBuffer(CAaBox* box, uint8_t flags) {
+    Profiler::Scope profile(Profiler::WorkZone(Profiler::CullOcclusionQuery));
     if (!(CWorld::enables & Enable_Culling) || CWorldScene::camVec.z < -0.89999998f || CWorldScene::camVec.z > 0.89999998f) {
         return 0;
     }

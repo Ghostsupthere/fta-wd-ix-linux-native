@@ -1,5 +1,6 @@
 #if defined(WOWDECOMP_LINUX)
 #define WOWDECOMP_GX_DXVK
+#include "Engine/Source/Base/Profiler.h"
 #include <d3d9.h>
 #include "WxlSurfaceLights.h"
 #include "WxlModernVisuals.h"
@@ -1166,6 +1167,7 @@ void ResetTerrainShadow() {
 }
 
 void UpdateTerrainShadow(IDirect3DDevice9* d, const float* camera, bool enabled, double now) {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::TerrainShadows));
     using wxl::atmosphere::GroundFloor;
     constexpr int side = GroundFloor::Side;
     const float size = side * GroundFloor::CellYards;
@@ -1369,6 +1371,7 @@ void WxlSurfaceLightsBeforeTerrain() {
     viewOk = viewOk && Finite3(camera);
 
     if (weatherPackLoaded) {
+        Profiler::Scope profile(Profiler::SpikeZone(Profiler::TerrainWeatherConstants));
         const float wet[] = {viewOk ? WxlSurfaceWetness() : 0.0f, 0.22f, 0.22f, 0.085f};
         const float eye[] = {camera[0], camera[1], camera[2], 0};
         d->SetPixelShaderConstantF(215, wet, 1);

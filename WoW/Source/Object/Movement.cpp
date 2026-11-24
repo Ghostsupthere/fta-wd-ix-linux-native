@@ -1,4 +1,5 @@
 #if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/Base/Profiler.h"
 #include "WoW/Source/Object/Linux/WxlGoblinGlider.h"
 #include "WoW/Source/Object/Linux/WxlJumpTrace.h"
 #endif
@@ -5388,6 +5389,7 @@ done:
 // VERIFY: 8023e94a manual
 // OFFSET: 0x006F13E0
 void CMovement_C::MoveUnits(uint32_t time, uint32_t lastUpdateTime) {
+    Profiler::Scope profile(Profiler::WorkZone(Profiler::MoveUnitUpdates));
     CMovementGlobals* globals = MovementGetGlobals();
 
     if (!globals) {
@@ -5412,10 +5414,21 @@ void CMovement_C::MoveUnits(uint32_t time, uint32_t lastUpdateTime) {
         }
     }
 #endif
+    Profiler::MovementWorkScope work;
+    auto* counts = work.Active();
     CMovement_C* mover = globals->m_movers.Head();
 
     while (mover) {
         CMovement_C* next = globals->m_movers.Next(mover);
+        C3Vector before{};
+        float facing = 0.0f;
+        float pitch = 0.0f;
+        if (counts) {
+            before = mover->m_position;
+            facing = mover->m_facing;
+            pitch = mover->m_pitch;
+            ++counts->units;
+        }
 
         if (mover->m_flags & MOVEMENTFLAG_SPLINE_ENABLED) {
             mover->SkipTime(time - lastUpdateTime);
@@ -5423,6 +5436,13 @@ void CMovement_C::MoveUnits(uint32_t time, uint32_t lastUpdateTime) {
             mover->ExecuteMovement(time, lastUpdateTime);
         }
 
+        if (counts) {
+            const auto& after = mover->m_position;
+            if (after.x != before.x || after.y != before.y || after.z != before.z ||
+                mover->m_facing != facing || mover->m_pitch != pitch) {
+                ++counts->changed;
+            }
+        }
         mover = next;
     }
 }

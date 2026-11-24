@@ -2685,6 +2685,7 @@ void CWorldScene::UpdateOcclusion(CSortEntry* entry) {
 // VERIFY: edc7b1e9 manual
 // OFFSET: 0x00793B10
 void CWorldScene::RenderChunksSolid() {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::TerrainChunkSolid));
     CMapRenderChunk::SetShaders(0, 0);
 
     if (CMapRenderChunk::s_currentShaderX[0]) {
@@ -3654,6 +3655,7 @@ CWFrustum* CWorldScene::AllocFrustum() {
 // VERIFY: 09b34ce3 manual
 // OFFSET: 0x007984A0
 void CWorldScene::RenderDetailDoodads() {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::TerrainDetailDoodads));
     g_theGxDevicePtr->RsPush();
     g_theGxDevicePtr->XformPush(GxXform_World);
     g_theGxDevicePtr->XformPush(GxXform_Tex1);
@@ -3769,6 +3771,7 @@ void CWorldScene::CullDoodads(CSortEntry* entry, uint16_t fadeLevel) {
 // VERIFY: 1d148ad8 manual
 // OFFSET: 0x007989C0
 void CWorldScene::RenderChunksSinglePass() {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::TerrainChunkSinglePass));
     TSExplicitList<CMapRenderChunk, offsetof(CMapRenderChunk, m_renderChunkLink)> singlePassList;
 
     for (uint32_t pass = 0; pass < 4; pass++) {
@@ -3851,7 +3854,10 @@ void CWorldScene::RenderChunksSinglePass() {
 void CWorldScene::RenderChunks() {
     Profiler::Scope profileScope(Profiler::Terrain);
 #if defined(WOWDECOMP_LINUX)
-    WxlSurfaceLightsBeforeTerrain();
+    {
+        Profiler::Scope profile(Profiler::SpikeZone(Profiler::TerrainSurfacePreparation));
+        WxlSurfaceLightsBeforeTerrain();
+    }
 #endif
     g_theGxDevicePtr->RsPush();
     CMapRenderChunk::s_fogColor = *reinterpret_cast<CImVector*>(&g_theGxDevicePtr->m_appRenderStates[GxRs_FogColor].m_value.m_data.i[0]);
@@ -4338,6 +4344,7 @@ CSortTable::CSortTable() {
 // VERIFY: 4e2f336e manual
 // OFFSET: 0x0079A790
 void CWorldScene::CullSortTable(CRect* rect) {
+    Profiler::Scope profile(Profiler::WorkZone(Profiler::CullSort));
     CWorldScene::CreateOcclusionVolumes(&CWorldScene::s_activeWorldView, CWorldScene::s_frustumCorners, 0);
     CWorldScene::frustumIndex++;
     CWorldScene::frustumStack[CWorldScene::frustumIndex] = CWorldScene::frustumStack[CWorldScene::frustumIndex - 1];

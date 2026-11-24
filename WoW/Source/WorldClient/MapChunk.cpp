@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include "MapChunk.h"
 #include "WoW/Source/WorldClient/TerrainAreaReplay.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
@@ -1129,6 +1130,7 @@ int32_t CMapChunk::LoadDetailDoodadModels() {
 // VERIFY: 04ba1328 manual
 // OFFSET: 0x007D3390
 void CMapChunk::CreateDetailDoodads() {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::TerrainDetailCreation));
     if (!this->m_layers || !this->m_header->m_nLayers || !this->LoadDetailDoodadModels()) {
         return;
     }

@@ -5476,7 +5476,10 @@ CComponentRequest* CCharacterComponent::AllocComponentRequest() {
 // VERIFY: 3f06c490 manual
 // OFFSET: 0x004F1180
 void CCharacterComponent::ProcessComponentFinishedList(int32_t all) {
-    s_finishedListCritSect.Enter();
+    {
+        Profiler::Scope profile(Profiler::SpikeZone(Profiler::CharacterPublicationLock));
+        s_finishedListCritSect.Enter();
+    }
 
     for (CComponentRequest* request = s_finishedList.Head(); request;) {
         CComponentRequest* next = s_finishedList.Next(request);
@@ -5486,7 +5489,10 @@ void CCharacterComponent::ProcessComponentFinishedList(int32_t all) {
             request->DestroyCachedTextures();
 
             if (request->m_mipBits) {
-                s_mipBitsCritSect.Enter();
+                {
+                    Profiler::Scope profile(Profiler::SpikeZone(Profiler::CharacterPublicationLock));
+                    s_mipBitsCritSect.Enter();
+                }
 
                 if (request->m_mipBits->m_format) {
                     s_mipBitsFreeList.LinkToTail(request->m_mipBits);

@@ -146,6 +146,7 @@ int32_t CGxDeviceD3d9Ex::BufUnlock(CGxBuf* buf, uint32_t size) {
 // VERIFY: 054f73c7 manual
 // OFFSET: 0x0068FB10
 char* CGxDeviceD3d9Ex::IBufLock(CGxBuf* buf) {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::D3dBufferLock));
     CGxPool* pool = buf->m_pool;
 
     if (!this->m_context) {
@@ -3274,7 +3275,11 @@ void CGxDeviceD3d9Ex::Draw(CGxBatch* batch, int32_t count) {
         return;
     }
 
-    this->IStateSync();
+    {
+        Profiler::Scope profile(Profiler::ProbeChildZone(Profiler::TerrainD3dStateSync, Profiler::Terrain));
+        this->IStateSync();
+    }
+    Profiler::Scope profile(Profiler::ProbeChildZone(Profiler::TerrainD3dSubmit, Profiler::Terrain));
 
     uint32_t baseVertexIndex = 0;
 
@@ -4310,6 +4315,7 @@ void CGxDeviceD3d9Ex::ITexUploadRect(CGxTex* texId, uint32_t face, uint32_t leve
 // VERIFY: 01bc9a37 manual
 // OFFSET: 0x006A6260
 void CGxDeviceD3d9Ex::ITexUploadAll(CGxTex* texId) {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::D3dTextureUpload));
     uint32_t width;
     uint32_t height;
     uint32_t baseMip;
@@ -4375,6 +4381,7 @@ void CGxDeviceD3d9Ex::ITexUploadAll(CGxTex* texId) {
 // VERIFY: 87b48313 manual
 // OFFSET: 0x006A63E0
 void CGxDeviceD3d9Ex::ITexUpload(CGxTex* texId) {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::D3dTextureUpload));
     uint32_t texelStrideInBytes;
     const void* texels = nullptr;
     texId->m_userFunc(GxTex_Lock, texId->m_width, texId->m_height, 0, 0, texId->m_userArg, texelStrideInBytes, texels);

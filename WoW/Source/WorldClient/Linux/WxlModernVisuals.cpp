@@ -1,5 +1,6 @@
 #if defined(WOWDECOMP_LINUX)
 #define WOWDECOMP_GX_DXVK
+#include "Engine/Source/Base/Profiler.h"
 #include <d3d9.h>
 #endif
 #include "WxlModernVisuals.h"
@@ -487,12 +488,14 @@ bool CaptureResidentFloor(int map, float x, float y, wxl::atmosphere::FloorSampl
 }
 
 void PrepareGroundMist(FrameInputs& frame) {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::GroundMist));
     if (config.groundFog <= 0 || config.density <= 0 || config.fogDensityScale <= 0 ||
         frame.inLiquid || frame.localLights.cameraInterior || CMap::bDungeon)
         return;
     if (floorFrame != frameNumber) {
         floorFrame = frameNumber;
         const double began = NowMs();
+        Profiler::Scope floorProfile(Profiler::SpikeZone(Profiler::ResidentFogFloor));
         const auto stats = groundFloor.Update(frame.mapId, frame.camPos, began * 0.001, CaptureResidentFloor);
         const double elapsed = NowMs() - began;
         floorMs += elapsed;

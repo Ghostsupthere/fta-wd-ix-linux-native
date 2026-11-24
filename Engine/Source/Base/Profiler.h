@@ -77,6 +77,32 @@ enum Id : uint32_t {
     CharacterTexturePublish,
     TextureDecode,
     LuaGcStep,
+    TerrainSurfacePreparation,
+    TerrainWeatherConstants,
+    TerrainShadows,
+    TerrainChunkSinglePass,
+    TerrainChunkSolid,
+    TerrainChunkSetup,
+    TerrainLayerAllocation,
+    TerrainAlphaBuild,
+    TerrainD3dStateSync,
+    TerrainD3dSubmit,
+    TerrainDetailDoodads,
+    TerrainDetailCreation,
+    TerrainStreamingBuffers,
+    ResidentFogFloor,
+    GroundMist,
+    FogGroundFloorUpload,
+    D3dTextureUpload,
+    D3dBufferLock,
+    M2WorkerWait,
+    CharacterPublicationLock,
+    MovementIdle,
+    MoveUnitUpdates,
+    MovementMapRelink,
+    CullSort,
+    CullOcclusionQuery,
+    CullOcclusionWrite,
     Count
 };
 
@@ -92,6 +118,13 @@ enum class M2DrawType : uint32_t {
     Model, Projected, Doodad, Ribbon, Particle, Callback, Count
 };
 
+struct MovementTotals {
+    double units;
+    double changed;
+    double relinks;
+    double wmoTriangleTests;
+};
+
 struct Summary {
     double frameMs;      // average time between frames
     double fps;
@@ -102,6 +135,7 @@ struct Summary {
     uint32_t gpuRenderSamples;
     double gpuRenderMs;  // GPU timestamp span averaged over sampled frames
     ZoneLine zones[Count];
+    MovementTotals movement;
 };
 
 struct Scope {
@@ -113,6 +147,7 @@ struct Scope {
 
 private:
     friend Id UiDetailZone(Id detail, Id parent);
+    friend Id ProbeChildZone(Id zone, Id parent);
     int32_t m_zone;  // -1: inactive
     uint64_t m_start;
     uint64_t m_child;
@@ -132,6 +167,29 @@ private:
 
 // Main-thread diagnostics for WXL_PROFILE_SPIKES=1. Returns an inactive zone when off.
 Id SpikeZone(Id zone);
+// Terrain child timing is scoped to its passes. Work probes also support periodic profiling.
+Id ProbeChildZone(Id zone, Id parent);
+Id WorkZone(Id zone);
+
+struct MovementWorkScope {
+    struct Counters {
+        uint32_t units;
+        uint32_t changed;
+        uint32_t relinks;
+        uint32_t wmoTriangleTests;
+    };
+    MovementWorkScope();
+    ~MovementWorkScope();
+    MovementWorkScope(const MovementWorkScope&) = delete;
+    MovementWorkScope& operator=(const MovementWorkScope&) = delete;
+    static Counters* Active() { return s_active; }
+
+private:
+    static thread_local Counters* s_active;
+    Counters m_counters{};
+    bool m_collecting = false;
+};
+
 bool M2DiagnosticsEnabled();
 bool UiDetailEnabled();
 Id UiDetailZone(Id detail, Id parent);

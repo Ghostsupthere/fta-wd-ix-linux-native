@@ -37,7 +37,14 @@ constexpr const char* kNames[Count] = {
     "Map prepare barriers", "Map prepare WMO instances", "Map prepare doodads", "Map prepare entities", "Map prepare preload",
     "Camera update vehicles", "Camera update target", "Camera update collision", "Camera update liquid",
     "Map prepare area replay", "Async load callbacks", "Async load wait",
-    "Character composition", "Character texture publication", "Texture decode", "Lua GC step"
+    "Character composition", "Character texture publication", "Texture decode", "Lua GC step",
+    "Terrain surface preparation", "Terrain weather constants", "Terrain resident shadows",
+    "Terrain single pass", "Terrain solid", "Terrain chunk setup", "Terrain layer allocation", "Terrain alpha build",
+    "Terrain D3D9 state sync", "Terrain D3D9 submit", "Terrain detail doodads", "Terrain detail creation",
+    "Terrain streaming buffers", "Resident fog floor", "Ground mist",
+    "Fog ground floor upload", "D3D9 texture upload", "D3D9 buffer lock", "M2 worker wait", "Character publication lock",
+    "Movement idle", "Unit movement updates", "Movement map relinks", "Cull sort", "Cull occlusion queries",
+    "Cull occlusion writes"
 };
 
 constexpr uint32_t kM2DrawTypes = static_cast<uint32_t>(M2DrawType::Count);
@@ -58,6 +65,7 @@ struct FrameRecord {
     uint64_t frameId;
     double gpuRenderMs;
     bool gpuRenderSample;
+    MovementWorkScope::Counters movement;
 };
 
 uint64_t NowNs() {
@@ -97,6 +105,14 @@ bool SpikeLoggingEnabled() {
     return enabled;
 }
 
+bool PeriodicLoggingEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_PROFILE_LOG");
+        return value && std::atof(value) > 0.0;
+    }();
+    return enabled;
+}
+
 uint64_t SpikeBaseline() {
     if (g_count < kSpikeWarmupFrames) return 0;
     // Use an odd number of prior frames so the median is an observed frame time.
@@ -127,6 +143,13 @@ void LogSpike(const FrameRecord& frame, uint64_t medianNs) {
         if (!frame.calls[i]) continue;
         used += std::snprintf(line + used, sizeof(line) - used, " | %s %.3f/%.3f (%u)",
             kNames[i], frame.self[i] * 1.0e-6, frame.total[i] * 1.0e-6, frame.calls[i]);
+    }
+    if (frame.calls[MoveUnitUpdates] && used > 0 && static_cast<size_t>(used) < sizeof(line)) {
+        const auto& work = frame.movement;
+        const double perUnitUs = work.units ? frame.total[MoveUnitUpdates] * 1.0e-3 / work.units : 0.0;
+        std::snprintf(line + used, sizeof(line) - used,
+            " | movement units=%u changed=%u relinks=%u wmoTris=%u us/unit=%.2f",
+            work.units, work.changed, work.relinks, work.wmoTriangleTests, perUnitUs);
     }
     std::fprintf(stderr, "%s\n", line);
     // Keep this synchronous write from triggering a spike on the next frame.
@@ -159,6 +182,18 @@ void LogSummary() {
             precision, s.zones[i].selfMs, precision, s.zones[i].totalMs);
         if (i >= UiCallbackWorld) std::fprintf(stderr, " (%.2f calls)", s.zones[i].calls);
         if (s.zones[i].selfDraws >= 0.5) std::fprintf(stderr, " (%.0f draws)", s.zones[i].selfDraws);
+    }
+    if (s.zones[MovementIdle].calls || s.zones[CullSort].calls) {
+        std::fprintf(stderr, " | work probes");
+        for (uint32_t i = MovementIdle; i < Count; ++i) {
+            const auto& zone = s.zones[i];
+            if (zone.calls) std::fprintf(stderr, " | %s %.3f/%.3f ms (%.2f calls)", zone.name,
+                zone.selfMs, zone.totalMs, zone.calls);
+        }
+        const auto& work = s.movement;
+        const double perUnitUs = work.units ? s.zones[MoveUnitUpdates].totalMs * 1000 / work.units : 0.0;
+        std::fprintf(stderr, " | movement/frame units=%.2f changed=%.2f relinks=%.2f wmoTris=%.2f us/unit=%.2f",
+            work.units, work.changed, work.relinks, work.wmoTriangleTests, perUnitUs);
     }
     if (M2DiagnosticsEnabled()) {
         std::fprintf(stderr, " | M2 draws/frame");
@@ -319,6 +354,34 @@ Id SpikeZone(Id zone) {
     return SpikeLoggingEnabled() ? zone : Count;
 }
 
+Id ProbeChildZone(Id zone, Id parent) {
+    if (!SpikeLoggingEnabled() || !Enabled()) return Count;
+    for (const Scope* scope = OnOwnerThread() ? g_current : nullptr; scope; scope = scope->m_parent) {
+        if (scope->Zone() == static_cast<int32_t>(parent)) return zone;
+    }
+    return Count;
+}
+
+Id WorkZone(Id zone) {
+    return SpikeLoggingEnabled() || PeriodicLoggingEnabled() ? zone : Count;
+}
+
+thread_local MovementWorkScope::Counters* MovementWorkScope::s_active = nullptr;
+
+MovementWorkScope::MovementWorkScope() {
+    m_collecting = WorkZone(MoveUnitUpdates) != Count && Enabled() && OnOwnerThread() && !s_active;
+    if (m_collecting) s_active = &m_counters;
+}
+
+MovementWorkScope::~MovementWorkScope() {
+    if (!m_collecting) return;
+    s_active = nullptr;
+    g_open.movement.units += m_counters.units;
+    g_open.movement.changed += m_counters.changed;
+    g_open.movement.relinks += m_counters.relinks;
+    g_open.movement.wmoTriangleTests += m_counters.wmoTriangleTests;
+}
+
 bool M2DiagnosticsEnabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("WXL_PROFILE_M2_DRAWS");
@@ -407,6 +470,10 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
         frameNs += static_cast<double>(r.frameNs);
         draws += r.draws;
         triangles += static_cast<double>(r.triangles);
+        out.movement.units += r.movement.units;
+        out.movement.changed += r.movement.changed;
+        out.movement.relinks += r.movement.relinks;
+        out.movement.wmoTriangleTests += r.movement.wmoTriangleTests;
         if (m2Diagnostics) {
             for (uint32_t i = 0; i < kM2DrawTypes; ++i) out.m2DrawsByType[i] += r.m2DrawsByType[i];
         }
@@ -430,6 +497,10 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
         for (double& count : out.m2DrawsByType) count /= n;
     }
     out.triangles = triangles / n;
+    out.movement.units /= n;
+    out.movement.changed /= n;
+    out.movement.relinks /= n;
+    out.movement.wmoTriangleTests /= n;
     if (out.gpuRenderSamples) out.gpuRenderMs /= out.gpuRenderSamples;
     for (uint32_t i = 0; i < Count; ++i) {
         out.zones[i].selfMs = self[i] / n * 1.0e-6;

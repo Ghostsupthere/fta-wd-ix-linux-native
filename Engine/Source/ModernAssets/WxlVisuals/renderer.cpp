@@ -1,5 +1,6 @@
 #if defined(WOWDECOMP_LINUX)
 #define WOWDECOMP_GX_DXVK
+#include "Engine/Source/Base/Profiler.h"
 #include <d3d9.h>
 #endif
 #include "NativePlatform.h"
@@ -996,6 +997,7 @@ void Renderer::BindWrappedVolume(IDirect3DDevice9* dev, DWORD stage, IDirect3DVo
 
 bool Renderer::UploadGroundFloor(IDirect3DDevice9* dev, const wxl::atmosphere::GroundFloor& floor)
 {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::FogGroundFloorUpload));
     using wxl::atmosphere::FloorTexel;
     using wxl::atmosphere::GroundFloor;
     static_assert(sizeof(FloorTexel) == 4 * sizeof(float), "one RGBA32F texel");

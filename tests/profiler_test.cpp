@@ -187,5 +187,47 @@ int main() {
         assert(s.zones[Profiler::UiCallbackUnitModel].selfDraws == detailCalls);
         assert(s.drawCalls == 9.0 && s.triangles == 144.0);
     }
+    Profiler::Reset();
+    const bool workEnabled = Profiler::WorkZone(Profiler::MovementIdle) == Profiler::MovementIdle;
+    const bool spikesEnabled = Profiler::SpikeZone(Profiler::Terrain) == Profiler::Terrain;
+    Profiler::EndFrame();
+    {
+        Profiler::Scope idle(Profiler::WorkZone(Profiler::MovementIdle));
+        Profiler::Scope move(Profiler::WorkZone(Profiler::MoveUnitUpdates));
+        Profiler::MovementWorkScope work;
+        auto* counters = Profiler::MovementWorkScope::Active();
+        assert((counters != nullptr) == workEnabled);
+        if (counters) {
+            *counters = {4, 2, 3, 56};
+            Profiler::MovementWorkScope nested;
+            assert(nested.Active() == counters);
+            ++counters->relinks;
+        }
+        // A worker cannot create a movement collector on the render owner's behalf.
+        std::thread worker([] {
+            Profiler::MovementWorkScope work;
+            assert(!work.Active());
+        });
+        worker.join();
+    }
+    assert(!Profiler::MovementWorkScope::Active());
+    assert(Profiler::ProbeChildZone(Profiler::TerrainD3dSubmit, Profiler::Terrain) == Profiler::Count);
+    {
+        Profiler::Scope terrain(Profiler::Terrain);
+        Profiler::Scope chunk(Profiler::SpikeZone(Profiler::TerrainChunkSinglePass));
+        Profiler::Scope submit(Profiler::ProbeChildZone(Profiler::TerrainD3dSubmit, Profiler::Terrain));
+        Profiler::CountDraw(3);
+    }
+    Profiler::EndFrame();
+    Profiler::EndFrame();
+    assert(Profiler::Summarize(2, s) == 2);
+    assert(s.movement.units == (workEnabled ? 2.0 : 0.0));
+    assert(s.movement.changed == (workEnabled ? 1.0 : 0.0));
+    assert(s.movement.relinks == (workEnabled ? 2.0 : 0.0));
+    assert(s.movement.wmoTriangleTests == (workEnabled ? 28.0 : 0.0));
+    assert(s.zones[Profiler::MoveUnitUpdates].calls == (workEnabled ? 0.5 : 0.0));
+    assert(s.zones[Profiler::TerrainD3dSubmit].calls == (spikesEnabled ? 0.5 : 0.0));
+    assert(s.zones[Profiler::TerrainD3dSubmit].selfDraws == (spikesEnabled ? 0.5 : 0.0));
+    assert(s.zones[Profiler::Terrain].selfDraws == (spikesEnabled ? 0.0 : 0.5));
     return 0;
 }

@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include "MapRenderChunk.h"
 #include "WoW/Source/WorldClient/Linux/WxlVisualEnvironment.h"
 #include "WoW/Source/WorldClient/WorldConstants.h"
@@ -671,6 +672,7 @@ void CMapRenderChunk::RenderPrepBufs(CGxBuf* vertexBuf, CGxBuf* indexBuf) {
 // VERIFY: 28de08e7 manual
 // OFFSET: 0x007D0420
 void CMapRenderChunk::UseStreamingBufs() {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::TerrainStreamingBuffers));
     uint32_t stride = CMapRenderChunk::s_gxBufVertexFormat == GxVBF_PNC ? sizeof(CGxVertexPNC) : sizeof(CGxVertexPN);
     uint32_t vertexCount = s_streamVertexCount;
     uint32_t indexCount = s_streamIndexCount;
@@ -692,6 +694,7 @@ void CMapRenderChunk::UseStreamingBufs() {
 // VERIFY: fdc9dc29 manual
 // OFFSET: 0x007D04A0
 void CMapRenderChunk::RenderSetup(int32_t a2) {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::TerrainChunkSetup));
     this->m_lastUpdateTime = 0.0f;
     this->AllocLayerTextures();
 
@@ -1658,6 +1661,7 @@ void CMapRenderChunk::CreateShadowTex() {
 // VERIFY: f4962761 manual
 // OFFSET: 0x007B99B0
 void CMapRenderChunk::CreateShaderTexture() {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::TerrainAlphaBuild));
     int32_t genFormat = 3;
 
     if (CMap::header.m_flags & 0x4) {
@@ -1923,6 +1927,7 @@ void CMapRenderChunk::AllocShaderTexture() {
 // VERIFY: 913e0d32 manual
 // OFFSET: 0x007BA050
 void CMapRenderChunk::AllocLayerTextures() {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::TerrainLayerAllocation));
     if (this->m_layersCount) {
         int16_t flags = this->m_renderFlags;
         int32_t wantMip = (flags & 0x10) != 0;

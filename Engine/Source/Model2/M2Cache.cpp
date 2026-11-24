@@ -1,3 +1,4 @@
+#include "Engine/Source/Base/Profiler.h"
 #include "Engine/Source/Storm/Source/Linux/CrashBreadcrumbs.h"
 #include <algorithm>
 #include <cstdint>
@@ -63,6 +64,7 @@ void CM2Cache::BeginThread(void (*func)(void*), void* param) {
 // VERIFY: b68bbc6f auto
 // OFFSET: 0x0081BFD0
 void CM2Cache::WaitThread() {
+    Profiler::Scope profile(Profiler::SpikeZone(Profiler::M2WorkerWait));
     for (uint32_t i = 0; i < this->m_workerCount; ++i) {
         this->m_threadDone[i].Wait(0xFFFFFFFF);
     }

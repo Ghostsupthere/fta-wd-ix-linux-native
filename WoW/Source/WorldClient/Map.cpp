@@ -4114,6 +4114,10 @@ void CMap::LinkStaticEntityMultiple2(CMapStaticEntity* entity) {
 // VERIFY: d35a4a66 manual
 // OFFSET: 0x007C2F80
 void CMap::LinkStaticEntity(CMapStaticEntity* entity) {
+    auto* work = Profiler::MovementWorkScope::Active();
+    const bool measuring = work && (entity->m_type & CMapBaseObj::Type_Entity);
+    Profiler::Scope profile(measuring ? Profiler::MovementMapRelink : Profiler::Count);
+    if (measuring) ++work->relinks;
     CMapBaseObjLink* link = entity->m_parentLinkList.Head();
 
     while (link) {
