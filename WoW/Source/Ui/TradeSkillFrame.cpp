@@ -1,4 +1,7 @@
 #include "TradeSkillFrame.h"
+#include <cstring>
+#include <iterator>
+#include <unordered_set>
 #include "Engine/Source/FrameScript/FrameScript.h"
 #include "WoW/Source/Ui/Types.h"
 #include "WoW/Source/Magic/MagicClient/Spell_C.h"
@@ -195,9 +198,15 @@ void CGTradeSkillInfo::CommitPendingRecast(int32_t spellId) {
     CGTradeSkillInfo::m_pendingRecastSpellID = 0;
 }
 
+static std::unordered_set<int32_t> s_deniedRecipeItems;
+
 // VERIFY: b4e8cb94 auto
 // OFFSET: 0x005D9F80
 static void TradeSkillListItemCallback(int32_t id, const WOWGUID& guid, void* param, bool success) {
+    if (!success) {
+        // The denial callback runs before the cache removes its entry.
+        s_deniedRecipeItems.insert(id);
+    }
     if (CGTradeSkillInfo::m_itemsPending && !--CGTradeSkillInfo::m_itemsPending) {
         CGTradeSkillInfo::RefreshList(1);
     }
@@ -494,9 +503,11 @@ void CGTradeSkillInfo::RefreshList(int32_t full) {
             if ((spell.m_effect[0] == SPELL_EFFECT_CREATE_ITEM || spell.m_effect[0] == SPELL_EFFECT_CREATE_ITEM_2 || spell.m_effect[0] == SPELL_EFFECT_CREATE_RANDOM_ITEM) && spell.m_effectItemType[0]) {
                 WOWGUID requester;
                 requester.m_guid = static_cast<uint32_t>(spellId) | 0x1FE0000000000000ULL;
-                ItemStats_C* stats = g_itemDBCache.GetRecord(spell.m_effectItemType[0], requester, TradeSkillListItemCallback, nullptr, false);
+                const int32_t itemId = spell.m_effectItemType[0];
+                const auto callback = s_deniedRecipeItems.count(itemId) ? nullptr : TradeSkillListItemCallback;
+                const ItemStats_C* stats = g_itemDBCache.GetRecord(itemId, requester, callback, nullptr, false);
 
-                if (!stats) {
+                if (!stats && callback) {
                     CGTradeSkillInfo::m_itemsPending++;
                 }
 
@@ -505,16 +516,18 @@ void CGTradeSkillInfo::RefreshList(int32_t full) {
                     continue;
                 }
 
-                info->m_itemClass = stats->m_class;
-                info->m_itemSubClass = stats->m_subClass;
-                info->m_itemLevel = stats->m_itemLevel;
-                info->m_invTypeMask = s_inventoryTypeSlots[stats->m_inventoryType];
+                info->m_itemClass = stats ? static_cast<int32_t>(stats->m_class) : -1;
+                info->m_itemSubClass = stats ? static_cast<int32_t>(stats->m_subClass) : -1;
+                info->m_itemLevel = stats ? stats->m_itemLevel : 0;
+                uint32_t inventoryType = stats ? stats->m_inventoryType : 0;
+                info->m_invTypeMask = inventoryType < std::size(s_inventoryTypeSlots)
+                    ? s_inventoryTypeSlots[inventoryType] : 0;
 
-                if (stats->m_inventoryType == 18) {
+                if (inventoryType == 18) {
                     info->m_invTypeMask = 0x80000;
-                } else if (stats->m_inventoryType == 11) {
+                } else if (inventoryType == 11) {
                     info->m_invTypeMask = 0x400;
-                } else if (stats->m_inventoryType == 12) {
+                } else if (inventoryType == 12) {
                     info->m_invTypeMask = 0x1000;
                 }
 
@@ -644,6 +657,8 @@ void CGTradeSkillInfo::RefreshList(int32_t full) {
 // VERIFY: 9f22c8a7 manual
 // OFFSET: 0x005DCAF0
 void CGTradeSkillInfo::ShutdownGame() {
+    CGTradeSkillInfo::ClearItemCallbacks();
+    s_deniedRecipeItems.clear();
     for (uint32_t i = 0; i < CGTradeSkillInfo::m_displayList.m_count; i++) {
         delete CGTradeSkillInfo::m_displayList.m_data[i];
     }
@@ -682,6 +697,8 @@ void CGTradeSkillInfo::ShutdownGame() {
 // VERIFY: 9c6c8940 manual
 // OFFSET: 0x005DA5A0
 void CGTradeSkillInfo::Close() {
+    CGTradeSkillInfo::ClearItemCallbacks();
+    s_deniedRecipeItems.clear();
     CGTradeSkillInfo::m_spellID = 0;
     CGTradeSkillInfo::m_skillLineID = 0;
 
@@ -1349,6 +1366,7 @@ void CGTradeSkillInfo::SetTradeSkill(int32_t spellId, const WOWGUID& guid, const
     }
 
     CGTradeSkillInfo::ClearItemCallbacks();
+    s_deniedRecipeItems.clear();
 
     if (!link && !CGTradeSkillInfo::m_linkData && skillLine->m_id == CGTradeSkillInfo::m_skillLineID) {
         CGTradeSkillInfo::Close();
