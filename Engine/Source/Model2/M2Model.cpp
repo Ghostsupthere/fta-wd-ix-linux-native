@@ -1,3 +1,4 @@
+#include <bitset>
 #include "Engine/Source/Base/Profiler.h"
 #include <algorithm>
 #include <cfloat>
@@ -1401,8 +1402,7 @@ M2SequenceFallback* CM2Model::SequenceFallbackById(M2SequenceFallback* result, u
         defaultId = data->m_sequences[0].m_id;
     }
 
-    int32_t visited[ANIM_COUNT];
-    memset(visited, 0, sizeof(visited));
+    std::bitset<ANIM_COUNT> visited;
 
     int32_t direction = 1;
     int32_t reversals = 0;
@@ -1411,16 +1411,16 @@ M2SequenceFallback* CM2Model::SequenceFallbackById(M2SequenceFallback* result, u
         uint32_t fallback;
 
         do {
-            AnimationDataRec* rec = g_animationDataDB.GetRecord(id);
+            AnimationDataRec* rec = id < ANIM_COUNT && !visited[id] ? g_animationDataDB.GetRecord(id) : nullptr;
 
-            if (id >= ANIM_COUNT || visited[id] || !rec || id == (fallback = rec->m_fallback)) {
+            if (!rec || id == (fallback = rec->m_fallback)) {
                 result->m_id = defaultId;
                 result->m_mode = 0;
                 return result;
             }
 
             int32_t flags = rec->m_flags;
-            visited[id] = 1;
+            visited.set(id);
             id = fallback;
 
             if (flags & 0x10) {
