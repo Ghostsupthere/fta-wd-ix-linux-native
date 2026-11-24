@@ -146,7 +146,8 @@ bool LightningObject::Tick(uint32_t time) {
     for (uint32_t i = 0; i < this->m_bolts.Count(); i++) {
         Bolt& bolt = this->m_bolts[i];
 
-        if (bolt.m_source == 0xFFFF || bolt.m_target == 0xFFFF) {
+        if (bolt.m_source == 0xFFFF || bolt.m_target == 0xFFFF ||
+            bolt.m_source >= this->m_targets.Count() || bolt.m_target >= this->m_targets.Count()) {
             continue;
         }
 
