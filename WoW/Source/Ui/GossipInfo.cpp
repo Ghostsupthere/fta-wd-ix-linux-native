@@ -4,7 +4,9 @@
 #include "WoW/Source/Ui/GameUI.h"
 #include "WoW/Source/Ui/QuestFrame.h"
 #include "WoW/Source/Ui/Types.h"
+#include <array>
 #include <malloc.h>
+#include <string>
 #include "Engine/Source/Base/CDataStore.h"
 #include "Engine/Source/ConsoleBase/IConsole.h"
 #include "Engine/Source/Storm/H/storm.h"
@@ -202,67 +204,66 @@ void CGGossipInfo::SetGossipText(int32_t textId) {
 // VERIFY: 73df7f0a manual
 // OFFSET: 0x0058B1B0
 int32_t Packet_SMSG_GOSSIP_MESSAGE(void* param, NETMESSAGE msgId, uint32_t time, CDataStore* msg) {
-    WOWGUID guid;
-    msg->Get(guid.m_guid);
+    WOWGUID guid{};
+    uint32_t gossipId = 0;
+    uint32_t textId = 0;
+    uint32_t optionCount = 0;
+    msg->Get(guid.m_guid).Get(gossipId).Get(textId).Get(optionCount);
+
+    struct PendingOption {
+        GossipOption option{};
+        std::string text;
+        std::string boxText;
+    };
+
+    std::array<PendingOption, std::size(CGGossipInfo::m_options)> options;
+    char text[2048];
+    for (uint32_t i = 0; i < optionCount && msg->m_read <= msg->m_size; ++i) {
+        PendingOption pending;
+        uint8_t type = 0;
+        msg->Get(reinterpret_cast<uint32_t&>(pending.option.m_index)).Get(type).Get(pending.option.m_coded);
+        pending.option.m_type = type;
+        msg->Get(pending.option.m_boxMoney).GetString(text, sizeof(text));
+        if (msg->m_read > msg->m_size) break;
+        if (i < options.size()) pending.text = text;
+        msg->GetString(text, sizeof(text));
+        if (msg->m_read > msg->m_size) break;
+        if (i < options.size()) {
+            pending.boxText = text;
+            options[i] = std::move(pending);
+        }
+    }
+
+    uint32_t questCount = 0;
+    msg->Get(questCount);
+    std::array<GossipQuestInfo, std::size(CGGossipInfo::m_quests)> quests{};
+    for (uint32_t i = 0; i < questCount && msg->m_read <= msg->m_size; ++i) {
+        GossipQuestInfo quest{};
+        uint8_t repeatable = 0;
+        msg->Get(quest.m_questID).Get(quest.m_icon).Get(reinterpret_cast<uint32_t&>(quest.m_level));
+        msg->Get(quest.m_flags).Get(repeatable).GetString(quest.m_title, sizeof(quest.m_title));
+        quest.m_repeatable = repeatable;
+        if (i < quests.size()) quests[i] = quest;
+    }
+
+    if (msg->m_read > msg->m_size) {
+        msg->m_read = msg->m_size;
+        return 1;
+    }
+
     CGGossipInfo::SetGossip(guid);
     CGGossipInfo::ClearOptions();
-    msg->Get(CGGossipInfo::m_gossipID);
-
-    uint32_t textId;
-    msg->Get(textId);
-
-    uint32_t count;
-    msg->Get(count);
-
-    if (count > 32) {
-        count = 32;
+    CGGossipInfo::m_gossipID = gossipId;
+    for (uint32_t i = 0; i < optionCount && i < options.size(); ++i) {
+        const auto& pending = options[i];
+        auto& option = CGGossipInfo::m_options[i];
+        option = pending.option;
+        option.m_text = SStrDupA(pending.text.c_str(), __FILE__, __LINE__);
+        option.m_boxText = pending.boxText.empty() ? nullptr : SStrDupA(pending.boxText.c_str(), __FILE__, __LINE__);
+        ++CGGossipInfo::m_gossipOptionsCount;
     }
-
-    CGGossipInfo::m_gossipOptionsCount = count;
-    char text[2048];
-
-    for (int32_t i = 0; i < static_cast<int32_t>(count); i++) {
-        GossipOption& option = CGGossipInfo::m_options[i];
-        msg->Get(reinterpret_cast<uint32_t&>(option.m_index));
-
-        uint8_t type;
-        msg->Get(type);
-
-        uint8_t coded;
-        msg->Get(coded);
-
-        option.m_type = type;
-        option.m_coded = coded;
-        msg->Get(option.m_boxMoney);
-        msg->GetString(text, sizeof(text));
-
-        if (option.m_text) {
-            SMemFree(option.m_text, __FILE__, __LINE__, 0);
-        }
-
-        option.m_text = SStrDupA(text, __FILE__, __LINE__);
-        msg->GetString(text, sizeof(text));
-
-        if (option.m_boxText) {
-            SMemFree(option.m_boxText, __FILE__, __LINE__, 0);
-        }
-
-        option.m_boxText = text[0] ? SStrDupA(text, __FILE__, __LINE__) : nullptr;
-    }
-
-    msg->Get(count);
-
-    for (int32_t i = 0; i < static_cast<int32_t>(count); i++) {
-        GossipQuestInfo& quest = CGGossipInfo::m_quests[i];
-        msg->Get(quest.m_questID);
-        msg->Get(quest.m_icon);
-        msg->Get(reinterpret_cast<uint32_t&>(quest.m_level));
-        msg->Get(quest.m_flags);
-
-        uint8_t repeatable = 0;
-        msg->Get(repeatable);
-        quest.m_repeatable = repeatable;
-        msg->GetString(quest.m_title, sizeof(quest.m_title));
+    for (uint32_t i = 0; i < questCount && i < quests.size(); ++i) {
+        CGGossipInfo::m_quests[i] = quests[i];
     }
 
     CGGossipInfo::SetGossipText(textId);
