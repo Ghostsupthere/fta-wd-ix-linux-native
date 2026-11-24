@@ -224,6 +224,7 @@ Id ProbeChildZone(Id zone, Id parent);
 Id WorkZone(Id zone);
 Id NightLightsZone(Id zone);
 Id PortWorkZone(Id zone);
+bool PortWorkLoggingEnabled();
 
 struct CharacterWorkerScope {
     CharacterWorkerScope();

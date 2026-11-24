@@ -63,7 +63,7 @@ def main():
             portion("WoW/Source/Game/GameClient/PlayerName.cpp", "    if (!(this->m_flags & 0x4) && (!object->m_worldModel", "\n    for ", False)
                 .replace("this->m_flags", "flags").replace("return;", "return false;")
         )
-        for name in ("hardening", "processing", "network", "batch2"):
+        for name in ("hardening", "processing", "network", "network_profile", "batch2"):
             executable = work / name
             subprocess.run([*shlex.split(os.environ.get("CXX", "g++")), "-std=c++17", "-O2", "-UNDEBUG",
                 "-Wall", "-Wextra", "-Werror", "-pthread", "-I", str(root), "-I", str(work),

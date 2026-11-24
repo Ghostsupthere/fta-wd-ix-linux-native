@@ -2,6 +2,8 @@
 #include <chrono>
 #include <cstdlib>
 #include "NetClient.h"
+#include "NetworkPollProfile.h"
+#include <optional>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -145,8 +147,14 @@ static bool NetBatchPollEnabled() {
 // VERIFY: eb4e833d manual
 // OFFSET: 0x006334F0
 void NETEVENTQUEUE::Poll() {
+    const bool batched = NetBatchPollEnabled();
+    std::optional<NetworkPollProfile::Sample> detail;
+    if (!batched && Profiler::PortWorkLoggingEnabled()) {
+        detail.emplace(Profiler::CurrentFrameId());
+    }
+    auto* sample = detail ? &*detail : nullptr;
     Profiler::Scope profile(Profiler::PortWorkZone(Profiler::NetworkPoll));
-    if (NetBatchPollEnabled()) {
+    if (batched) {
         this->PollBatch();
         return;
     }
@@ -159,6 +167,10 @@ void NETEVENTQUEUE::Poll() {
         NetClient* client = this->m_client;
 
         if (!client->m_deleteMe) {
+            const auto key = sample && node->m_eventId == EVENT_ID_NET_DATA
+                ? NetworkPollProfile::PacketKey(node->m_data, node->m_dataSize)
+                : NetworkPollProfile::EventBase + static_cast<uint32_t>(node->m_eventId);
+            NetworkPollProfile::Sample::Callback callback(sample, key);
             switch (node->m_eventId) {
                 case EVENT_ID_NET_DATA:
                     client->HandleData(node->m_timeReceived, node->m_data, node->m_dataSize);
@@ -198,6 +210,7 @@ void NETEVENTQUEUE::Poll() {
     }
 
     if (!destroyed) {
+        NetworkPollProfile::Sample::Callback callback(sample, NetworkPollProfile::Idle);
         this->m_client->HandleIdle();
     }
 

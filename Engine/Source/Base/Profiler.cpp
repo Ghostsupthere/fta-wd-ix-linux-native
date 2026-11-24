@@ -538,6 +538,10 @@ Id PortWorkZone(Id zone) {
     return PortWorkEnabled() ? WorkZone(zone) : SpikeZone(zone);
 }
 
+bool PortWorkLoggingEnabled() {
+    return PortWorkEnabled() && Enabled() && (SpikeLoggingEnabled() || PeriodicLoggingEnabled()) && OnOwnerThread();
+}
+
 CharacterWorkerScope::CharacterWorkerScope()
     : m_started(PortWorkEnabled() && Enabled() && PeriodicLoggingEnabled() ? NowNs() : 0) {}
 
