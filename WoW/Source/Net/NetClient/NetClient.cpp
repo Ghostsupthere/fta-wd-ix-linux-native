@@ -906,17 +906,23 @@ void NETEVENTQUEUE::Retire() {
 // OFFSET: 0x00633650
 void NETEVENTQUEUE::AddEvent(EVENTID eventId, void* connection, NetClient* client, const void* data, uint32_t size) {
     this->m_critSect.Enter();
-    if (NetBatchPollEnabled() && (this->m_retired || client != this->m_client || (size && !data))) {
+    const bool batched = NetBatchPollEnabled();
+    if (batched && (this->m_retired || client != this->m_client || (size && !data))) {
         this->m_critSect.Leave();
         return;
     }
 
+    void* payload = batched && size ? SMemAlloc(size, __FILE__, __LINE__, 0) : nullptr;
+    if (batched && size && !payload) {
+        this->m_critSect.Leave();
+        return;
+    }
 
     NETEVENTQUEUENODE* node = this->m_eventQueue.NewNode(2, 0, 8);
     node->m_eventId = eventId;
 
     if (size) {
-        node->m_data = SMemAlloc(size, __FILE__, __LINE__, 0);
+        node->m_data = batched ? payload : SMemAlloc(size, __FILE__, __LINE__, 0);
         memcpy(node->m_data, data, size);
         node->m_dataSize = size;
     } else {
