@@ -220,13 +220,11 @@ char* CGxDeviceD3d9Ex::IBufLock(CGxBuf* buf) {
 #else
         // The native API already reports lock failure. The legacy probe reads
         // from write-only mappings for non-stream pools and validates no range.
-        if (!skipBufferProbe) {
-            volatile char* probe = data;
-            if (pool->m_usage == GxPoolUsage_Stream) {
-                *probe = 0;
-            } else {
-                *probe = *probe;
-            }
+        volatile char* probe = data;
+        if (pool->m_usage == GxPoolUsage_Stream) {
+            *probe = 0;
+        } else if (!skipBufferProbe) {
+            *probe = *probe;
         }
 #endif
     }
