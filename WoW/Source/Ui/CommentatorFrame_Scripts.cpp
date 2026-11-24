@@ -1,4 +1,5 @@
 #include "CommentatorFrame.h"
+#include <iterator>
 #include <cstdint>
 #include "Engine/Source/FrameScript/FrameScript.h"
 #include "Engine/Source/FrameScript/FrameScript_Object.h"
@@ -875,7 +876,7 @@ static int32_t Script_CommentatorRemovePlayer(lua_State* L) {
 
     uint32_t faction = CGCommentator::s_Commentator.m_playerFaction;
 
-    if (faction > 2) {
+    if (faction >= std::size(instance->m_numPlayers)) {
         luaL_error(L, "Error: Faction of current player is invalid.");
         return 0;
     }
