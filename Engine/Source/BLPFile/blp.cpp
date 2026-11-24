@@ -5,6 +5,7 @@
 #include "Engine/Source/BlizzardCore/SFile2-Core.h"
 #include "Engine/Source/BLPFile/blp.h"
 #include "Engine/Source/BLPFile/ExpandPalette.h"
+#include "Engine/Source/BLPFile/SourceBounds.h"
 #include "Engine/Source/Gx/Blit.h"
 #include "Engine/Source/Images/MippedImg.h"
 #include "Engine/Source/Storm/H/storm.h"
@@ -100,23 +101,15 @@ int32_t CBLPFile::ValidateHeader(const BLPHeader& header) {
 
 // VERIFY: ec3a562c manual
 // OFFSET: 0x006AE900
-int32_t CBLPFile::Source(void* data) {
+int32_t CBLPFile::Source(void* data, size_t bytes) {
     this->Close();
+    if (!BlpSourceBounds::ReadHeader(data, bytes, this->m_header)) return 0;
+
+    this->m_numLevels = this->HasMips() ? CalcLevelCount(this->m_header.m_width, this->m_header.m_height) : 1;
+    if (this->m_numLevels > BLP_MIP_SLOTS) return 0;
 
     this->m_inMemoryNeedsFree = 0;
     this->m_inMemoryImage = data;
-    memcpy(&this->m_header, data, sizeof(this->m_header));
-
-    if (!CBLPFile::ValidateHeader(this->m_header)) {
-        return 0;
-    }
-
-    if (this->HasMips()) {
-        this->m_numLevels = CalcLevelCount(this->m_header.m_width, this->m_header.m_height);
-    } else {
-        this->m_numLevels = 1;
-    }
-
     return 1;
 }
 
@@ -930,7 +923,7 @@ int32_t CBLPFile::Open(const char* fileName, int32_t flags) {
     }
 
     const uint32_t size = SFileGetFileSize(file, nullptr);
-    if (size < sizeof(BLPHeader) || size == UINT32_MAX) {
+    if (size < BlpSourceBounds::FixedHeaderBytes || size == UINT32_MAX) {
         SFileCloseFile(file);
         return 0;
     }
@@ -940,7 +933,7 @@ int32_t CBLPFile::Open(const char* fileName, int32_t flags) {
     const bool read = SFileReadFile(file, s_blpFileLoadBuffer.Ptr(), size, &bytesRead, nullptr, 0);
     SFileCloseFile(file);
 
-    return read && bytesRead == size ? this->Source(s_blpFileLoadBuffer.Ptr()) : 0;
+    return read && bytesRead == size ? this->Source(s_blpFileLoadBuffer.Ptr(), size) : 0;
 }
 
 // VERIFY: 3d8e87b0 manual
@@ -967,7 +960,7 @@ int32_t CBLPFile::LockChain2(const char* fileName, PIXEL_FORMAT format, MipBits*
         }
 
         if (!setImages) {
-            for (uint32_t i = 0; this->m_header.m_mipSizes[i]; i++) {
+            for (uint32_t i = 0; i < this->m_numLevels && this->m_header.m_mipSizes[i]; i++) {
                 images[i].m_mip[0] = reinterpret_cast<C4Pixel*>(static_cast<uint8_t*>(this->m_inMemoryImage) + this->m_header.m_mipOffsets[i]);
             }
 

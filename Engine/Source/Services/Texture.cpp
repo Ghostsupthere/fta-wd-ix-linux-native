@@ -1869,10 +1869,10 @@ void UpdateTgaTexture(EGxTexCommand command, uint32_t width, uint32_t height, ui
 
 // VERIFY: c0a503e5 manual
 // OFFSET: 0x004B7BD0
-int32_t PumpBlpTextureAsync(CTexture* texture, void* data) {
+int32_t PumpBlpTextureAsync(CTexture* texture, void* data, uint32_t size) {
     CBLPFile image;
 
-    if (!image.Source(data)) {
+    if (!image.Source(data, size)) {
 #if defined(WOWDECOMP_LINUX)
         WxlTextureFailure("blp-header",texture->m_filename);
 #endif
@@ -1990,7 +1990,7 @@ void AsyncTextureSuccessCallback(CTexture* texture) {
         WxlNativeDiagnostic("modern-blp: rejected source texture: %s", texture->m_filename);
     }
 #endif
-    if (!PumpBlpTextureAsync(texture, texture->m_asyncObject->m_buffer)) {
+    if (!PumpBlpTextureAsync(texture, texture->m_asyncObject->m_buffer, texture->m_asyncObject->m_size)) {
         if (!texture->m_status.IsEmpty()) {
             SysMsgAdd(&texture->m_status);
         }
@@ -2304,10 +2304,15 @@ CTexture* CreateBlpSync(const char* fileName, char* extension, uint32_t flags, C
 
     SStrCopy(texture->m_filename, fileName, STORM_MAX_STR);
     uint32_t size = SFileGetFileSize(file, nullptr);
-    void* data = SMemAlloc(size, __FILE__, __LINE__, 0);
-
-    if (!SFileReadFile(file, data, size, nullptr, nullptr, 0)) {
+    void* data = size && size != UINT32_MAX ? SMemAlloc(size, __FILE__, __LINE__, 0) : nullptr;
+    uint32_t read = 0;
+    const bool complete = data && SFileReadFile(file, data, size, &read, nullptr, 0) && read == size;
+    SFileCloseFile(file);
+    if (!complete) {
         DebugLog("CreateBlpTexture() failed read: %s.\n", fileName);
+        FillInSolidTexture(*reinterpret_cast<const CImVector*>(&s_defaultColor), texture);
+        if (data) SMemFree(data, __FILE__, __LINE__, 0);
+        return texture;
     }
 
 #if defined(WOWDECOMP_LINUX)
@@ -2319,6 +2324,7 @@ CTexture* CreateBlpSync(const char* fileName, char* extension, uint32_t flags, C
             memcpy(replacement, converted.data(), converted.size());
             SMemFree(data, __FILE__, __LINE__, 0);
             data = replacement;
+            size = static_cast<uint32_t>(converted.size());
             WxlNativeDiagnostic("modern-blp: transformed %s", fileName);
         }
     } else if (conversion == ModernBlpTransformResult::Rejected) {
@@ -2326,11 +2332,10 @@ CTexture* CreateBlpSync(const char* fileName, char* extension, uint32_t flags, C
     }
 #endif
 
-    if (!PumpBlpTextureAsync(texture, data)) {
+    if (!PumpBlpTextureAsync(texture, data, size)) {
         FillInSolidTexture(*reinterpret_cast<const CImVector*>(&s_defaultColor), texture);
     }
 
-    SFileCloseFile(file);
     SMemFree(data, __FILE__, __LINE__, 0);
 
     return texture;
