@@ -206,4 +206,19 @@ int main(int argc, char** argv) {
         synthetic.View(), &lookup) && lookup == Lookup::Hit);
     assert(!GetMask(0, 0, {-1, -1, true}, synthetic.faces.data(), synthetic.faces.size(),
         synthetic.View(), &lookup) && lookup == Lookup::Unavailable);
+    // A burst may exhaust the time budget sooner, but cannot exceed the build cap.
+    unsigned builds = 0, deferrals = 0;
+    for (uint64_t id = 100; id < 110; ++id) {
+        GetMask(id, 0, {-1, -1, true}, synthetic.faces.data(), synthetic.faces.size(),
+            synthetic.View(), &lookup, 42);
+        builds += lookup == Lookup::Built;
+        deferrals += lookup == Lookup::Deferred;
+    }
+    assert(builds > 0 && builds <= 4 && builds + deferrals == 10);
+    GetMask(200, 0, {-1, -1, true}, synthetic.faces.data(), synthetic.faces.size(),
+        synthetic.View(), &lookup, 43);
+    assert(lookup == Lookup::Built);
+    GetMask(200, 0, {-1, -1, true}, synthetic.faces.data(), synthetic.faces.size(),
+        synthetic.View(), &lookup, 43);
+    assert(lookup == Lookup::Hit);
 }

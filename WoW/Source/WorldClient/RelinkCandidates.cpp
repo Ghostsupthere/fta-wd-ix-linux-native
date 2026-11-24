@@ -16,6 +16,9 @@ constexpr float Tolerance = 0.0020000001f;
 constexpr float Upper = Tolerance + 1.0f;
 constexpr uint32_t MaxFaces = 8192;
 constexpr size_t CacheBuckets = 64;
+constexpr uint32_t MaxBuildsPerFrame = 4;
+constexpr auto SoftTimeBudget = std::chrono::microseconds(250);
+using Clock = std::chrono::steady_clock;
 
 struct Interval {
     double low, high;
@@ -85,7 +88,10 @@ struct Entry {
 };
 std::array<std::array<Entry, 2>, CacheBuckets> cache;
 std::array<uint8_t, CacheBuckets> replaceWay{};
-std::chrono::steady_clock::time_point nextBuild;
+Clock::time_point nextBuild;
+uint32_t budgetFrame = NoBuildFrame;
+uint32_t buildsThisFrame = 0;
+Clock::duration buildTimeThisFrame{};
 
 size_t Bucket(Key key) {
     uint64_t hash = key.geometry * 0x9e3779b97f4a7c15ull + key.faceStart;
@@ -104,6 +110,14 @@ Mode Setting() {
         return Mode::Off;
     }();
     return mode;
+}
+
+bool FrameBudgetEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("WXL_WMO_RELINK_FRAME_BUDGET");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    return enabled;
 }
 
 bool CellForRay(const C3Ray& ray, Cell& cell) {
@@ -126,7 +140,7 @@ void BuildMask(Cell cell, const uint16_t* faces, uint32_t count, GeometryView me
 }
 
 const uint8_t* GetMask(uint64_t geometry, uint32_t faceStart, Cell cell,
-                       const uint16_t* faces, uint32_t count, GeometryView mesh, Lookup* lookup) {
+                       const uint16_t* faces, uint32_t count, GeometryView mesh, Lookup* lookup, uint32_t buildFrame) {
     if (lookup) *lookup = Lookup::Unavailable;
     if (!geometry || !faces || count > MaxFaces || count <= 300 || !mesh.indices || !mesh.vertices ||
         !mesh.indexCount || !mesh.vertexCount)
@@ -140,8 +154,17 @@ const uint8_t* GetMask(uint64_t geometry, uint32_t faceStart, Cell cell,
         }
     }
 
-    const auto now = std::chrono::steady_clock::now();
-    if (now < nextBuild) {
+    const auto now = Clock::now();
+    const bool frameBudget = buildFrame != NoBuildFrame;
+    if (frameBudget && budgetFrame != buildFrame) {
+        budgetFrame = buildFrame;
+        buildsThisFrame = 0;
+        buildTimeThisFrame = {};
+    }
+    const bool exhausted = frameBudget
+        ? buildsThisFrame >= MaxBuildsPerFrame || buildTimeThisFrame >= SoftTimeBudget
+        : now < nextBuild;
+    if (exhausted) {
         if (lookup) *lookup = Lookup::Deferred;
         return nullptr;
     }
@@ -149,7 +172,13 @@ const uint8_t* GetMask(uint64_t geometry, uint32_t faceStart, Cell cell,
     replaceWay[bucket] ^= 1;
     BuildMask(cell, faces, count, mesh, entry.mask.data());
     entry.key = key;
-    nextBuild = std::chrono::steady_clock::now() + std::chrono::milliseconds(4);
+    const auto finished = Clock::now();
+    if (frameBudget) {
+        ++buildsThisFrame;
+        buildTimeThisFrame += finished - now;
+    } else {
+        nextBuild = finished + std::chrono::milliseconds(4);
+    }
     if (lookup) *lookup = Lookup::Built;
     return entry.mask.data();
 }

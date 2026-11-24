@@ -11,6 +11,10 @@ namespace RelinkCandidates {
 
 enum class Mode { Off, Filter, Verify };
 Mode Setting();
+bool FrameBudgetEnabled();
+
+// UINT32_MAX keeps the legacy timed throttle when no render device is available.
+inline constexpr uint32_t NoBuildFrame = UINT32_MAX;
 
 struct Cell {
     int32_t x, y;
@@ -34,7 +38,8 @@ enum class Lookup { Unavailable, Hit, Built, Deferred };
 
 // A miss may defer filling to limit the cost of cold geometry or entering a new cell.
 const uint8_t* GetMask(uint64_t geometry, uint32_t faceStart, Cell cell,
-                       const uint16_t* faces, uint32_t count, GeometryView mesh, Lookup* lookup = nullptr);
+                       const uint16_t* faces, uint32_t count, GeometryView mesh, Lookup* lookup = nullptr,
+                       uint32_t buildFrame = NoBuildFrame);
 
 } // namespace RelinkCandidates
 #endif

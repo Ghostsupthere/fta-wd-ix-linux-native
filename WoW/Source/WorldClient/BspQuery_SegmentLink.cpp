@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdio>
 #include "Engine/Source/Tempest/NTempest.h"
+#include "Engine/Source/Gx/CGxDevice/CGxDevice.h"
+#include "Engine/Source/Gx/Gx.h"
 #include "WoW/Source/WorldClient/Types.h"
 #include "WoW/Common/AaBsp.h"
 
@@ -152,8 +154,10 @@ bool BspQuery_SegmentLink::VisitFilteredLeaf(const CAaBsp& bsp, const CAaBspNode
     const auto* faces = bsp.m_nodeFaceIndices + node.m_faceStart;
     const RelinkCandidates::GeometryView mesh{m_indices, m_indexCount, m_vertexList, m_vertexCount};
     RelinkCandidates::Lookup lookup;
+    const uint32_t buildFrame = RelinkCandidates::FrameBudgetEnabled() && g_theGxDevicePtr
+        ? static_cast<uint32_t>(g_theGxDevicePtr->m_frameCount) : RelinkCandidates::NoBuildFrame;
     const auto* mask = RelinkCandidates::GetMask(bsp.m_relinkGeometryId, node.m_faceStart, cell,
-        faces, node.m_nFaces, mesh, work ? &lookup : nullptr);
+        faces, node.m_nFaces, mesh, work ? &lookup : nullptr, buildFrame);
     if (work) {
         using RelinkCandidates::Lookup;
         work->candidateHit += lookup == Lookup::Hit;
