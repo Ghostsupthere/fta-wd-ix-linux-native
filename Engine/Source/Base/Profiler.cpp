@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <thread>
 
 #if defined(WOWDECOMP_LINUX)
@@ -148,9 +150,14 @@ void LogSpike(const FrameRecord& frame, uint64_t medianNs) {
         const auto& work = frame.movement;
         const double perUnitUs = work.units ? frame.total[MoveUnitUpdates] * 1.0e-3 / work.units : 0.0;
         std::snprintf(line + used, sizeof(line) - used,
-            " | movement units=%u changed=%u relinks=%u rayTris=%u linkTris=%u bspFaces=%u position=%u facing=%u pitch=%u us/unit=%.2f",
+            " | movement units=%u changed=%u relinks=%u rayTris=%u linkTris=%u bspFaces=%u position=%u facing=%u pitch=%u us/unit=%.2f "
+            "under002=%u under01=%u under05=%u atLeast05=%u incomparable=%u "
+            "relinkUnder002=%u relinkUnder01=%u relinkUnder05=%u relinkAtLeast05=%u relinkIncomparable=%u",
             work.units, work.changed, work.relinks, work.rayTriangleTests, work.linkTriangleTests,
-            work.linkBspFaces, work.positionChanged, work.facingChanged, work.pitchChanged, perUnitUs);
+            work.linkBspFaces, work.positionChanged, work.facingChanged, work.pitchChanged, perUnitUs,
+            work.displacement[0], work.displacement[1], work.displacement[2], work.displacement[3], work.displacement[4],
+            work.relinkDisplacement[0], work.relinkDisplacement[1], work.relinkDisplacement[2],
+            work.relinkDisplacement[3], work.relinkDisplacement[4]);
     }
     std::fprintf(stderr, "%s\n", line);
     // Keep this synchronous write from triggering a spike on the next frame.
@@ -193,9 +200,14 @@ void LogSummary() {
         }
         const auto& work = s.movement;
         const double perUnitUs = work.units ? s.zones[MoveUnitUpdates].totalMs * 1000 / work.units : 0.0;
-        std::fprintf(stderr, " | movement/frame units=%.2f changed=%.2f relinks=%.2f rayTris=%.2f linkTris=%.2f bspFaces=%.2f position=%.2f facing=%.2f pitch=%.2f us/unit=%.2f",
+        std::fprintf(stderr, " | movement/frame units=%.2f changed=%.2f relinks=%.2f rayTris=%.2f linkTris=%.2f bspFaces=%.2f position=%.2f facing=%.2f pitch=%.2f us/unit=%.2f "
+            "under002=%.2f under01=%.2f under05=%.2f atLeast05=%.2f incomparable=%.2f "
+            "relinkUnder002=%.2f relinkUnder01=%.2f relinkUnder05=%.2f relinkAtLeast05=%.2f relinkIncomparable=%.2f",
             work.units, work.changed, work.relinks, work.rayTriangleTests, work.linkTriangleTests,
-            work.linkBspFaces, work.positionChanged, work.facingChanged, work.pitchChanged, perUnitUs);
+            work.linkBspFaces, work.positionChanged, work.facingChanged, work.pitchChanged, perUnitUs,
+            work.displacement[0], work.displacement[1], work.displacement[2], work.displacement[3], work.displacement[4],
+            work.relinkDisplacement[0], work.relinkDisplacement[1], work.relinkDisplacement[2],
+            work.relinkDisplacement[3], work.relinkDisplacement[4]);
     }
     if (M2DiagnosticsEnabled()) {
         std::fprintf(stderr, " | M2 draws/frame");
@@ -387,6 +399,21 @@ MovementWorkScope::~MovementWorkScope() {
     g_open.movement.rayTriangleTests += m_counters.rayTriangleTests;
     g_open.movement.linkTriangleTests += m_counters.linkTriangleTests;
     g_open.movement.linkBspFaces += m_counters.linkBspFaces;
+    for (uint32_t i = 0; i < MovementDisplacementBins; ++i) {
+        g_open.movement.displacement[i] += m_counters.displacement[i];
+        g_open.movement.relinkDisplacement[i] += m_counters.relinkDisplacement[i];
+    }
+}
+
+void MovementWorkScope::Counters::ObserveDisplacement(double squared, bool relinked) {
+    constexpr double limits[] = {0.002 * 0.002, 0.01 * 0.01, 0.05 * 0.05};
+    uint32_t bin = MovementDisplacementBins - 1;
+    if (std::isfinite(squared) && squared >= 0.0) {
+        bin = 0;
+        while (bin < std::size(limits) && squared >= limits[bin]) ++bin;
+    }
+    ++displacement[bin];
+    if (relinked) ++relinkDisplacement[bin];
 }
 
 bool M2DiagnosticsEnabled() {
@@ -486,6 +513,10 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
         out.movement.rayTriangleTests += r.movement.rayTriangleTests;
         out.movement.linkTriangleTests += r.movement.linkTriangleTests;
         out.movement.linkBspFaces += r.movement.linkBspFaces;
+        for (uint32_t i = 0; i < MovementDisplacementBins; ++i) {
+            out.movement.displacement[i] += r.movement.displacement[i];
+            out.movement.relinkDisplacement[i] += r.movement.relinkDisplacement[i];
+        }
         if (m2Diagnostics) {
             for (uint32_t i = 0; i < kM2DrawTypes; ++i) out.m2DrawsByType[i] += r.m2DrawsByType[i];
         }
@@ -518,6 +549,8 @@ uint32_t Summarize(uint32_t frameCount, Summary& out) {
     out.movement.rayTriangleTests /= n;
     out.movement.linkTriangleTests /= n;
     out.movement.linkBspFaces /= n;
+    for (auto& bin : out.movement.displacement) bin /= n;
+    for (auto& bin : out.movement.relinkDisplacement) bin /= n;
     if (out.gpuRenderSamples) out.gpuRenderMs /= out.gpuRenderSamples;
     for (uint32_t i = 0; i < Count; ++i) {
         out.zones[i].selfMs = self[i] / n * 1.0e-6;

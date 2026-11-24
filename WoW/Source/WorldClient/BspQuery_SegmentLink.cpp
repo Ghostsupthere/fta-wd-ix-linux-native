@@ -1,4 +1,5 @@
 #include "BspQuery_SegmentLink.h"
+#include "WoW/Source/WorldClient/RelinkProbe.h"
 #include "Engine/Source/Base/Profiler.h"
 #include <cmath>
 #include "Engine/Source/Tempest/NTempest.h"
@@ -125,6 +126,7 @@ bool BspQuery_SegmentLink::GetHits(float* interiorT, int32_t* interiorFace, floa
 // VERIFY: 62c67e6e manual
 // OFFSET: 0x007C6790
 bool BspQuery_SegmentLink::GetFaceIndicesUsingCache(const CAaBsp& aaBsp, const CAaBspNode* node) {
+    if (m_sample) ++m_sample->leaves;
     if (!g_BspDigestCache) {
         return false;
     }
@@ -135,6 +137,7 @@ bool BspQuery_SegmentLink::GetFaceIndicesUsingCache(const CAaBsp& aaBsp, const C
         return false;
     }
 
+    if (m_sample) ++m_sample->digests;
     float maxX = this->m_seg.t.x;
     float maxY = this->m_seg.t.y;
     float minX = this->m_seg.b.x;

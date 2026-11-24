@@ -3,6 +3,8 @@
 
 #include <cstddef>
 #include <cstdint>
+
+namespace RelinkProbe { struct Faces; }
 #if defined(WOWDECOMP_LINUX)
 #include "Engine/Source/ModernAssets/ModernWmo.h"
 #endif
@@ -259,7 +261,7 @@ class CMapObjGroup {
     void GetTrisFromQuery(uint32_t a2, BspQuery* a3, CMapObjDef* mapObjDef, uint32_t a5);
     static void SetLighting(CMapObjGroup* group, uint32_t mode);
     bool Intersect(C3Segment& seg, float* dist, uint32_t flags, uint16_t faceIgnoreFlags, int32_t* hitIndex);
-    bool GetFacesForLinking(C3Segment& seg, float* t0, int32_t* face0, float* t1, int32_t* face1);
+    bool GetFacesForLinking(C3Segment& seg, float* t0, int32_t* face0, float* t1, int32_t* face1, RelinkProbe::Faces* sample);
     bool QueryLiquid(const C3Vector& pos, int32_t* liquidType, float* level);
     void QueryLiquidSounds(const C3Vector& pos, TSGrowableArray<World::LiquidQueryResult>& results);
     void GenLiquidVerts();

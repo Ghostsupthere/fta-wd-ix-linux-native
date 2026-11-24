@@ -1,4 +1,5 @@
 #include "MapObjGroup.h"
+#include "WoW/Source/WorldClient/RelinkProbe.h"
 #include "WoW/Source/WorldClient/WorldConstants.h"
 #include "WoW/Source/WorldClient/BspQuery_SegmentLink.h"
 #include "WoW/Source/WorldClient/Map.h"
@@ -2376,12 +2377,19 @@ bool CMapObjGroup::Intersect(C3Segment& seg, float* dist, uint32_t flags, uint16
 
 // VERIFY: 1d5e9a65 manual
 // OFFSET: 0x007CB260
-bool CMapObjGroup::GetFacesForLinking(C3Segment& seg, float* t0, int32_t* face0, float* t1, int32_t* face1) {
+bool CMapObjGroup::GetFacesForLinking(C3Segment& seg, float* t0, int32_t* face0, float* t1, int32_t* face1,
+                                         RelinkProbe::Faces* sample) {
     BspQuery_SegmentLink query(this->m_polyList, this->m_vertexList, this->m_indices, seg, *t0, *t1);
+    query.m_sample = sample;
     CAaBsp_Query_Segment<BspQuery_SegmentLink> bspQuery;
     bspQuery.m_aaBsp = &this->m_cAaBspNodePtr1;
     bspQuery.m_f = &query;
     bspQuery.GetFaceIndices(0, seg, this->m_cAaBspNodePtr1.m_aaBox);
+    if (sample) {
+        const auto admitted = RelinkProbe::Fingerprint(BspQuery::testFaces, BspQuery::testFaceSub);
+        sample->admitted = admitted.admitted;
+        sample->fingerprint = admitted.fingerprint;
+    }
     return query.GetHits(t0, face0, t1, face1);
 }
 

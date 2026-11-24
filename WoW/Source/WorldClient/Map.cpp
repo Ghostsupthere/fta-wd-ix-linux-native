@@ -7,6 +7,7 @@
 #include "Map.h"
 #include "Engine/Source/Base/Profiler.h"
 #include "WoW/Source/WorldClient/WorldLightingConstants.h"
+#include "WoW/Source/WorldClient/RelinkProbe.h"
 #include "WoW/Source/WorldClient/WorldConstants.h"
 #include "Engine/Source/ShaderEffect/ShadowCache.h"
 #if defined(_MSC_VER)
@@ -3682,7 +3683,18 @@ void CMap::LinkIntersectMapObjDefGroup(CMapObjDef* mapObjDef, CMapObjDefGroup* m
 
     int16_t interior = !(group->m_flags & 0x8);
 
-    if (group->GetFacesForLinking(seg, &interiorHit->t, &interiorFace, &groundHit->t, &groundFace)) {
+    auto* work = RelinkProbe::Sampling() ? Profiler::MovementWorkScope::Active() : nullptr;
+    const uint32_t priorFaces = work ? work->linkBspFaces : 0;
+    const uint32_t priorTris = work ? work->linkTriangleTests : 0;
+    RelinkProbe::Faces sample;
+    const bool hit = group->GetFacesForLinking(seg, &interiorHit->t, &interiorFace, &groundHit->t, &groundFace,
+                                               work ? &sample : nullptr);
+    if (work) {
+        const double length = std::hypot(double(end.x) - start.x, double(end.y) - start.y, double(end.z) - start.z);
+        RelinkProbe::RecordGroup(mapObjDef->m_objectIndex, mapObjDefGroup->m_groupNum, mapObj->m_wmoName, length,
+                                 sample, work->linkBspFaces - priorFaces, work->linkTriangleTests - priorTris);
+    }
+    if (hit) {
         if (interiorFace != -1) {
             interiorHit->def = mapObjDef;
             interiorHit->group = mapObjDefGroup;

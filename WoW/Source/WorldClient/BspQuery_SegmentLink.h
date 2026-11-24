@@ -22,6 +22,7 @@ struct BspQuery_SegmentLink : public BspQuery {
     /* 0058 */ int32_t m_groundFace;
     /* 005C */ uint32_t m_faceIgnoreFlags;
 
+    RelinkProbe::Faces* m_sample = nullptr;
     BspQuery_SegmentLink(SMOPoly* faces, C3Vector* vertexList, uint16_t* indices, const C3Segment& seg, float interiorMaxT, float groundMaxT);
     void operator()(uint16_t face);
     bool GetFaceIndicesUsingCache(const CAaBsp& aaBsp, const CAaBspNode* node);

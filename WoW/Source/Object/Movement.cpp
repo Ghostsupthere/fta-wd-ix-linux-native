@@ -40,6 +40,7 @@
 #include "WoW/Source/ObjectMgrClient/ObjectMgrClient.h"
 #include "WoW/Source/UIUtil/InputControl.h"
 #include "WoW/Source/WorldClient/World.h"
+#include "WoW/Source/WorldClient/RelinkProbe.h"
 #include "WoW/Source/WowSvcs/WowSvcsClient/ClientServices.h"
 
 static const float MAX_SHORT_RANGE_TELEPORT_SQUARED = 22500.0f;
@@ -5416,6 +5417,10 @@ void CMovement_C::MoveUnits(uint32_t time, uint32_t lastUpdateTime) {
 #endif
     Profiler::MovementWorkScope work;
     auto* counts = work.Active();
+    const C3Vector camera = counts ? *World::GetCamPos() : C3Vector{};
+    const bool relinkDetail = counts && RelinkProbe::Enabled();
+    const uint64_t frame = relinkDetail ? Profiler::CurrentFrameId() : 0;
+    const uint64_t sampleFrame = relinkDetail && RelinkProbe::BeginMovementFrame(frame) ? frame : 0;
     CMovement_C* mover = globals->m_movers.Head();
 
     while (mover) {
@@ -5423,10 +5428,16 @@ void CMovement_C::MoveUnits(uint32_t time, uint32_t lastUpdateTime) {
         C3Vector before{};
         float facing = 0.0f;
         float pitch = 0.0f;
+        WOWGUID transport{};
+        const uint32_t ordinal = counts ? counts->units : 0;
+        const uint32_t priorRelinks = counts ? counts->relinks : 0;
+        const uint64_t owner = sampleFrame && mover->m_ownerGuid ? mover->m_ownerGuid->m_guid : 0;
+        RelinkProbe::MoverScope probe(sampleFrame, ordinal, owner);
         if (counts) {
             before = mover->m_position;
             facing = mover->m_facing;
             pitch = mover->m_pitch;
+            transport = mover->m_transportGuid;
             ++counts->units;
         }
 
@@ -5444,12 +5455,21 @@ void CMovement_C::MoveUnits(uint32_t time, uint32_t lastUpdateTime) {
             }
             constexpr float positionThreshold = 0.001f;
             constexpr float angleThreshold = 0.001f;
-            counts->positionChanged += (after - before).SquaredMag() >= positionThreshold * positionThreshold;
+            // Both endpoints must share the same reference frame. Rebase in double before taking the delta.
+            const C3Vector origin = transport ? C3Vector{} : camera;
+            const double dx = (double(after.x) - origin.x) - (double(before.x) - origin.x);
+            const double dy = (double(after.y) - origin.y) - (double(before.y) - origin.y);
+            const double dz = (double(after.z) - origin.z) - (double(before.z) - origin.z);
+            const double squared = dx * dx + dy * dy + dz * dz;
+            const bool comparable = transport == mover->m_transportGuid;
+            counts->ObserveDisplacement(comparable ? squared : -1.0, counts->relinks != priorRelinks);
+            counts->positionChanged += comparable && squared >= positionThreshold * positionThreshold;
             counts->facingChanged += std::abs(CMath::normalizeAngleNegPiToPi_(mover->m_facing - facing)) >= angleThreshold;
             counts->pitchChanged += std::abs(CMath::normalizeAngleNegPiToPi_(mover->m_pitch - pitch)) >= angleThreshold;
         }
         mover = next;
     }
+    if (relinkDetail) RelinkProbe::EndMovementFrame(counts->units);
 }
 
 // VERIFY: 1ce66aca manual

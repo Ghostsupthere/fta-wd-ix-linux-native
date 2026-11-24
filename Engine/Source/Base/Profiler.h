@@ -119,6 +119,8 @@ enum class M2DrawType : uint32_t {
     Model, Projected, Doodad, Ribbon, Particle, Callback, Count
 };
 
+// Position bins in yards: [0, .002), [.002, .01), [.01, .05), [.05, +inf), and incomparable.
+inline constexpr uint32_t MovementDisplacementBins = 5;
 struct MovementTotals {
     double units;
     double changed;
@@ -129,6 +131,8 @@ struct MovementTotals {
     double rayTriangleTests;
     double linkTriangleTests;
     double linkBspFaces;
+    double displacement[MovementDisplacementBins];
+    double relinkDisplacement[MovementDisplacementBins];
 };
 
 struct Summary {
@@ -188,6 +192,9 @@ struct MovementWorkScope {
         uint32_t rayTriangleTests;
         uint32_t linkTriangleTests;
         uint32_t linkBspFaces;
+        uint32_t displacement[MovementDisplacementBins];
+        uint32_t relinkDisplacement[MovementDisplacementBins];
+        void ObserveDisplacement(double squared, bool relinked);
     };
     MovementWorkScope();
     ~MovementWorkScope();
