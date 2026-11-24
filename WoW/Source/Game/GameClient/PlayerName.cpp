@@ -490,7 +490,7 @@ void PLAYERNAMEDESC::RenderIfVisible(CM2Model* model, const CM2Lighting* lightin
 
     CGObject_C* object = ClntObjMgrObjectPtr(desc->m_guid, TYPE_OBJECT, __FILE__, __LINE__);
 
-    if (object && object->m_worldModel->IsDrawable(0, 0)) {
+    if (object && object->m_worldModel && object->m_worldModel->IsDrawable(0, 0)) {
 #if defined(WOWDECOMP_LINUX)
         if (WxlDeferPlayerName(desc)) {
             return;
@@ -528,7 +528,7 @@ void PLAYERNAMEDESC::UpdateWorldText(uint32_t time) {
         return;
     }
 
-    if (!(this->m_flags & 0x4) && !object->m_worldModel->IsDrawable(0, 0)) {
+    if (!(this->m_flags & 0x4) && (!object->m_worldModel || !object->m_worldModel->IsDrawable(0, 0))) {
         return;
     }
 
@@ -555,7 +555,7 @@ void PLAYERNAMEDESC::UpdateWorldTextIcons() {
         return;
     }
 
-    if (!(this->m_flags & 0x4) && !object->m_worldModel->IsDrawable(0, 0)) {
+    if (!(this->m_flags & 0x4) && (!object->m_worldModel || !object->m_worldModel->IsDrawable(0, 0))) {
         return;
     }
 
