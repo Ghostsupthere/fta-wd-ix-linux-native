@@ -59,8 +59,12 @@ void CMapArea::Purge() {
     for (CMapBaseObjLink* link = this->m_chunkLinkList.Head(); link;) {
         CMapChunk* chunk = static_cast<CMapChunk*>(link->m_owner);
         CMapBaseObjLink* next = this->m_chunkLinkList.Next(link);
-        this->m_mapChunks[16 * chunk->m_aIndex.y + chunk->m_aIndex.x] = nullptr;
-        this->m_chunkInfo[16 * chunk->m_aIndex.y + chunk->m_aIndex.x].m_flags = 0;
+        const auto x = static_cast<uint32_t>(chunk->m_aIndex.x);
+        const auto y = static_cast<uint32_t>(chunk->m_aIndex.y);
+        if (x < 16 && y < 16) {
+            this->m_mapChunks[y * 16 + x] = nullptr;
+            if (this->m_chunkInfo && this->m_fileBuffer) this->m_chunkInfo[y * 16 + x].m_flags = 0;
+        }
         CMap::FreeBaseObjLink(link);
         chunk->Purge();
         CMap::FreeChunk(chunk);
@@ -214,7 +218,8 @@ void CMapArea::PurgeChunks(CiRect* chunkRect) {
 // VERIFY: 4696cf2f manual
 // OFFSET: 0x007D6B30
 CMapChunk* CMapArea::PrepareChunk(int32_t chunkX, int32_t chunkY) {
-    if (!this->m_chunkInfo) {
+    if (!this->m_chunkInfo || !this->m_fileBuffer ||
+        static_cast<uint32_t>(chunkX) >= 16 || static_cast<uint32_t>(chunkY) >= 16) {
         return nullptr;
     }
 
