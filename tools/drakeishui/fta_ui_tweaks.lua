@@ -320,6 +320,11 @@ if L and type(L.RefreshBars) == "function" and not L._ftaMoveMode then
     L.SetEditing = function(self, ...)
         local result = setEditing(self, ...)
         if self.editing then
+            local binding = addon.KeybindMode
+            if binding and binding.active then
+                binding:Discard()
+                print("DrakeishUI keybind draft discarded on entering Move UI.")
+            end
             buildGrid():Show()
             buildCoords():Show()
             refreshCoords()

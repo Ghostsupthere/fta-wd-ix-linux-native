@@ -253,6 +253,8 @@ function B:Start()
     bindingSet=GetCurrentBindingSet()
     if bindingSet~=1 and bindingSet~=2 then return end
     if not panel then build() end
+    local layout = addon.Layout
+    if layout and layout.editing then layout:SetEditing(false) end
     self.active=true
     draft,original={},{}
     S:Close()
