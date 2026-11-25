@@ -69,6 +69,10 @@ class CSimpleModel : public CSimpleFrame {
     // A script called SetCamera before the model finished loading (the constructor's pending camera 0 is only
     // a default); the loaded-model step must then keep it instead of switching to the paperdoll camera.
     bool m_wxlScriptCameraPending = false;
+    bool m_clipCircle = false;
+    static bool CircleClipSupported();
+    static void ReleaseCircleClipTextures();
+    void RenderCircleClipped(const CRect& rect);
 #endif
 
     virtual ~CSimpleModel();

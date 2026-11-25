@@ -4,6 +4,7 @@
 #include "Engine/Source/Frame/CScriptObject.h"
 #include "Engine/Source/Frame/CScriptRegion.h"
 #include "Engine/Source/Model2/M2Model.h"
+#include "Engine/Source/Model2/M2Data.h"
 #include "Engine/Source/Model2/M2Scene.h"
 #include "Engine/Source/Os/TimeManager.h"
 #include "Engine/Source/Storm/H/storm.h"
@@ -180,7 +181,11 @@ void CGCharacterModelBase::OnModelLoaded(CM2Model* model) {
         fprintf(stderr, "FTA_TRACE_PORTRAIT: OnModelLoaded frame=%s cameraRequested=%d\n", this->GetName() ? this->GetName() : "?", cameraRequested);
     }
 
-    if (!cameraRequested) {
+    if (!cameraRequested
+#if defined(WOWDECOMP_LINUX)
+        || this->m_clipCircle
+#endif
+    ) {
         this->ConfigureCamera();
     }
 }
@@ -342,6 +347,30 @@ void CGCharacterModelBase::SetUpModel(CreatureStats_C* stats) {
 // VERIFY: 24702114 auto
 // OFFSET: 0x005974A0
 void CGCharacterModelBase::ConfigureCamera() {
+#if defined(WOWDECOMP_LINUX)
+    if (this->m_clipCircle) {
+        // Use the authored head camera for each model, as the 2D portrait does.
+        this->SetCameraByID(CAMERA_PORTRAIT);
+        if (!this->m_camera) {
+            // Creatures without an authored portrait camera use the stock
+            // portrait's idle bounds, since they have no uniform head height.
+            M2SequenceInfo info;
+            info.Clear();
+            this->m_model->GetSequenceInfo(0, 0, info);
+            if (!(info.m_radius > 0.0f)) return;
+            CCamera* camera = CameraCreate();
+            if (!camera) return;
+            CameraSetFloat(camera, 4, 1.57f);
+            CameraSetFloat(camera, 3, 0.027777778f);
+            CameraSetCoord(camera, 8, info.m_center, 0);
+            CameraSetCoord(camera, 7, C3Vector(info.m_center.x + info.m_radius * 1.7f,
+                                               info.m_center.y, info.m_center.z), 0);
+            this->SetCamera(camera);
+            HandleClose(reinterpret_cast<HOBJECT>(camera));
+        }
+        return;
+    }
+#endif
     this->SetCameraByID(CAMERA_PAPERDOLL);
     CCamera* camera;
 

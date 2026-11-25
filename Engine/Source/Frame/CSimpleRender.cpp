@@ -1,6 +1,9 @@
 #include <cstddef>
 #include <cstdint>
 #include "Engine/Source/Frame/CSimpleRender.h"
+#if defined(WOWDECOMP_LINUX)
+#include "Engine/Source/Frame/CSimpleModel.h"
+#endif
 #include <malloc.h>
 #include <cctype>
 #include <cstring>
@@ -589,6 +592,9 @@ void CSimpleRender::Init() {
 // VERIFY: ea0ca375 manual
 // OFFSET: 0x00482EC0
 void CSimpleRender::Destroy() {
+#if defined(WOWDECOMP_LINUX)
+    CSimpleModel::ReleaseCircleClipTextures();
+#endif
     for (int32_t i = 0; i < 2; i++) {
         if (CSimpleRender::s_vertexShader[i]) {
             g_theGxDevicePtr->ShaderDestroy(CSimpleRender::s_vertexShader[i]);

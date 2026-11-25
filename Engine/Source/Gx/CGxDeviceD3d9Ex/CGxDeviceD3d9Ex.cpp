@@ -3761,6 +3761,48 @@ void CGxDeviceD3d9Ex::DeviceSetRenderTarget(EGxBuffer buffer, CGxTex* texture, u
     this->m_scissorRectDirty = 1;
 }
 
+#if defined(WOWDECOMP_LINUX)
+bool GxBindUiPortraitTarget(CGxTex* color, CGxTex* mask) {
+    return static_cast<CGxDeviceD3d9Ex*>(g_theGxDevicePtr)->BindUiPortraitTarget(color, mask);
+}
+
+bool CGxDeviceD3d9Ex::BindUiPortraitTarget(CGxTex* color, CGxTex* mask) {
+    if (!this->m_context || this->m_textureTarget[GxBuffers_Color].m_texture ||
+        this->m_textureTarget[GxBuffers_Depth].m_texture) {
+        return false;
+    }
+
+    // Acquire the mask before switching attachments. A missing mask must never
+    // allow the composite to fall back to drawing the full rectangular texture.
+    if (!mask->m_apiSpecificData) {
+        this->ITexAcquire(mask);
+        if (!mask->m_apiSpecificData) return false;
+        this->ITexMarkAsUpdated(mask);
+        this->ITexUploadAll(mask);
+    }
+    this->ITexTouch(mask);
+
+    // The previous portrait's composite may still be bound in hardware.
+    // Apply the pending state before making its source texture an attachment.
+    GxRsSet(GxRs_Texture0, nullptr);
+    this->IRsSync(0);
+    this->DeviceSetRenderTarget(GxBuffers_Color, color, 0);
+
+    // The general target setter falls back to default surfaces if allocation
+    // fails. Verify the actual bindings before clearing either attachment.
+    LPDIRECT3DSURFACE9 boundColor = nullptr;
+    LPDIRECT3DSURFACE9 boundDepth = nullptr;
+    this->m_d3dDevice->GetRenderTarget(0, &boundColor);
+    this->m_d3dDevice->GetDepthStencilSurface(&boundDepth);
+    bool ready = boundColor && boundColor == this->m_textureTarget[GxBuffers_Color].m_apiSpecific &&
+        boundDepth && boundDepth == this->m_defDepthStencilSurface && boundDepth != this->m_defDepthSurface;
+    if (boundColor) boundColor->Release();
+    if (boundDepth) boundDepth->Release();
+    if (!ready) this->DeviceSetRenderTarget(GxBuffers_Color, nullptr, 0);
+    return ready;
+}
+#endif
+
 // VERIFY: b2b2eee4 auto
 // OFFSET: 0x006A1530
 void CGxDeviceD3d9Ex::DeviceResolveDepthBuffer(CGxTex* texture) {

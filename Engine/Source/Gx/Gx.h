@@ -66,6 +66,9 @@ char* GxBufLock(CGxBuf* buf);
 void GxBufUnlock(CGxBuf* buf, uint32_t size);
 void GxBufDestroy(CGxBuf* buf);
 void GxRenderTargetSet(EGxBuffer buffer, CGxTex* texture, uint32_t plane);
+#if defined(WOWDECOMP_LINUX)
+bool GxBindUiPortraitTarget(CGxTex* color, CGxTex* mask);
+#endif
 void GxBufData(CGxBuf* buf, const void* data, uint32_t size, uint32_t offset);
 CGxBuf* GxBufStream(EGxPoolTarget target, uint32_t itemSize, uint32_t itemCount);
 void GxPrimIndexPtr(uint32_t indexCount, const uint16_t* indices);

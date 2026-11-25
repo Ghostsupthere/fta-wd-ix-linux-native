@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -492,6 +494,148 @@ void CSimpleModel::UpdateModel() {
     this->m_model->SetWorldTransform(position, this->m_facing, this->m_modelScale * this->m_layoutScale * height);
 }
 
+#if defined(WOWDECOMP_LINUX)
+namespace {
+constexpr uint32_t PortraitSize = 64;
+CTexture* s_livePortraitColor = nullptr;
+CTexture* s_livePortraitMask = nullptr;
+
+void UpdatePortraitMask(EGxTexCommand command, uint32_t, uint32_t, uint32_t,
+                        uint32_t, void*, uint32_t& stride, const void*& texels) {
+    if (command != GxTex_Latch) return;
+
+    static const auto mask = [] {
+        std::array<uint32_t, PortraitSize * PortraitSize> pixels{};
+        constexpr float radius = PortraitSize * 0.5f - 0.5f;
+        for (uint32_t y = 0; y < PortraitSize; ++y) {
+            for (uint32_t x = 0; x < PortraitSize; ++x) {
+                float distance = std::hypot(x - radius, y - radius);
+                float coverage = std::clamp(radius + 0.5f - distance, 0.0f, 1.0f);
+                pixels[y * PortraitSize + x] = 0x00FFFFFFu |
+                    (static_cast<uint32_t>(std::lround(coverage * 255.0f)) << 24);
+            }
+        }
+        return pixels;
+    }();
+    stride = PortraitSize * sizeof(mask[0]);
+    texels = mask.data();
+}
+}
+
+bool CSimpleModel::CircleClipSupported() {
+    static const bool enabled = [] {
+        const char* setting = std::getenv("WXL_PORTRAIT_3D");
+        return !setting || std::strcmp(setting, "0") != 0;
+    }();
+    auto* device = g_theGxDevicePtr;
+    return enabled && device && device->DeviceApi() == GxApi_D3d9Ex &&
+        device->Caps().m_rttFormat[GxTex_Argb8888] && device->Caps().m_numTmus >= 2;
+}
+
+void CSimpleModel::ReleaseCircleClipTextures() {
+    if (s_livePortraitColor) HandleClose(reinterpret_cast<HOBJECT>(s_livePortraitColor));
+    if (s_livePortraitMask) HandleClose(reinterpret_cast<HOBJECT>(s_livePortraitMask));
+    s_livePortraitColor = nullptr;
+    s_livePortraitMask = nullptr;
+}
+
+void CSimpleModel::RenderCircleClipped(const CRect& rect) {
+    if (!CircleClipSupported() || !this->m_camera || !this->IsDrawable() ||
+        this->m_pendingCameraIndex != 0xFFFFFFFF || rect.minX >= rect.maxX || rect.minY >= rect.maxY) {
+        return;
+    }
+    const uint8_t alpha = this->GetEffectiveAlpha();
+    if (!alpha) return;
+
+    // UI callbacks finish their composite immediately, so all PlayerModels
+    // can share one color target, the backend's offscreen depth, and one mask.
+    const CGxTexFlags colorFlags(GxTex_Linear, 0, 0, 0, 0, 1, 1);
+    const CGxTexFlags maskFlags(GxTex_Linear, 0, 0, 0, 0, 0, 1);
+    if (!s_livePortraitColor) {
+        s_livePortraitColor = TextureCreate(PortraitSize, PortraitSize, GxTex_Argb8888,
+            GxTex_Argb8888, colorFlags, nullptr, nullptr, "LivePortraitColor", 0);
+    }
+    if (!s_livePortraitMask) {
+        s_livePortraitMask = TextureCreate(PortraitSize, PortraitSize, GxTex_Argb8888,
+            GxTex_Argb8888, maskFlags, nullptr, UpdatePortraitMask, "LivePortraitMask", 0);
+    }
+    if (!s_livePortraitColor || !s_livePortraitMask) return;
+    CGxTex* color = TextureGetGxTex(s_livePortraitColor, 1, nullptr);
+    CGxTex* mask = TextureGetGxTex(s_livePortraitMask, 1, nullptr);
+    auto* device = g_theGxDevicePtr;
+    if (!color || !mask) return;
+
+    C44Matrix projection, view;
+    GxXformProjection(projection);
+    GxXformView(view);
+    float minX, maxX, minY, maxY, minZ, maxZ;
+    GxXformViewport(minX, maxX, minY, maxY, minZ, maxZ);
+    device->RsPush();
+    if (!GxBindUiPortraitTarget(color, mask)) {
+        device->RsPop();
+        return;
+    }
+    GxRsSet(GxRs_ScissorTest, 0);
+    GxXformSetViewport(0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f);
+    GxSceneClear(GxBufferBit_Color | GxBufferBit_Depth, CImVector(16, 13, 12, 255));
+    CameraSetupWorldProjection(this->m_camera, CRect{0.0f, 0.0f, 1.0f, 1.0f}, 0);
+    C3Vector cameraPos;
+    DataMgrGetCoord(this->m_camera, 7, &cameraPos);
+    this->UpdateModel();
+    this->GetScene()->Animate(cameraPos);
+    this->GetScene()->Draw(M2PASS_0);
+    this->GetScene()->Draw(M2PASS_1);
+    device->RsPop();
+
+    device->DeviceSetRenderTarget(GxBuffers_Color, nullptr, 0);
+    GxXformSetViewport(minX, maxX, minY, maxY, minZ, maxZ);
+    GxXformSetProjection(projection);
+    GxXformSetView(view);
+    CShaderEffect::UpdateProjMatrix();
+
+    device->RsPush();
+    GxRsSet(GxRs_VertexShader, nullptr);
+    GxRsSet(GxRs_PixelShader, nullptr);
+    GxRsSet(GxRs_Fog, 0);
+    GxRsSet(GxRs_Lighting, 0);
+    GxRsSet(GxRs_Culling, 0);
+    GxRsSet(GxRs_ClipPlaneMask, 0);
+    GxRsSet(GxRs_DepthTest, 0);
+    GxRsSet(GxRs_DepthWrite, 0);
+    GxRsSet(GxRs_ColorWrite, 15);
+    GxRsSet(GxRs_BlendingMode, GxBlend_Alpha);
+    GxRsSet(GxRs_AlphaRef, 0);
+    GxRsSet(GxRs_Texture0, color);
+    GxRsSet(GxRs_Texture1, mask);
+    GxRsSet(GxRs_Texture2, nullptr);
+    GxRsSet(GxRs_ColorOp0, GxTexOp_Mod);
+    GxRsSet(GxRs_AlphaOp0, GxTexOp_PassThru);
+    GxRsSet(GxRs_ColorOp1, GxTexOp_PassThru);
+    GxRsSet(GxRs_AlphaOp1, GxTexOp_Mod);
+    GxRsSet(GxRs_TexGen0, 0);
+    GxRsSet(GxRs_TexGen1, 0);
+    GxRsSet(GxRs_TextureCoord0, 0);
+    GxRsSet(GxRs_TextureCoord1, 1);
+
+    const C44Matrix identity;
+    device->XformPushAndSet(GxXform_World, identity);
+    const C3Vector vertices[] = {
+        {rect.minX, rect.maxY, 0.0f}, {rect.minX, rect.minY, 0.0f},
+        {rect.maxX, rect.maxY, 0.0f}, {rect.maxX, rect.minY, 0.0f},
+    };
+    static const C2Vector uv[] = {{0.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}};
+    const CImVector tint(255, 255, 255, alpha);
+    const CImVector colors[] = {tint, tint, tint, tint};
+    static const uint16_t indices[] = {0, 1, 2, 3};
+    GxPrimLockVertexPtrs(4, vertices, sizeof(vertices[0]), nullptr, 0, colors, sizeof(colors[0]),
+                        nullptr, 0, uv, sizeof(uv[0]), uv, sizeof(uv[0]));
+    GxDrawLockedElements(GxPrim_TriangleStrip, 4, indices);
+    GxPrimUnlockVertexPtrs();
+    GxXformPop(GxXform_World);
+    device->RsPop();
+}
+#endif
+
 // VERIFY: 722f8373 manual
 // OFFSET: 0x0095FC30
 void CSimpleModel::RenderModel(void* arg) {
@@ -506,6 +650,13 @@ void CSimpleModel::RenderModel(void* arg) {
     if (!simpleModel->GetRect(&rect)) {
         return;
     }
+
+#if defined(WOWDECOMP_LINUX)
+    if (simpleModel->m_clipCircle) {
+        simpleModel->RenderCircleClipped(rect);
+        return;
+    }
+#endif
 
     CGxDevice* device = g_theGxDevicePtr;
     C44Matrix projection;

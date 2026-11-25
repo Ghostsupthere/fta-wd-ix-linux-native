@@ -87,12 +87,28 @@ static int32_t Script_RefreshUnit(lua_State* L) {
     return 0;
 }
 
+#if defined(WOWDECOMP_LINUX)
+static int32_t Script_SetClipCircle(lua_State* L) {
+    auto* model = static_cast<CGCharacterModelBase*>(FrameScript_GetObjectThis(L, CGCharacterModelBase::GetObjectType()));
+    const bool enabled = lua_toboolean(L, 2) != 0;
+    if (model->m_clipCircle != enabled) {
+        model->m_clipCircle = enabled;
+        if (model->m_model && model->m_camera) model->ConfigureCamera();
+    }
+    lua_pushboolean(L, CSimpleModel::CircleClipSupported());
+    return 1;
+}
+#endif
+
 // STATIC: 0x00ACF514
 static FrameScript_Method s_ScriptMethods[] = {
     { "SetUnit", &Script_ModelSetUnit },
     { "SetCreature", &Script_SetCreature },
     { "RefreshUnit", &Script_RefreshUnit },
     { "SetRotation", &Script_SetRotation },
+#if defined(WOWDECOMP_LINUX)
+    { "SetClipCircle", &Script_SetClipCircle },
+#endif
 };
 
 // VERIFY: 477f0f97 auto
