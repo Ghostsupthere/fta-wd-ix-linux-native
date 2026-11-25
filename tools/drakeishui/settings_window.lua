@@ -72,8 +72,65 @@ widgets.toggle = function(row)
     row.update = function(_, option) check:SetChecked(read(option)) end
 end
 
+-- A dropdown field: dark input-style box, the chosen value on the left, an arrow cap on the right
+-- that points down and turns up while the menu is open. No text arrows, no push-button look.
+local FIELD_BG, FIELD_EDGE, FIELD_HOVER = { .06, .055, .05, .95 }, { .37, .32, .25, 1 }, { .85, .68, .22, 1 }
+local CAP_WIDTH = 22
+local ARROW = "Interface\\Buttons\\UI-SortArrow"
+
+local function dropdownField(parent, width)
+    local field = CreateFrame("Button", nil, parent)
+    field:SetSize(width, 24)
+    local pixel = "Interface\\Buttons\\WHITE8X8"
+    field:SetBackdrop({ bgFile = pixel, edgeFile = pixel, edgeSize = 1 })
+    field:SetBackdropColor(unpack(FIELD_BG))
+    field:SetBackdropBorderColor(unpack(FIELD_EDGE))
+    local cap = field:CreateTexture(nil, "ARTWORK")
+    cap:SetTexture(.14, .115, .085, 1)
+    cap:SetPoint("TOPRIGHT", -1, -1)
+    cap:SetPoint("BOTTOMRIGHT", -1, 1)
+    cap:SetWidth(CAP_WIDTH)
+    local divider = field:CreateTexture(nil, "OVERLAY")
+    divider:SetTexture(unpack(FIELD_EDGE))
+    divider:SetPoint("TOPRIGHT", cap, "TOPLEFT", 0, 0)
+    divider:SetPoint("BOTTOMRIGHT", cap, "BOTTOMLEFT", 0, 0)
+    divider:SetWidth(1)
+    local arrow = field:CreateTexture(nil, "OVERLAY")
+    arrow:SetTexture(ARROW)
+    arrow:SetSize(12, 12)
+    arrow:SetVertexColor(.8, .72, .5)
+    arrow:SetPoint("CENTER", cap, "CENTER", 0, 0)
+    field.arrow = arrow
+    local text = field:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    text:SetJustifyH("LEFT")
+    text:SetPoint("LEFT", 8, 0)
+    text:SetPoint("RIGHT", cap, "LEFT", -6, 0)
+    text:SetHeight(14)
+    field.text = text
+    function field:SetOpenArrow(open)
+        if open then arrow:SetTexCoord(0, .5625, 1, 0) else arrow:SetTexCoord(0, .5625, 0, 1) end
+    end
+    field:SetOpenArrow(false)
+    field:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(unpack(FIELD_HOVER)); self.arrow:SetVertexColor(1, .85, .35) end)
+    field:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(unpack(FIELD_EDGE)); self.arrow:SetVertexColor(.8, .72, .5) end)
+    field:SetScript("OnDisable", function(self) self.text:SetAlpha(.5); self.arrow:SetAlpha(.5) end)
+    field:SetScript("OnEnable", function(self) self.text:SetAlpha(1); self.arrow:SetAlpha(1) end)
+    return field
+end
+
+local function watchOpen(field)
+    field:SetOpenArrow(true)
+    field:SetScript("OnUpdate", function(self)
+        local menu = _G.DragonUIMenu
+        if not (menu and menu:IsShown() and menu.anchor == self) then
+            self:SetOpenArrow(false)
+            self:SetScript("OnUpdate", nil)
+        end
+    end)
+end
+
 local function choiceWidget(row, preview)
-    local selectButton = button(row, CONTROL_WIDTH)
+    local selectButton = dropdownField(row, CONTROL_WIDTH)
     selectButton:SetPoint("RIGHT", -8, 0)
     selectButton:SetScript("OnClick", function(self)
         local option = row.option
@@ -87,21 +144,19 @@ local function choiceWidget(row, preview)
             }
         end
         addon.Menu.Open(self, entries)
+        watchOpen(self)
     end)
     row.update = function(_, option)
         local value = read(option)
+        selectButton.text:SetFontObject(GameFontHighlightSmall)
         for _, choice in ipairs(choices(option)) do
             if choice.value == value then
-                selectButton:SetText(choice.name .. "   v")
-                if preview then
-                    local font = selectButton:GetFontString()
-                    font:SetFontObject(GameFontNormal)
-                    if choice.path then font:SetFont(choice.path, 12, "") end
-                end
+                selectButton.text:SetText(choice.name)
+                if preview and choice.path then selectButton.text:SetFont(choice.path, 12, "") end
                 return
             end
         end
-        selectButton:SetText("Choose...")
+        selectButton.text:SetText("Choose...")
     end
 end
 
