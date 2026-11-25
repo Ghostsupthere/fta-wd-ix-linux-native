@@ -3,6 +3,7 @@ local S = { options = {}, byID = {}, effective = {}, pending = {} }
 addon.Settings = S
 
 local db, character
+local localPending = {}
 local function copy(value)
     if type(value) ~= "table" then return value end
     local result = {}
@@ -73,7 +74,9 @@ end
 
 local function applyProfile()
     local callbacks = {}
-    for _, option in ipairs(S.options) do apply(option, desired(option), callbacks) end
+    for _, option in ipairs(S.options) do
+        if not option.localGet then apply(option, desired(option), callbacks) end
+    end
     finish(callbacks)
 end
 
@@ -81,7 +84,7 @@ local function migrate()
     local private = privateProfile()
     for _, option in ipairs(S.options) do
         local id = option.id
-        if not private.migrated[id] then
+        if not option.localGet and not private.migrated[id] then
             if option.legacy and private.profile[id] == nil then
                 local old = validate(option, option.legacy())
                 if old ~= nil then private.profile[id] = copy(old) end
@@ -111,11 +114,30 @@ function S:Ready()
 end
 
 function S:Desired(id)
-    return desired(self.byID[id])
+    local option = self.byID[id]
+    if option.localGet then return self:Get(id) end
+    return desired(option)
 end
 
 function S:Get(id)
+    local option=self.byID[id]
+    if option and option.localGet then
+        local value=validate(option,option.localGet())
+        if value==nil then return copy(option.default) end
+        return value
+    end
     return self.effective[id]
+end
+
+local function setLocal(option,value)
+    local id=option.id
+    if option.protected and InCombatLockdown() then
+        localPending[id]={value=value}
+        S.pending[id]=true
+    else
+        option.localSet(value)
+        S.pending[id]=nil
+    end
 end
 
 function S:Set(id, value)
@@ -123,21 +145,28 @@ function S:Set(id, value)
     if not character or not option then return end
     value = validate(option, value)
     if value == nil then return end
-    activeProfile()[id] = copy(value)
     local callbacks = {}
-    apply(option, value, callbacks)
+    if option.localGet then setLocal(option,copy(value))
+    else
+        activeProfile()[id] = copy(value)
+        apply(option, value, callbacks)
+    end
     finish(callbacks)
     return true
 end
 
-function S:Reset(category)
+function S:Reset(category, includeLocal)
     if not character then return end
     local profile = activeProfile()
     local callbacks = {}
     for _, option in ipairs(self.options) do
         if not category or option.category == category then
-            profile[option.id] = nil
-            apply(option, option.default, callbacks)
+            if option.localGet then
+                if category or includeLocal then setLocal(option,nil) end
+            else
+                profile[option.id] = nil
+                apply(option, option.default, callbacks)
+            end
         end
     end
     finish(callbacks)
@@ -166,7 +195,7 @@ end
 
 local function copyOptions(source, target)
     for _, option in ipairs(S.options) do
-        target[option.id] = copy(source[option.id])
+        if not option.localGet then target[option.id] = copy(source[option.id]) end
     end
 end
 
@@ -225,7 +254,11 @@ events:SetScript("OnEvent", function(self, event, name)
     elseif event == "PLAYER_REGEN_ENABLED" and next(S.pending) then
         local callbacks = {}
         for _, option in ipairs(S.options) do
-            if S.pending[option.id] then apply(option, desired(option), callbacks) end
+            local queued=localPending[option.id]
+            if queued then
+                localPending[option.id]=nil
+                setLocal(option,queued.value)
+            elseif S.pending[option.id] then apply(option, desired(option), callbacks) end
         end
         finish(callbacks)
     end
