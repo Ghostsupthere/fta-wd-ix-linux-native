@@ -36,6 +36,10 @@ local function option(key,label,kind,default,extra,group)
 end
 option("enabled","Enable configurable chat footer","toggle",true)
 option("count","Footer slot count","slider",3,{min=2,max=3,step=1})
+option("style","Footer text style","dropdown","labeled",{choices=choices({
+    {"labeled","Labels and values"},{"compact","Compact"}
+})})
+option("zoneColor","Use zone PvP color with labels","toggle",true)
 option("time","Footer clock format","dropdown","server24",{choices=choices({
     {"server24","Server 24-hour"},{"server12","Server 12-hour"},{"local24","Local 24-hour"},{"local12","Local 12-hour"}})})
 local defaultSlots={"zone","time","coordsFPS"}
@@ -102,7 +106,10 @@ local readers={
         return ("%.1f MB"):format(total/1024)
     end,
     coordinates=coordinates,
-    coordsFPS=function() return coordinates(), ("%.0f FPS"):format(GetFramerate()) end,
+    coordsFPS=function()
+        local format=cfg.style=="labeled" and "%.1f" or "%.0f FPS"
+        return coordinates(), format:format(GetFramerate())
+    end,
     xp=function()
         local faction,_,low,high,value=GetWatchedFactionInfo()
         if faction and high>low then return ("Rep %.0f%%"):format((value-low)*100/(high-low)) end
@@ -119,6 +126,11 @@ local readers={
     end,
 }
 local preferred={itemLevel="character",durability="character",bags="bags",coordinates="map",coordsFPS="map",zone="map",spec="talents"}
+local labels={zone="Zone:",time="Time:",coordinates="Coords:",coordsFPS="Coords:"}
+local zoneColors={
+    friendly={.1,1,.1}, hostile={1,.1,.1}, contested={1,.7,0}, sanctuary={.4,.8,.94},
+    arena={1,.1,.1}, combat={1,.1,.1}, neutral={1,1,1},
+}
 local function click(slot)
     if InCombatLockdown() then return end
     local action=slot.action=="auto" and preferred[slot.entry] or slot.action
@@ -130,10 +142,10 @@ end
 local function makeSlot()
     local slot=CreateFrame("Button",nil,host)
     slot:SetHeight(19)
+    slot.label=slot:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
     slot.fs=slot:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-    slot.fs:SetPoint("LEFT",3,0)
+    slot.extraLabel=slot:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
     slot.extra=slot:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-    slot.extra:Hide()
     slot:SetScript("OnClick",click)
     slot:SetScript("OnEnter",function(self)
         if not self.tooltip or not GameTooltip then return end
@@ -147,6 +159,15 @@ local function makeSlot()
     return slot
 end
 
+local function placeText(text, slot, value, x)
+    if not value then text:Hide(); return x end
+    text:SetText(value)
+    text:ClearAllPoints()
+    text:SetPoint("LEFT",slot,"LEFT",x,0)
+    text:Show()
+    return x+math.ceil(text:GetStringWidth())
+end
+
 local function render()
     if not cfg.enabled or not host:IsVisible() then return end
     local width, offset = anchor:GetWidth(), 4
@@ -156,16 +177,23 @@ local function render()
         if reader then value,extra=reader() end
         if value and value~="" then
             slot.value=extra and (value.."  "..extra) or value
-            slot.fs:SetText(value)
-            local primaryWidth=math.ceil(slot.fs:GetStringWidth())
-            local size=primaryWidth+9
+            local labeled=cfg.style=="labeled"
+            local x=placeText(slot.label,slot,labeled and labels[slot.entry] or nil,2)
+            x=placeText(slot.fs,slot,value,x)
+            local color=slot.color
+            if labeled and cfg.zoneColor and slot.entry=="zone" then
+                local zoneType=GetZonePVPInfo and GetZonePVPInfo() or "neutral"
+                color=zoneColors[zoneType:lower()] or zoneColors.neutral
+            end
+            slot.fs:SetTextColor(unpack(color))
             if extra then
-                slot.extra:SetText(extra)
-                slot.extra:ClearAllPoints()
-                slot.extra:SetPoint("LEFT",slot,"LEFT",3+primaryWidth+8,0)
-                size=size+8+math.ceil(slot.extra:GetStringWidth())
-                slot.extra:Show()
-            else slot.extra:Hide() end
+                x=placeText(slot.extraLabel,slot,labeled and "FPS:" or nil,x+6)
+                x=placeText(slot.extra,slot,extra,x)
+            else
+                slot.extraLabel:Hide()
+                slot.extra:Hide()
+            end
+            local size=x+2
             if offset+size <= width then
                 slot:ClearAllPoints()
                 slot:SetPoint("LEFT",host,"LEFT",offset,0)
@@ -209,15 +237,19 @@ refresh=function()
         slots[i]=slot
         local prefix=i.."."
         slot.entry,slot.action,slot.tooltip=cfg[prefix.."entry"],cfg[prefix.."action"],cfg[prefix.."tooltip"]
+        slot.color=cfg[prefix.."color"]
         local fontKey=cfg[prefix.."font"]
         local font=fontKey=="expressway" and addon._dir.."expressway.ttf" or
                    fontKey=="calibri" and addon._dir.."Calibri1.ttf" or "Fonts\\FRIZQT__.TTF"
-        for _, text in ipairs({slot.fs,slot.extra}) do
+        for _, text in ipairs({slot.label,slot.fs,slot.extraLabel,slot.extra}) do
             if fontKey=="inherit" and addon.Appearance then addon.Appearance:ApplyFont(text,"chat",font,cfg[prefix.."size"],"")
             else text:SetFont(font,cfg[prefix.."size"],"") end
-            text:SetTextColor(unpack(cfg[prefix.."color"]))
             text:SetShadowOffset(1,-1)
+            text:SetShadowColor(0,0,0,.7)
         end
+        slot.label:SetTextColor(1,1,1)
+        slot.extraLabel:SetTextColor(1,1,1)
+        slot.extra:SetTextColor(unpack(slot.color))
     end
     DrakeishUI_PositionChatInfo()
     ticker:Show()
