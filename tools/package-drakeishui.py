@@ -40,6 +40,38 @@ ACCOUNT_SAVED_VARIABLES = (
 # One-line source patches applied to Windows files while staging (path -> [(old, new)]); each `old` must
 # occur exactly once, so an upstream change that moves the line fails the build instead of going missing.
 PATCHES = {
+    "modules/native_controls.lua": [(
+        '    elseif InterfaceOptionsFrame_OpenToCategory then InterfaceOptionsFrame_OpenToCategory(showPanel()) end\n',
+        '    elseif message:match("^%s*$") and addon.Settings then addon.Settings:Open()\n'
+        '    elseif InterfaceOptionsFrame_OpenToCategory then InterfaceOptionsFrame_OpenToCategory(showPanel()) end\n',
+    )],
+    "modules/characterpanel/settingscog.lua": [
+        (
+            '    CP.ApplyBodyBackground()\n',
+            '    if not addon.Settings or not addon.Settings:IsReady() then CP.ApplyBodyBackground() end\n',
+        ),
+        (
+            '    if CP.ApplyModelBackdrop then CP.ApplyModelBackdrop() end\n',
+            '    if (not addon.Settings or not addon.Settings:IsReady()) and CP.ApplyModelBackdrop then\n'
+            '        CP.ApplyModelBackdrop()\n'
+            '    end\n',
+        ),
+        (
+            '    if CP.ApplyGearSummaryVisibility then CP.ApplyGearSummaryVisibility() end\n',
+            '    if (not addon.Settings or not addon.Settings:IsReady()) and CP.ApplyGearSummaryVisibility then\n'
+            '        CP.ApplyGearSummaryVisibility()\n'
+            '    end\n',
+        ),
+        (
+            '        menuEntries(entries)\n',
+            '        if addon.Settings then\n'
+            '            entries[#entries + 1] = { text = addon.L["DrakeishUI Settings"], func = function()\n'
+            '                addon.Settings:Open("Character Panel")\n'
+            '            end }\n'
+            '        end\n'
+            '        menuEntries(entries)\n',
+        ),
+    ],
     # The sidebar's "Tertiary" stats block is filled by FTA_Tertiary, which no addon we ship defines, so
     # it showed up as an empty PLAYERSTAT_TERTIARY header (ticket #10). Show it only when a provider exists.
     "modules/characterpanel/sidebar.lua": [(
@@ -49,6 +81,7 @@ PATCHES = {
         '    return true\n',
     )],
 }
+SETTINGS_FILES = ("settings_profiles.lua", "settings_character.lua", "settings_window.lua")
 TWEAKS = "fta_ui_tweaks.lua"  # FTA changes that need the whole addon loaded first: listed last in the TOC
 
 
@@ -65,6 +98,7 @@ def add_linux_compat(toc):
     lines.insert(first, COMPAT)
     while lines and not lines[-1].strip():
         lines.pop()
+    lines.extend(SETTINGS_FILES)
     lines.append(TWEAKS)
     lines.append("")
     return newline.join(lines).encode("utf-8")
@@ -209,10 +243,10 @@ def main():
     data = compat.read_bytes()
     (args.out / COMPAT).write_bytes(data)
     manifest.append(dict(path=COMPAT, size=len(data), sha256=hashlib.sha256(data).hexdigest(), source="linux-compat"))
-    tweaks = Path(__file__).with_name("drakeishui") / TWEAKS
-    data = tweaks.read_bytes()
-    (args.out / TWEAKS).write_bytes(data)
-    manifest.append(dict(path=TWEAKS, size=len(data), sha256=hashlib.sha256(data).hexdigest(), source="fta-tweaks"))
+    for name in (*SETTINGS_FILES, TWEAKS):
+        data = (Path(__file__).with_name("drakeishui") / name).read_bytes()
+        (args.out / name).write_bytes(data)
+        manifest.append(dict(path=name, size=len(data), sha256=hashlib.sha256(data).hexdigest(), source="fta-tweaks"))
     for relative, original in MEDIA_ALIASES.items():
         if relative.casefold() in selected:
             continue
