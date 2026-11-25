@@ -42,7 +42,7 @@ local function validate(option, value)
         end
         return { value[1], value[2], value[3] }
     end
-    if option.type == "text" and #value > (option.maxLength or 64) then return nil end
+    if option.type == "text" and (#value > (option.maxLength or 64) or value:find("[%c|]")) then return nil end
     return value
 end
 
@@ -199,20 +199,49 @@ local function copyOptions(source, target)
     end
 end
 
-function S:CreateShared(name)
-    name = name:match("^%s*(.-)%s*$")
+local function sharedName(name)
+    name = (name or ""):match("^%s*(.-)%s*$")
     if name == "" or #name > 32 or name:find("[%c|]") or name:lower() == "this character" then
-        return "Enter a profile name up to 32 bytes without control characters or pipes."
+        return nil, "Enter a profile name up to 32 bytes without control characters or pipes."
     end
     for existing in pairs(db.shared) do
         if type(existing) == "string" and existing:lower() == name:lower() then
-            return "A profile with that name already exists."
+            return nil, "A profile with that name already exists."
         end
     end
-    local profile = {}
+    return name
+end
+
+function S:CreateShared(name)
+    local key, err=sharedName(name)
+    if not key then return err end
+    local profile={}
     copyOptions(activeProfile(), profile)
-    db.shared[name] = profile
-    self:Select(name)
+    db.shared[key]=profile
+    self:Select(key)
+end
+
+function S:SnapshotProfile()
+    local snapshot={}
+    for _, option in ipairs(self.options) do
+        if not option.localGet then
+            local value=validate(option,activeProfile()[option.id])
+            if value~=nil then snapshot[option.id]=copy(value) end
+        end
+    end
+    return snapshot
+end
+
+function S:ValidateProfileValue(id,value)
+    local option=self.byID[id]
+    if option and not option.localGet then return validate(option,value) end
+end
+
+function S:InstallImportedProfile(name,values)
+    local key,err=sharedName(name)
+    if not key then return err end
+    db.shared[key]=values
+    self:Select(key)
 end
 
 function S:CopyFrom(name)

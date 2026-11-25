@@ -198,6 +198,7 @@ widgets.header = function(row) row.title:SetFontObject(GameFontNormal) end
 widgets.description = function(row) row.title:SetFontObject(GameFontHighlightSmall) end
 
 local profileMessage, profileName, copyFrom = "", "", nil
+local profileText = ""
 local function profileChoices()
     local available = {}
     for _, choice in ipairs(S:Profiles()) do
@@ -235,6 +236,24 @@ local profileRows = {
       end },
     { type = "button", buttonText = "Reset active profile",
       action = function() StaticPopup_Show("DRAKEISHUI_SETTINGS_RESET_PROFILE", nil, nil, { active = S:Active() }) end },
+    { type = "header", name = "Export and import" },
+    { type = "text", name = "Profile text", maxLength = 16384, live = true,
+      get = function() return profileText end,
+      set = function(value) profileText = value end },
+    { type = "button", buttonText = "Export active profile",
+      action = function()
+          local result, message = S:ExportProfile()
+          if result then profileText = result end
+          profileMessage = message or "Copy the profile text to share these settings."
+          S:Refresh()
+      end },
+    { type = "button", buttonText = "Import as new profile",
+      action = function()
+          local message = S:ImportProfile(profileName,profileText)
+          if not message then profileName, copyFrom, profileText = "", nil, "" end
+          profileMessage = message or "Imported and selected the new shared profile."
+          S:Refresh()
+      end },
 }
 
 StaticPopupDialogs.DRAKEISHUI_SETTINGS_RESET_PROFILE = {
