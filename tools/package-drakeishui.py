@@ -40,6 +40,10 @@ ACCOUNT_SAVED_VARIABLES = (
 # One-line source patches applied to Windows files while staging (path -> [(old, new)]); each `old` must
 # occur exactly once, so an upstream change that moves the line fails the build instead of going missing.
 PATCHES = {
+    "modules/modules.xml": [(
+        '\t<Script file="cooldowns.lua"/>\n',
+        "",
+    )],
     "modules/native_controls.lua": [(
         '    elseif InterfaceOptionsFrame_OpenToCategory then InterfaceOptionsFrame_OpenToCategory(showPanel()) end\n',
         '    elseif message:match("^%s*$") and addon.Settings then addon.Settings:Open()\n'
@@ -81,7 +85,7 @@ PATCHES = {
         '    return true\n',
     )],
 }
-SETTINGS_FILES = ("settings_profiles.lua", "settings_character.lua", "settings_window.lua")
+SETTINGS_FILES = ("settings_profiles.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua")
 TWEAKS = "fta_ui_tweaks.lua"  # FTA changes that need the whole addon loaded first: listed last in the TOC
 
 

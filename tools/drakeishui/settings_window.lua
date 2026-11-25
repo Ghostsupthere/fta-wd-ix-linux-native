@@ -30,6 +30,11 @@ local function editBox(parent, width)
     local edit = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
     edit:SetSize(width, 24)
     edit:SetAutoFocus(false)
+    edit:SetTextInsets(8, 8, 0, 0)
+    local pixel = "Interface\\Buttons\\WHITE8X8"
+    edit:SetBackdrop({ bgFile = pixel, edgeFile = pixel, edgeSize = 1 })
+    edit:SetBackdropColor(.06, .055, .05, .95)
+    edit:SetBackdropBorderColor(.37, .32, .25, 1)
     edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     return edit
 end
@@ -378,7 +383,7 @@ local function build()
     search:SetPoint("TOPRIGHT", -27, -35)
     search:SetMaxLetters(80)
     local placeholder = label(search, "GameFontDisable")
-    placeholder:SetPoint("LEFT", 5, 0)
+    placeholder:SetPoint("LEFT", 8, 0)
     placeholder:SetText("Search settings")
     search:SetScript("OnTextChanged", function(self)
         if self:GetText() == "" then placeholder:Show() else placeholder:Hide() end
