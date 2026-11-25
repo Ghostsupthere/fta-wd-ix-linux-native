@@ -44,6 +44,19 @@ PATCHES = {
         '\t<Script file="cooldowns.lua"/>\n',
         "",
     )],
+    "modules/itemlevel.lua": [
+        (
+            '    if not IsModuleEnabled() then return false end\n    local config = GetModuleConfig()\n',
+            '    if not IsModuleEnabled() then return false end\n'
+            '    local override = addon.BagQuality and addon.BagQuality:LevelContext(context)\n'
+            '    if override ~= nil then return override end\n'
+            '    local config = GetModuleConfig()\n',
+        ),
+        (
+        '    fontString:SetTextColor(r or 1, g or 1, b or 1)\n    fontString:Show()\n',
+        '    fontString:SetTextColor(r or 1, g or 1, b or 1)\n    fontString:Show()\n'
+        '    if addon.BagQuality then addon.BagQuality:PaintLevel(button, fontString, anchorTo or button) end\n',
+    )],
     "modules/native_controls.lua": [
         (
             '    message=string.lower(message or "")\n',
@@ -91,7 +104,7 @@ PATCHES = {
         '    return true\n',
     )],
 }
-SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua")
+SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua")
 TWEAKS = "fta_ui_tweaks.lua"  # FTA changes that need the whole addon loaded first: listed last in the TOC
 
 
