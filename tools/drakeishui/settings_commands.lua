@@ -35,6 +35,10 @@ function S:HandleCommand(message)
     local command, rest = message:match("^%s*(%S+)%s*(.-)%s*$")
     if not command then return false end
     command = command:lower()
+    if command=="bind" and addon.KeybindMode then
+        addon.KeybindMode:Start()
+        return true
+    end
     if command ~= "get" and command ~= "set" and command ~= "list" then return false end
     if not self:Ready() then print("DrakeishUI settings are unavailable."); return true end
     local id, value = rest:match("^(%S+)%s*(.*)$")
