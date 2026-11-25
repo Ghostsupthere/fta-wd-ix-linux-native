@@ -30,6 +30,13 @@ ASSET_PATH = re.compile(r'assets[/\\]+([^"\'\r\n<>]+)', re.I)
 
 
 COMPAT = "linux_compat_bags.lua"
+ACCOUNT_SAVED_VARIABLES = (
+    "## SavedVariables: DragonflightUIDB, collapse_state, buffs_state, bags_state,quest_state, "
+    "chat_state, party_state, caps_state, stance_state, bottombars_state, sidebars_state, "
+    "hide_toggle_buttons, unitframes_state, gryphon_style_state, diablo_orbs_state, "
+    "hide_pet_frame_state, raid_frames_state, raid_frame_style_state, D32MiniMapButtonPosition, "
+    "darken_ui_state, DrakeishUI_BagDB, DrakeishUI_SocialDB"
+)
 # One-line source patches applied to Windows files while staging (path -> [(old, new)]); each `old` must
 # occur exactly once, so an upstream change that moves the line fails the build instead of going missing.
 PATCHES = {
@@ -46,10 +53,14 @@ TWEAKS = "fta_ui_tweaks.lua"  # FTA changes that need the whole addon loaded fir
 
 
 def add_linux_compat(toc):
-    """List the Linux bag shim first in the TOC, ahead of every hook DrakeishUI installs."""
+    """Register the Linux saved variable and keep the shims first and last in the TOC."""
     text = toc.decode("utf-8-sig")
     newline = "\r\n" if "\r\n" in text else "\n"
     lines = text.split(newline)
+    if lines.count(ACCOUNT_SAVED_VARIABLES) != 1:
+        raise SystemExit(f"account SavedVariables patch for {TOC} does not apply exactly once")
+    saved_variables = lines.index(ACCOUNT_SAVED_VARIABLES)
+    lines[saved_variables] += ", DrakeishUI_Config"
     first = next(i for i, line in enumerate(lines) if line.strip() and not line.lstrip().startswith("#"))
     lines.insert(first, COMPAT)
     while lines and not lines[-1].strip():
