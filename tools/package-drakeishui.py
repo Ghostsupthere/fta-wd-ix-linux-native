@@ -30,6 +30,18 @@ ASSET_PATH = re.compile(r'assets[/\\]+([^"\'\r\n<>]+)', re.I)
 
 
 COMPAT = "linux_compat_bags.lua"
+# One-line source patches applied to Windows files while staging (path -> [(old, new)]); each `old` must
+# occur exactly once, so an upstream change that moves the line fails the build instead of going missing.
+PATCHES = {
+    # The sidebar's "Tertiary" stats block is filled by FTA_Tertiary, which no addon we ship defines, so
+    # it showed up as an empty PLAYERSTAT_TERTIARY header (ticket #10). Show it only when a provider exists.
+    "modules/characterpanel/sidebar.lua": [(
+        '    if key == "gearscore" then return cfg.show_gear_score and true or false end\n    return true\n',
+        '    if key == "gearscore" then return cfg.show_gear_score and true or false end\n'
+        '    if key == "PLAYERSTAT_TERTIARY" then return FTA_Tertiary ~= nil and FTA_Tertiary.UpdateRows ~= nil end\n'
+        '    return true\n',
+    )],
+}
 TWEAKS = "fta_ui_tweaks.lua"  # FTA changes that need the whole addon loaded first: listed last in the TOC
 
 
@@ -172,6 +184,11 @@ def main():
         shutil.copyfile(source, target)
         if origin == "windows" and relative.as_posix().casefold() == TOC.casefold():
             target.write_bytes(add_linux_compat(target.read_bytes()))
+        for old_text, new_text in PATCHES.get(relative.as_posix().casefold(), ()) if origin == "windows" else ():
+            text = target.read_bytes().decode("utf-8")
+            if text.count(old_text) != 1:
+                raise SystemExit(f"patch for {relative} does not apply exactly once")
+            target.write_bytes(text.replace(old_text, new_text).encode("utf-8"))
         data = target.read_bytes()
         if source.suffix.lower() in MEDIA:
             module = relative.parts[1] if relative.parts[0].casefold() == "assets" and len(relative.parts) > 2 else relative.parts[0]
