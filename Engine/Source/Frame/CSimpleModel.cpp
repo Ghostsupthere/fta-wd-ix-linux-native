@@ -520,6 +520,10 @@ void UpdatePortraitMask(EGxTexCommand command, uint32_t, uint32_t, uint32_t,
     stride = PortraitSize * sizeof(mask[0]);
     texels = mask.data();
 }
+
+// GxTexCreate rejects textures without an update function, even render targets.
+void NoPortraitTexels(EGxTexCommand, uint32_t, uint32_t, uint32_t, uint32_t, void*,
+                      uint32_t&, const void*&) {}
 }
 
 bool CSimpleModel::CircleClipSupported() {
@@ -553,7 +557,7 @@ void CSimpleModel::RenderCircleClipped(const CRect& rect) {
     const CGxTexFlags maskFlags(GxTex_Linear, 0, 0, 0, 0, 0, 1);
     if (!s_livePortraitColor) {
         s_livePortraitColor = TextureCreate(PortraitSize, PortraitSize, GxTex_Argb8888,
-            GxTex_Argb8888, colorFlags, nullptr, nullptr, "LivePortraitColor", 0);
+            GxTex_Argb8888, colorFlags, nullptr, NoPortraitTexels, "LivePortraitColor", 0);
     }
     if (!s_livePortraitMask) {
         s_livePortraitMask = TextureCreate(PortraitSize, PortraitSize, GxTex_Argb8888,
