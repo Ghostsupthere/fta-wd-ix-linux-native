@@ -54,6 +54,44 @@ if ChatEdit_ExtractTellTarget and ChatFrame_SendTell and SlashCmdList and SlashC
     return originalFriend(msg, ...)
   end
 end
+
+-- The suggestion list under the chat box and the mail recipient box (guild, friends, group, recent names) put the clicked name into the box
+-- with every space removed, so a several-word name came out as one run-together word that no player has. Keep the spaces. A whisper command
+-- splits its target at the first space, so there the name goes in quotes (and the box turns into a whisper at once); any other box takes it as it is.
+if AutoCompleteButton_OnClick and AUTOCOMPLETE_SIMPLE_REGEX and AUTOCOMPLETE_SIMPLE_FORMAT_REGEX then
+  local originalAutoComplete = AutoCompleteButton_OnClick
+  local function isWhisperCommand(command)
+    command = strupper(command)
+    for _, base in ipairs({"SLASH_WHISPER", "SLASH_SMART_WHISPER"}) do
+      local i = 1
+      local slash = _G[base .. i]
+      while slash do
+        if strupper(slash) == command then return true end
+        i = i + 1
+        slash = _G[base .. i]
+      end
+    end
+    return false
+  end
+  function AutoCompleteButton_OnClick(self)
+    local name = self:GetText()
+    local autoComplete = self:GetParent()
+    local editBox = autoComplete and autoComplete.parent
+    if not (name and editBox and strfind(name, " ", 1, true)) then return originalAutoComplete(self) end
+    local text = editBox:GetText()
+    local regex = editBox.autoCompleteRegex or AUTOCOMPLETE_SIMPLE_REGEX
+    local format = editBox.autoCompleteFormatRegex or AUTOCOMPLETE_SIMPLE_FORMAT_REGEX
+    local insert = name
+    if editBox.autoCompleteRegex then
+      local command = strmatch(text, "^(/%S+)")
+      if command and isWhisperCommand(command) then insert = '"' .. name .. '"' end
+    end
+    local newText = gsub(text, regex, function(...) return string.format(format, insert, ...) end, 1)
+    if insert ~= name and strsub(newText, -1) == '"' then newText = newText .. " " end
+    editBox:SetText(newText)
+    autoComplete:Hide()
+  end
+end
 )LUA";
 
 }  // namespace

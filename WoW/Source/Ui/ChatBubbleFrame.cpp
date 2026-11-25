@@ -1,5 +1,7 @@
 #include "ChatBubbleFrame.h"
 #include <cmath>
+#include <cstring>
+#include <strings.h>
 #include <new>
 #include <typeinfo>
 #include "Engine/Source/Frame/CBackdropGenerator.h"
@@ -237,11 +239,53 @@ bool CGChatBubbleFrame::Update(CGUnit_C* player, CGUnit_C* unit) {
     return true;
 }
 
+// Raid target markers such as "{rt1}" or "{star}" are turned into icons by the chat frame only; the
+// bubble draws its text as it is, so a party announcement that starts with one (for example Questie's)
+// showed the raw token. The bubble drops the marker and the space after it.
+static void StripRaidTargetTokens(char* text) {
+    static const char* const names[] = {"star", "circle", "diamond", "triangle", "moon", "square", "cross", "x", "skull"};
+    char* out = text;
+
+    for (const char* in = text; *in;) {
+        if (*in == '{') {
+            size_t length = 0;
+
+            if ((in[1] == 'r' || in[1] == 'R') && (in[2] == 't' || in[2] == 'T') && in[3] >= '1' && in[3] <= '8' && in[4] == '}') {
+                length = 5;
+            } else {
+                for (const char* name : names) {
+                    size_t n = strlen(name);
+
+                    if (strncasecmp(in + 1, name, n) == 0 && in[1 + n] == '}') {
+                        length = n + 2;
+                        break;
+                    }
+                }
+            }
+
+            if (length) {
+                in += length;
+
+                if (*in == ' ' && (out == text || out[-1] == ' ')) {
+                    in++;
+                }
+
+                continue;
+            }
+        }
+
+        *out++ = *in++;
+    }
+
+    *out = 0;
+}
+
 // VERIFY: 1309b080 manual
 // OFFSET: 0x0056C7F0
 void CGChatBubbleFrame::Initialize(const WOWGUID& unit, const char* text, const CImVector& color) {
     char buffer[3000];
     StripHyperlinks(LanguageProcess(text), buffer, sizeof(buffer));
+    StripRaidTargetTokens(buffer);
     this->m_fontString->SetVertexColor(color);
     this->m_fontString->SetText(buffer, 1);
     this->m_fontString->SetWidth(0.0f);
