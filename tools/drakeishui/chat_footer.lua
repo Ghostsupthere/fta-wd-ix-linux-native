@@ -102,7 +102,7 @@ local readers={
         return ("%.1f MB"):format(total/1024)
     end,
     coordinates=coordinates,
-    coordsFPS=function() return ("%s · %.0f FPS"):format(coordinates(),GetFramerate()) end,
+    coordsFPS=function() return coordinates(), ("%.0f FPS"):format(GetFramerate()) end,
     xp=function()
         local faction,_,low,high,value=GetWatchedFactionInfo()
         if faction and high>low then return ("Rep %.0f%%"):format((value-low)*100/(high-low)) end
@@ -132,6 +132,8 @@ local function makeSlot()
     slot:SetHeight(19)
     slot.fs=slot:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
     slot.fs:SetPoint("LEFT",3,0)
+    slot.extra=slot:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
+    slot.extra:Hide()
     slot:SetScript("OnClick",click)
     slot:SetScript("OnEnter",function(self)
         if not self.tooltip or not GameTooltip then return end
@@ -150,11 +152,20 @@ local function render()
     local width, offset = anchor:GetWidth(), 4
     for i,slot in ipairs(slots) do
         local reader=i<=cfg.count and readers[slot.entry]
-        local value=reader and reader()
+        local value, extra
+        if reader then value,extra=reader() end
         if value and value~="" then
-            slot.value=value
+            slot.value=extra and (value.."  "..extra) or value
             slot.fs:SetText(value)
-            local size=math.ceil(slot.fs:GetStringWidth())+9
+            local primaryWidth=math.ceil(slot.fs:GetStringWidth())
+            local size=primaryWidth+9
+            if extra then
+                slot.extra:SetText(extra)
+                slot.extra:ClearAllPoints()
+                slot.extra:SetPoint("LEFT",slot,"LEFT",3+primaryWidth+8,0)
+                size=size+8+math.ceil(slot.extra:GetStringWidth())
+                slot.extra:Show()
+            else slot.extra:Hide() end
             if offset+size <= width then
                 slot:ClearAllPoints()
                 slot:SetPoint("LEFT",host,"LEFT",offset,0)
@@ -201,10 +212,12 @@ refresh=function()
         local fontKey=cfg[prefix.."font"]
         local font=fontKey=="expressway" and addon._dir.."expressway.ttf" or
                    fontKey=="calibri" and addon._dir.."Calibri1.ttf" or "Fonts\\FRIZQT__.TTF"
-        if fontKey=="inherit" and addon.Appearance then addon.Appearance:ApplyFont(slot.fs,"chat",font,cfg[prefix.."size"],"")
-        else slot.fs:SetFont(font,cfg[prefix.."size"],"") end
-        slot.fs:SetTextColor(unpack(cfg[prefix.."color"]))
-        slot.fs:SetShadowOffset(1,-1)
+        for _, text in ipairs({slot.fs,slot.extra}) do
+            if fontKey=="inherit" and addon.Appearance then addon.Appearance:ApplyFont(text,"chat",font,cfg[prefix.."size"],"")
+            else text:SetFont(font,cfg[prefix.."size"],"") end
+            text:SetTextColor(unpack(cfg[prefix.."color"]))
+            text:SetShadowOffset(1,-1)
+        end
     end
     DrakeishUI_PositionChatInfo()
     ticker:Show()
