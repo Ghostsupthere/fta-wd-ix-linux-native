@@ -40,6 +40,14 @@ ACCOUNT_SAVED_VARIABLES = (
 # One-line source patches applied to Windows files while staging (path -> [(old, new)]); each `old` must
 # occur exactly once, so an upstream change that moves the line fails the build instead of going missing.
 PATCHES = {
+    "modules/mainbars.lua": [(
+        "\tMainMenuBarLeftEndCap:SetClearPoint('BOTTOMLEFT', endCapLeftX, y)\n"
+        "\tMainMenuBarRightEndCap:SetClearPoint('BOTTOMRIGHT', endCapRightX, y)\n",
+        "\tlocal left, right = endCapLeftX, endCapRightX\n"
+        "\tif addon.GetEndCapOffsets then left, right = addon.GetEndCapOffsets(left, right) end\n"
+        "\tMainMenuBarLeftEndCap:SetClearPoint('BOTTOMLEFT', left, y)\n"
+        "\tMainMenuBarRightEndCap:SetClearPoint('BOTTOMRIGHT', right, y)\n",
+    )],
     # The 3.3.5 client ships no DressUpBackground art for High Elf, Goblin, Worgen or Murloc, so the
     # character panel's model backdrop was plain black for those races. Borrow existing art.
     "modules/characterpanel/model.lua": [(
@@ -192,7 +200,7 @@ PATCHES = {
         '    return true\n',
     )],
 }
-SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua", "chat_options.lua", "chat_footer.lua", "appearance.lua", "layout_dimensions.lua", "profile_exchange.lua")
+SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua", "chat_options.lua", "chat_footer.lua", "appearance.lua", "layout_dimensions.lua", "profile_exchange.lua", "action_endcaps.lua")
 TWEAKS = "fta_ui_tweaks.lua"  # FTA changes that need the whole addon loaded first: listed last in the TOC
 
 
