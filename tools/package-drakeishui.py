@@ -44,6 +44,71 @@ PATCHES = {
         '\t<Script file="cooldowns.lua"/>\n',
         "",
     )],
+    "modules/native_layout.lua": [(
+        '    {"MinimalChatAnchor","Chat"}}',
+        '    {"MinimalChatAnchor","Chat"}, {"ImprovedUICastBar","Player cast bar"}, {"WatchFrame","Objective tracker"},\n'
+        '    {"DrakeishUICombinedBags","Combined bags"}, {"DrakeishUI_RaidFrames","Raid frames"},\n'
+        '    {"pUiMicroMenu","Micro menu",96,24}}',
+    )],
+    "modules/native_inventory.lua": [(
+        '            local columns=math.min(db.columns,total)\n'
+        '            local pitch=37+db.bagSlotSpacing\n'
+        '            local width=columns*pitch+24\n',
+        '            local dimensions=addon.Dimensions\n'
+        '            local pitch=37+db.bagSlotSpacing\n'
+        '            local wanted=dimensions and dimensions:Value("bags","width")\n'
+        '            local limit=dimensions and dimensions:Value("bags","height")\n'
+        '            local columns=math.min(wanted and math.max(1,math.min(28,math.floor((wanted-24)/pitch))) or db.columns,total)\n'
+        '            local width=wanted or columns*pitch+24\n',
+    ), (
+        '            h:SetSize(width,height);h:SetScale(scale);h:ClearAllPoints()\n',
+        '            if limit then scale=math.min(scale,limit/height) end\n'
+        '            h:SetSize(width,height);h:SetScale(scale);h:ClearAllPoints()\n',
+    )],
+    "modules/buffs.lua": [(
+        'end\n\n-- Reuse one driver; aura/anchor bursts',
+        '    if addon.Dimensions then addon.Dimensions:ApplyAuras(OFFSET_X) end\n'
+        'end\n\n-- Reuse one driver; aura/anchor bursts',
+    )],
+    "modules/dragonflightui/modules/castbar.lua": [(
+        "(value * sizeX) / statusMax",
+        "(value * f:GetWidth()) / statusMax",
+    ), (
+        "tick:SetSize(2.5, sizeY - 2)",
+        "tick:SetSize(2.5, f:GetHeight() - 2)",
+    )],
+    "modules/raidframes.lua": [(
+        'local UNIT_W = 72\n',
+        'local _, addon = ...\n'
+        'local function RaidDimension(key,default)\n'
+        '    return addon.Dimensions and addon.Dimensions:Value("raid",key,default) or default\n'
+        'end\n'
+        'local function UnitWidth() return RaidDimension("width",72) end\n',
+    ), (
+        '    if RaidFrameStyle() == 2 then return UNIT_H_THIN end\n    return UNIT_H_FULL',
+        '    if RaidFrameStyle() == 2 then return RaidDimension("height", UNIT_H_THIN) end\n    return RaidDimension("height", UNIT_H_FULL)',
+    ), (
+        'local GROUP_GAP = 6',
+        'local function GroupGap() return RaidDimension("gap",6) end',
+    ), (
+        'f:SetWidth(UNIT_W)',
+        'f:SetWidth(UnitWidth())',
+    ), (
+        '(UNIT_W + GROUP_GAP) * GROUPS_PER_ROW',
+        '(UnitWidth() + GroupGap()) * GROUPS_PER_ROW',
+    ), (
+        '            if raidUnits[i] then raidUnits[i]:SetHeight(h) end\n',
+        '            if raidUnits[i] then raidUnits[i]:SetSize(UnitWidth(),h) end\n',
+    ), (
+        '        if raidPet then raidPet:SetHeight(h) end',
+        '        if raidPet then raidPet:SetSize(UnitWidth(),h) end',
+    ), (
+        'col * (UNIT_W + GROUP_GAP)',
+        'col * (UnitWidth() + GroupGap())',
+    ), (
+        'cols * (UNIT_W + GROUP_GAP) - GROUP_GAP + PAD',
+        'cols * (UnitWidth() + GroupGap()) - GroupGap() + PAD',
+    )],
     "modules/itemlevel.lua": [
         (
             '    fontString:SetFont(path, size, outline)\n',
@@ -110,7 +175,7 @@ PATCHES = {
         '    return true\n',
     )],
 }
-SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua", "chat_options.lua", "chat_footer.lua", "appearance.lua")
+SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua", "chat_options.lua", "chat_footer.lua", "appearance.lua", "layout_dimensions.lua")
 TWEAKS = "fta_ui_tweaks.lua"  # FTA changes that need the whole addon loaded first: listed last in the TOC
 
 
