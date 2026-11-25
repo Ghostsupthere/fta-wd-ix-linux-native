@@ -30,6 +30,7 @@ ASSET_PATH = re.compile(r'assets[/\\]+([^"\'\r\n<>]+)', re.I)
 
 
 COMPAT = "linux_compat_bags.lua"
+TWEAKS = "fta_ui_tweaks.lua"  # FTA changes that need the whole addon loaded first: listed last in the TOC
 
 
 def add_linux_compat(toc):
@@ -39,6 +40,10 @@ def add_linux_compat(toc):
     lines = text.split(newline)
     first = next(i for i, line in enumerate(lines) if line.strip() and not line.lstrip().startswith("#"))
     lines.insert(first, COMPAT)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    lines.append(TWEAKS)
+    lines.append("")
     return newline.join(lines).encode("utf-8")
 
 
@@ -176,6 +181,10 @@ def main():
     data = compat.read_bytes()
     (args.out / COMPAT).write_bytes(data)
     manifest.append(dict(path=COMPAT, size=len(data), sha256=hashlib.sha256(data).hexdigest(), source="linux-compat"))
+    tweaks = Path(__file__).with_name("drakeishui") / TWEAKS
+    data = tweaks.read_bytes()
+    (args.out / TWEAKS).write_bytes(data)
+    manifest.append(dict(path=TWEAKS, size=len(data), sha256=hashlib.sha256(data).hexdigest(), source="fta-tweaks"))
     for relative, original in MEDIA_ALIASES.items():
         if relative.casefold() in selected:
             continue
