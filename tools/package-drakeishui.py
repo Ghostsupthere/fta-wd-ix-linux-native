@@ -75,21 +75,6 @@ PATCHES = {
         '    {"DrakeishUICombinedBags","Combined bags"}, {"DrakeishUI_RaidFrames","Raid frames"},\n'
         '    {"pUiMicroMenu","Micro menu",96,24}}',
     )],
-    "modules/native_inventory.lua": [(
-        '            local columns=math.min(db.columns,total)\n'
-        '            local pitch=37+db.bagSlotSpacing\n'
-        '            local width=columns*pitch+24\n',
-        '            local dimensions=addon.Dimensions\n'
-        '            local pitch=37+db.bagSlotSpacing\n'
-        '            local wanted=dimensions and dimensions:Value("bags","width")\n'
-        '            local limit=dimensions and dimensions:Value("bags","height")\n'
-        '            local columns=math.min(wanted and math.max(1,math.min(28,math.floor((wanted-24)/pitch))) or db.columns,total)\n'
-        '            local width=wanted or columns*pitch+24\n',
-    ), (
-        '            h:SetSize(width,height);h:SetScale(scale);h:ClearAllPoints()\n',
-        '            if limit then scale=math.min(scale,limit/height) end\n'
-        '            h:SetSize(width,height);h:SetScale(scale);h:ClearAllPoints()\n',
-    )],
     "modules/buffs.lua": [(
         'end\n\n-- Reuse one driver; aura/anchor bursts',
         '    if addon.Dimensions then addon.Dimensions:ApplyAuras(OFFSET_X) end\n'

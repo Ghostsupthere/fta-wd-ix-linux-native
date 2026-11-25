@@ -31,7 +31,6 @@ local definitions={
     { "minimap","Minimap","Minimap", {{"size","Diameter",100,280}} },
     { "buffs","Buffs","Buff rows", {{"columns","Icons per row",6,32},{"size","Icon size",16,48},{"gap","Spacing",0,16}} },
     { "debuffs","Buffs","Debuff rows", {{"columns","Icons per row",6,32},{"size","Icon size",16,48},{"gap","Spacing",0,16}} },
-    { "bags","Bags","Combined bag dimensions", {{"width","Window width",250,900},{"height","Maximum window height",180,750}} },
     { "raid","Party and Raid","Raid dimensions", {{"width","Cell width",54,180},{"height","Cell height",16,80},{"gap","Group spacing",0,16}} },
     { "main","Action Bars","Main bar dimensions", {{"size","Button size",20,64},{"gap","Spacing",0,16},{"columns","Buttons per row",1,12}} },
     { "bottomLeft","Action Bars","Bottom left bar dimensions", {{"size","Button size",20,64},{"gap","Spacing",0,16},{"columns","Buttons per row",1,12}} },
@@ -192,7 +191,7 @@ function D:ApplyAuras(offset)
 end
 
 local names={MinimalChatAnchor="chat",ImprovedUICastBar="cast",CastingBarFrame="cast",WatchFrame="tracker",Minimap="minimap",
-    DrakeishUICombinedBags="bags",DrakeishUI_RaidFrames="raid",BuffFrame="buffs",pUiMainBar="main",
+    DrakeishUI_RaidFrames="raid",BuffFrame="buffs",pUiMainBar="main",
     MultiBarBottomLeft="bottomLeft",MultiBarBottomRight="bottomRight",MultiBarRight="right",MultiBarLeft="left"}
 local function selected()
     return L.entries[L.selected], names[L.selected]
@@ -231,9 +230,6 @@ local function editPanel()
                 local cell=DrakeishUI_RaidUnit1
                 if cell then width,height=cell:GetSize() end
             elseif group=="cast" and ImprovedUICastBar then width,height=ImprovedUICastBar:GetSize()
-            elseif group=="bags" then
-                local scale=entry.frame:GetScale()
-                width,height=width*scale,height*scale
             end
             drag={group=group,x=x,y=y,w=width,h=height,scale=entry.frame:GetEffectiveScale()}
         end)
@@ -262,7 +258,7 @@ local function editPanel()
             pair.label:Show();pair.input:Show()
         else pair.input:ClearFocus();pair.input:Hide();pair.label:Hide() end
     end
-    local canDrag=group=="cast" or group=="tracker" or group=="minimap" or group=="bags" or group=="raid"
+    local canDrag=group=="cast" or group=="tracker" or group=="minimap" or group=="raid"
     if show and entry and canDrag and entry.frame:IsVisible() then
         controls.grip:ClearAllPoints()
         controls.grip:SetPoint("BOTTOMRIGHT",entry.frame,"BOTTOMRIGHT")
@@ -275,7 +271,6 @@ refresh=function(group)
     if not group or group=="cast" then cast() end
     if not group or group=="minimap" then minimap() end
     if not group or group=="tracker" then tracker() end
-    if not group or group=="bags" then L:RefreshBags() end
     if (not group or group=="raid") and DrakeishUI_UpdateRaidFrames then DrakeishUI_UpdateRaidFrames() end
     if (not group or group=="buffs" or group=="debuffs") and BuffFrame_UpdateAllBuffAnchors then BuffFrame_UpdateAllBuffAnchors() end
     if not group or group=="main" or group=="bottomLeft" or group=="bottomRight" or group=="left" or group=="right" then
