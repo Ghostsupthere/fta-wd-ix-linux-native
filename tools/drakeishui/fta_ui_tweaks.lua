@@ -56,3 +56,24 @@ watcher:SetScript("OnEvent", function(self)
     self:UnregisterEvent("PLAYER_ENTERING_WORLD")
     chatHistory()
 end)
+
+---------------------------------------------------------------------------------------------------
+-- 3. Totem bar buttons without a spell show no tooltip instead of a Lua error.
+--
+-- The stock tooltip code for the shaman totem bar's Summon and Recall buttons passes self.spellId to
+-- GameTooltip:SetSpellByID. That field is nil until the button has been updated, or when the shaman
+-- does not know the spell, and SetSpellByID raises "Invalid spell ID" for it (reported while cycling
+-- the action bar pages).
+---------------------------------------------------------------------------------------------------
+local stockTotemTooltip = MultiCastSpellButton_SetTooltip
+if type(stockTotemTooltip) == "function" and not _G.FTA_TotemTooltipGuard then
+    _G.FTA_TotemTooltipGuard = true
+    MultiCastSpellButton_SetTooltip = function(self, ...)
+        if type(self) ~= "table" or type(self.spellId) ~= "number" then
+            if type(self) == "table" then self.UpdateTooltip = nil end
+            if GameTooltip and GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+            return
+        end
+        return stockTotemTooltip(self, ...)
+    end
+end
