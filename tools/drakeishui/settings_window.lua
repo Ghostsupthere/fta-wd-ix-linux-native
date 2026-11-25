@@ -98,7 +98,7 @@ local function choiceWidget(row, preview)
                 return
             end
         end
-        selectButton:SetText("Choose…")
+        selectButton:SetText("Choose...")
     end
 end
 

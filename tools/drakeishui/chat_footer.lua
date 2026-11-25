@@ -70,7 +70,7 @@ local function coordinates()
         local x,y=GetPlayerMapPosition("player")
         savedCoordinates=(x and y and (x>0 or y>0)) and ("%.1f, %.1f"):format(x*100,y*100) or nil
     end
-    return savedCoordinates or "—"
+    return savedCoordinates or "--"
 end
 local readers={
     zone=function() return GetRealZoneText() end,
@@ -78,7 +78,7 @@ local readers={
     itemLevel=function()
         local value=addon.GetAverageItemLevel and addon.GetAverageItemLevel("player")
         if value and value>0 then return ("iLvl %.1f"):format(value) end
-        return "iLvl —"
+        return "iLvl --"
     end,
     durability=function()
         local lowest
@@ -86,7 +86,7 @@ local readers={
             local value,maximum=GetInventoryItemDurability(i)
             if maximum and maximum>0 then lowest=math.min(lowest or 1,value/maximum) end
         end
-        return lowest and ("Dur %.0f%%"):format(lowest*100) or "Dur —"
+        return lowest and ("Dur %.0f%%"):format(lowest*100) or "Dur --"
     end,
     gold=function() return ("%dg"):format(math.floor(GetMoney()/10000)) end,
     bags=function()
@@ -97,9 +97,9 @@ local readers={
         end
         return ("%d/%d free"):format(used,total)
     end,
-    system=function() local _,_,lag=GetNetStats(); return ("%d ms · %.0f FPS"):format(lag or 0,GetFramerate()) end,
+    system=function() local _,_,lag=GetNetStats(); return ("%d ms / %.0f FPS"):format(lag or 0,GetFramerate()) end,
     memory=function()
-        if not UpdateAddOnMemoryUsage or not GetAddOnMemoryUsage then return "Memory —" end
+        if not UpdateAddOnMemoryUsage or not GetAddOnMemoryUsage then return "Memory --" end
         UpdateAddOnMemoryUsage()
         local total=0
         for i=1,GetNumAddOns() do total=total+GetAddOnMemoryUsage(i) end
@@ -114,7 +114,7 @@ local readers={
         local faction,_,low,high,value=GetWatchedFactionInfo()
         if faction and high>low then return ("Rep %.0f%%"):format((value-low)*100/(high-low)) end
         local max=UnitXPMax("player")
-        return max>0 and ("XP %.0f%%"):format(UnitXP("player")*100/max) or "XP —"
+        return max>0 and ("XP %.0f%%"):format(UnitXP("player")*100/max) or "XP --"
     end,
     spec=function()
         local best, points=nil,-1

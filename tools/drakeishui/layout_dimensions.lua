@@ -48,7 +48,7 @@ for _, definition in ipairs(definitions) do
         -- A negative number restores the existing dimension, leaving zero available as a spacing.
         local id="layout."..group.."."..key
         field.id=id
-        S:Register({id=id,name=name.." (−1 existing)",category=category,group=label,type="slider",default=-1,
+        S:Register({id=id,name=name.." (-1 existing)",category=category,group=label,type="slider",default=-1,
             min=-1,max=max,step=1,protected=true,keywords="size width height spacing "..label,
             validate=function(value)
                 if type(value)~="number" or value~=value or math.abs(value)==math.huge then return end
