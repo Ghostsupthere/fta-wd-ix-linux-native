@@ -14,7 +14,6 @@ local frame, search, heading, scroll, content, reset, status
 local navigation, rows, visibleRows, cards, tabButtons = {}, {}, {}, {}, {}
 local pages, routes = {}, {}
 local widgets = {}
-local refreshing
 
 local function label(parent, font)
     local text = parent:CreateFontString(nil, "ARTWORK", font or "GameFontHighlight")
@@ -132,13 +131,18 @@ widgets.slider = function(row)
     edit:SetScript("OnEditFocusLost", function(self) self:SetText(tostring(read(row.option))) end)
     row.ClearEditFocus = function() edit:ClearFocus() end
     slider:SetScript("OnValueChanged", function(_, value)
-        if not refreshing and row.option then write(row.option, value) end
+        if not row.updatingSlider and row.option then write(row.option, value) end
     end)
     row.update = function(_, option)
+        -- Native sliders fire OnValueChanged during range, step and value updates.
+        -- A pooled row may still hold the previous setting's thumb position.
+        local value = read(option)
+        row.updatingSlider = true
         slider:SetMinMaxValues(option.min, option.max)
         slider:SetValueStep(option.step or 1)
-        slider:SetValue(read(option))
-        if not edit:HasFocus() then edit:SetText(tostring(read(option))) end
+        slider:SetValue(value)
+        row.updatingSlider = nil
+        if not edit:HasFocus() then edit:SetText(tostring(value)) end
     end
 end
 
@@ -308,9 +312,7 @@ end
 
 local function refresh()
     if not frame or not frame:IsShown() then return end
-    refreshing = true
     for _, row in ipairs(visibleRows) do updateRow(row) end
-    refreshing = nil
 
     local message = category == "Profiles" and profileMessage or ""
     if not S:IsReady() then
