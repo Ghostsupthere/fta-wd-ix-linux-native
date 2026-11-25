@@ -44,7 +44,13 @@ PATCHES = {
         '\t<Script file="cooldowns.lua"/>\n',
         "",
     )],
-    "modules/native_controls.lua": [(
+    "modules/native_controls.lua": [
+        (
+            '    message=string.lower(message or "")\n',
+            '    if addon.Settings and addon.Settings.HandleCommand and addon.Settings:HandleCommand(message or "") then return end\n'
+            '    message=string.lower(message or "")\n',
+        ),
+        (
         '    elseif InterfaceOptionsFrame_OpenToCategory then InterfaceOptionsFrame_OpenToCategory(showPanel()) end\n',
         '    elseif message:match("^%s*$") and addon.Settings then addon.Settings:Open()\n'
         '    elseif InterfaceOptionsFrame_OpenToCategory then InterfaceOptionsFrame_OpenToCategory(showPanel()) end\n',
@@ -85,7 +91,7 @@ PATCHES = {
         '    return true\n',
     )],
 }
-SETTINGS_FILES = ("settings_profiles.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua")
+SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua")
 TWEAKS = "fta_ui_tweaks.lua"  # FTA changes that need the whole addon loaded first: listed last in the TOC
 
 

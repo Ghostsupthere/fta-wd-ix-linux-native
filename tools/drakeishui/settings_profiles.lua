@@ -127,6 +127,7 @@ function S:Set(id, value)
     local callbacks = {}
     apply(option, value, callbacks)
     finish(callbacks)
+    return true
 end
 
 function S:Reset(category)

@@ -98,7 +98,7 @@ local function paint(timer, remaining)
         timer.color = color
     end
     local unit, value
-    if remaining < config.tenths then
+    if timer.gcd or remaining < config.tenths then
         unit, value = 1, ceil(remaining / 100)
     else
         local seconds = ceil(remaining / 1000)
@@ -115,7 +115,8 @@ local function paint(timer, remaining)
     timer.unit, timer.value = unit, value
     -- Use the client's native numeric formatter so this path does not intern Lua strings.
     if unit == 1 then text:SetFormattedText("%d.%d", floor(value / 10), value % 10)
-    elseif unit == 2 or unit == 4 then text:SetFormattedText("%d:%02d", floor(value / 60), value % 60)
+    elseif unit == 4 then text:SetFormattedText("%dh %dm", floor(value / 60), value % 60)
+    elseif unit == 2 then text:SetFormattedText("%d:%02d", floor(value / 60), value % 60)
     elseif unit == 3 then text:SetFormattedText("%dm", value)
     else text:SetFormattedText("%d", value) end
 end
@@ -142,7 +143,12 @@ local function applyStyle(timer)
     local bar, text = timer.bar, timer.text
     if not text then return end
     local style = bar.style
-    if not text:SetFont(fontPaths[style.font] or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", style.size, style.outline) then
+    local size = style.size
+    local width = timer.button.GetWidth and timer.button:GetWidth()
+    if config.fit and width and width > 0 and width < 30 then
+        size = math.min(size, math.max(5, floor(width / 2.9)))
+    end
+    if not text:SetFont(fontPaths[style.font] or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size, style.outline) then
         text:SetFontObject(GameFontNormal)
     end
     text:ClearAllPoints()
@@ -155,6 +161,7 @@ local function makeText(timer)
     local frame = CreateFrame("Frame", nil, timer.button)
     frame:SetAllPoints(timer.button)
     frame:EnableMouse(false)
+    if frame.HookScript then frame:HookScript("OnSizeChanged", function() applyStyle(timer) end) end
     timer.overlay = frame
     timer.text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     applyStyle(timer)
@@ -262,6 +269,7 @@ end
 
 local function refreshConfig()
     config.enabled = settingValue("enabled")
+    config.fit = settingValue("fit")
     config.sweep = settingValue("sweep")
     config.gcd = settingValue("gcd")
     config.minimum = milliseconds(settingValue("minimum"))
@@ -297,6 +305,7 @@ local function addOption(id, group, option)
 end
 
 addOption("enabled", "Cooldown numbers", { name = "Show cooldown numbers", type = "toggle", default = true })
+addOption("fit", "Cooldown numbers", { name = "Fit text to small buttons", type = "toggle", default = true })
 addOption("gcd", "Cooldown numbers", { name = "Show global cooldown", type = "toggle", default = false })
 addOption("sweep", "Cooldown numbers", { name = "Keep Blizzard cooldown sweep", type = "toggle", default = true })
 addOption("minimum", "Cooldown numbers", {
