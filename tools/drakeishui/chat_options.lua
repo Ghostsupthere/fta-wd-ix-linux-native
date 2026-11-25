@@ -41,8 +41,12 @@ option("spacing","Line spacing (-1 keeps current)","slider",-1,{min=-1,max=8,ste
 option("background","Background color","colour",{0,0,0})
 option("opacity","Background opacity","slider",0,{min=0,max=1,step=.01})
 option("border","Show chat border","toggle",false)
-option("fade","Fade delay (-1 keeps current, 0 disables)","slider",-1,{min=-1,max=120,step=1})
-option("lines","Retained lines (0 keeps current)","slider",0,sizeOption(50,1000))
+option("fade","Fade delay","slider",-1,{
+    min=-1,max=120,step=1,desc="Seconds before chat fades. -1 keeps the existing delay. 0 disables fading.",
+})
+local retainedLines = sizeOption(50,1000)
+retainedLines.desc = "Number of chat lines to keep. 0 keeps the existing limit."
+option("lines","Retained lines","slider",0,retainedLines)
 option("time","Timestamps","dropdown","off",{choices=choices("off","Off","short","HH:MM","seconds","HH:MM:SS","12h","12-hour")})
 option("class","Class-colored chat names","dropdown","legacy",{choices=choices("legacy","Existing settings","on","On","off","Off")})
 option("shorten","Shorten linked channel names","toggle",false)
