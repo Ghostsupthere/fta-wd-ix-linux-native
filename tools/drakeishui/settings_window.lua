@@ -2,13 +2,17 @@ local _, addon = ...
 local S = addon.Settings
 local NE = DrakeishUI_SocialNE
 local categories = {
-    "General", "Action Bars", "Unit Frames", "Party and Raid", "Bags", "Chat", "Cast Bar",
+    "General", "Action Bars", "Unit Frames", "Bags", "Chat", "Cast Bar",
     "Buffs", "Minimap", "Tooltips", "Character Panel", "Layout", "Profiles",
 }
-local WIDTH, HEIGHT, CONTENT_WIDTH = 760, 536, 514
+local WIDTH, HEIGHT, CONTENT_WIDTH = 1080, 676, 781
+local CONTROL_WIDTH, CARD_GAP = 152, 9
 local category = "Character Panel"
+local pageName, tabName, highlighted
+local tree, treeContent, tabs, bannerProfile, moveButton, bindButton
 local frame, search, heading, scroll, content, reset, status
-local navigation, rows, visibleRows = {}, {}, {}
+local navigation, rows, visibleRows, cards, tabButtons = {}, {}, {}, {}, {}
+local pages, routes = {}, {}
 local widgets = {}
 local refreshing
 
@@ -70,7 +74,7 @@ widgets.toggle = function(row)
 end
 
 local function choiceWidget(row, preview)
-    local selectButton = button(row, 230)
+    local selectButton = button(row, CONTROL_WIDTH)
     selectButton:SetPoint("RIGHT", -8, 0)
     selectButton:SetScript("OnClick", function(self)
         local option = row.option
@@ -106,11 +110,11 @@ widgets.dropdown = function(row) choiceWidget(row, false) end
 widgets.font = function(row) choiceWidget(row, true) end
 
 widgets.slider = function(row)
-    local edit = editBox(row, 58)
+    local edit = editBox(row, 48)
     edit:SetPoint("RIGHT", -8, 0)
     local slider = CreateFrame("Slider", nil, row)
     slider:SetOrientation("HORIZONTAL")
-    slider:SetSize(154, 16)
+    slider:SetSize(92, 16)
     slider:SetPoint("RIGHT", edit, "LEFT", -12, 0)
     local track = slider:CreateTexture(nil, "BACKGROUND")
     track:SetTexture(0.24, 0.22, 0.19, 1)
@@ -164,7 +168,7 @@ widgets.colour = function(row)
 end
 
 widgets.text = function(row)
-    local edit = editBox(row, 226)
+    local edit = editBox(row, CONTROL_WIDTH)
     edit:SetPoint("RIGHT", -8, 0)
     edit:SetScript("OnEnterPressed", function(self)
         write(row.option, self:GetText())
@@ -185,7 +189,7 @@ widgets.text = function(row)
 end
 
 widgets.button = function(row)
-    local action = button(row, 230)
+    local action = button(row, CONTROL_WIDTH)
     action:SetPoint("RIGHT", -8, 0)
     action:SetScript("OnClick", function() row.option.action() end)
     row.update = function(_, option)
@@ -274,10 +278,28 @@ local function rowFor(option, index)
     local row = rows[kind][index]
     if not row then
         row = CreateFrame("Frame", nil, content)
-        row:SetSize(CONTENT_WIDTH, 32)
+        row:SetHeight(32)
+        row:EnableMouse(true)
         row.title = label(row)
         row.title:SetPoint("LEFT", 8, 0)
-        row.title:SetPoint("RIGHT", (kind == "header" or kind == "description") and -8 or -250, 0)
+        row.title:SetPoint("RIGHT", (kind == "header" or kind == "description") and -8 or -CONTROL_WIDTH-16, 0)
+        local highlight = row:CreateTexture(nil,"BACKGROUND")
+        highlight:SetTexture(.30,.20,.07,.7)
+        highlight:SetAllPoints()
+        row.highlight = highlight
+        row:SetScript("OnEnter", function(self)
+            local option = self.option
+            if not GameTooltip or not option or not option.id then return end
+            GameTooltip:SetOwner(self,"ANCHOR_RIGHT")
+            GameTooltip:SetText(option.name)
+            if option.desc then GameTooltip:AddLine(option.desc,1,1,1,true) end
+            if option.min then
+                GameTooltip:AddLine(("Range: %s to %s"):format(option.min,option.max),.8,.8,.8)
+            end
+            GameTooltip:AddLine(option.id,.65,.65,.65)
+            GameTooltip:Show()
+        end)
+        row:SetScript("OnLeave",function() if GameTooltip then GameTooltip:Hide() end end)
         widgets[kind](row)
         rows[kind][index] = row
     end
@@ -297,67 +319,307 @@ local function refresh()
         message = "Protected changes will apply when combat ends."
     end
     status:SetText(message)
+    local layout = addon.Layout
+    if layout and layout.editing then
+        moveButton:SetText("Lock UI")
+        moveButton:LockHighlight()
+    else
+        moveButton:SetText("Move UI")
+        moveButton:UnlockHighlight()
+    end
+    local binding=addon.KeybindMode
+    if binding and binding.active then bindButton:LockHighlight() else bindButton:UnlockHighlight() end
+    bannerProfile:SetText(S:IsReady() and (S:Active() or "This Character") or "")
     local r,g,b
     if addon.Appearance then r,g,b=addon.Appearance:GetAccent() end
     heading:SetTextColor(r or 1,g or .82,b or 0)
 end
 
 local function matches(option, query)
-    local text = (option.name .. " " .. option.category .. " " .. (option.keywords or "")):lower()
+    local text=table.concat({option.name,option.id,option.category,option.group or "",option.keywords or ""}," "):lower()
     for word in query:gmatch("%S+") do
-        if not text:find(word, 1, true) then return false end
+        if not text:find(word,1,true) then return false end
     end
     return true
 end
 
-local function draw()
+local barTitles={main="Main bar",bottomLeft="Bottom left",bottomRight="Bottom right",
+    right="Right bar",left="Left bar",pet="Pet",stance="Stance",totem="Totem",vehicle="Vehicle",bags="Bags / Micro"}
+local unitTitles={target="Target",targettarget="Target of Target",focus="Focus",pet="Pet",party="Party",
+    raid="Raid",raidThin="Raid",boss="Boss",arena="Arena"}
+local unitText={font=true,size=true,outline=true,align=true,healthColor=true,powerColor=true}
+local function route(option)
+    local id, category, group=option.id,option.category,option.group
+    if category=="General" then return category,"Appearance and Fonts",nil,group end
+    if category=="Character Panel" then return category,"General",nil,group end
+    if category=="Action Bars" then
+        local bar=id:match("^cooldown%.([^.]+)%.")
+        if bar then return category,"Per-bar Cooldowns",barTitles[bar] or bar,"Text style" end
+        if id:match("^cooldown%.") then return category,"Cooldowns",nil,group end
+        bar=id:match("^layout%.([^.]+)%.")
+        if bar then return category,"Size and Layout",barTitles[bar] or bar,"Button geometry" end
+        return category,"General",nil,group
+    end
+    if category=="Unit Frames" or category=="Party and Raid" then
+        local unit,key=id:match("^unit%.([^.]+)%.(.+)$")
+        if unitTitles[unit] then
+            local tab=unitText[key] and "Text" or "Values"
+            local section=unit=="raidThin" and "Thin raid" or unit=="raid" and "Full raid" or nil
+            return "Unit Frames",unitTitles[unit],tab,section or (unitText[key] and "Text style" or "Visibility and format")
+        end
+        if category=="Party and Raid" then return "Unit Frames","Raid","Layout",group end
+        return "Unit Frames","General",nil,group
+    end
+    if category=="Chat" then
+        local slot=id:match("^footer%.(%d)%.")
+        if slot then return category,"Footer Slots","Slot "..slot,"Readout" end
+        if id:match("^footer%.") then return category,"Footer Slots","General","Footer" end
+        if id:match("^chat%.tab") then return category,"Tabs",nil,"Tabs" end
+        if id=="chat.width" or id=="chat.height" then return category,"Size",nil,"Dimensions" end
+        if id=="chat.time" or id=="chat.class" or id=="chat.shorten" then
+            return category,"Timestamps",nil,"Message formatting"
+        end
+        return category,"Appearance",nil,group
+    end
+    if category=="Bags" then
+        local name=id:match("^bagQuality%.level") and "Item Level" or
+            (id:match("^layout%.") and "Layout" or id:match("^appearance%.") and "Text" or "Quality")
+        return category,name,nil,group
+    end
+    return category,group or "General",nil,group
+end
+
+local function pageFor(category,name)
+    pages[category]=pages[category] or {list={},byName={}}
+    local collection=pages[category]
+    if not collection.byName[name] then
+        local page={name=name,tabs={},byTab={}}
+        collection.list[#collection.list+1]=page
+        collection.byName[name]=page
+    end
+    return collection.byName[name]
+end
+
+local function addToPage(option,category,name,tab,group)
+    local page=pageFor(category,name)
+    tab=tab or ""
+    if not page.byTab[tab] then
+        page.byTab[tab]={name=tab,groups={},byGroup={}}
+        page.tabs[#page.tabs+1]=page.byTab[tab]
+    end
+    local tabData=page.byTab[tab]
+    group=group or "Options"
+    if not tabData.byGroup[group] then
+        tabData.byGroup[group]={title=group,options={}}
+        tabData.groups[#tabData.groups+1]=tabData.byGroup[group]
+    end
+    local items=tabData.byGroup[group].options
+    items[#items+1]=option
+    if option.id then routes[option.id]={category,name,tab} end
+end
+
+local function populate()
+    for _, option in ipairs(S.options) do addToPage(option,route(option)) end
+    local exchange=false
+    local group
+    for _, option in ipairs(profileRows) do
+        if option.type=="header" then
+            group=option.name
+            if group=="Export and import" then exchange=true end
+        else
+            addToPage(option,"Profiles",exchange and "Export and Import" or "Manage",nil,group or "Active profile")
+            if option.name=="New profile name" then
+                addToPage(option,"Profiles","Export and Import",nil,"Export and import")
+            end
+        end
+    end
+    addToPage({type="button",name="Key bindings",buttonText="Keybind Mode",action=function()
+        if addon.KeybindMode then addon.KeybindMode:Start() end
+    end},"Action Bars","General",nil,"Key bindings")
+end
+
+local draw
+local function windowState()
+    return S:IsReady() and addon.Layout and addon.Layout.DB and addon.Layout:DB()
+end
+local function remember()
+    local db=windowState()
+    if db then db.settingsPage={category=category,page=pageName,tab=tabName} end
+end
+
+local function selectPage(section,page,tab,match)
+    category,pageName,tabName,highlighted=section,page,tab,match
+    search:ClearFocus()
+    if search:GetText()~="" then search:SetText("") else draw() end
+end
+
+local function drawNavigation()
+    local used=0
+    local function add(text,indent,active,action)
+        used=used+1
+        local item=navigation[used]
+        if not item then
+            item=button(treeContent,184,"")
+            navigation[used]=item
+        end
+        item:ClearAllPoints()
+        item:SetPoint("TOPLEFT", treeContent,"TOPLEFT",indent,-(used-1)*27)
+        item:SetWidth(184-indent)
+        item:SetText(text)
+        if action then item:Enable() else item:Disable() end
+        item:SetScript("OnClick",action)
+        if active then item:LockHighlight() else item:UnlockHighlight() end
+        item:Show()
+    end
+    local categoryY
+    for _, name in ipairs(categories) do
+        local collection=pages[name]
+        if name==category then categoryY=used*27 end
+        add(name,0,name==category,collection and function()
+            if name==category and pageName then
+                pageName=nil; tabName=nil; highlighted=nil
+                if search:GetText()~="" then search:SetText("") else draw() end
+            else selectPage(name,collection.list[1].name) end
+        end or nil)
+        if name==category and pageName and collection then
+            for _, page in ipairs(collection.list) do
+                local key=page.name
+                add(key,14,key==pageName,function() selectPage(name,key) end)
+            end
+        end
+    end
+    for i=used+1,#navigation do navigation[i]:Hide() end
+    treeContent:SetHeight(math.max(1,used*27))
+    if categoryY then
+        local current=tree.GetVerticalScroll and tree:GetVerticalScroll() or 0
+        if categoryY<current or categoryY+27>current+tree:GetHeight() then
+            tree:SetVerticalScroll(math.max(0,categoryY-27))
+        end
+    end
+end
+
+local function drawTabs(page)
+    local used=0
+    if page and #page.tabs>1 then
+        for i,item in ipairs(page.tabs) do
+            used=i
+            local tab=tabButtons[i]
+            if not tab then tab=button(tabs,108,"");tabButtons[i]=tab end
+            local name=item.name
+            tab:ClearAllPoints()
+            tab:SetPoint("TOPLEFT",tabs,"TOPLEFT",((i-1)%7)*112,-math.floor((i-1)/7)*26)
+            tab:SetText(name)
+            tab:SetScript("OnClick",function() selectPage(category,pageName,name) end)
+            if name==tabName then tab:LockHighlight() else tab:UnlockHighlight() end
+            tab:Show()
+        end
+    end
+    for i=used+1,#tabButtons do tabButtons[i]:Hide() end
+    scroll:ClearAllPoints()
+    scroll:SetPoint("TOPLEFT",tabs,"TOPLEFT",-5,-6-math.ceil(used/7)*26)
+    scroll:SetPoint("BOTTOMRIGHT",tabs:GetParent(),"BOTTOMRIGHT",-24,48)
+end
+
+draw=function()
     addon.Menu.Close()
     for _, row in ipairs(visibleRows) do
         if row.ClearEditFocus then row.ClearEditFocus() end
         row:Hide()
     end
+    for _, card in ipairs(cards) do card:Hide() end
     wipe(visibleRows)
-    local query = search:GetText():lower():match("^%s*(.-)%s*$")
-    local used = {}
-    local function addRow(option)
-        local kind = option.type
-        used[kind] = (used[kind] or 0) + 1
-        local row = rowFor(option, used[kind])
-        row.option = option
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -#visibleRows * 34)
-        visibleRows[#visibleRows + 1] = row
-        row:Show()
-    end
+    local query=search:GetText():lower():match("^%s*(.-)%s*$")
+    local collection=pages[category]
+    local page=collection and collection.byName[pageName]
+    if page and not page.byTab[tabName] then tabName=page.tabs[1].name end
+    local used, y, cardCount, jump={},0,0,nil
 
-    local group
-    if not S:IsReady() then
-        -- The status line explains why the controls are unavailable.
-    elseif category == "Profiles" and query == "" then
-        for _, option in ipairs(profileRows) do addRow(option) end
-    else
-        for _, option in ipairs(S.options) do
-            if (query ~= "" and matches(option, query)) or (query == "" and option.category == category) then
-                local title = option.group
-                if query ~= "" then title = option.category end
-                if title and title ~= group then addRow({ type = "header", name = title }) end
-                group = title
-                addRow(option)
+    local function addRow(option,x,rowY,width)
+        local kind=option.type
+        used[kind]=(used[kind] or 0)+1
+        local row=rowFor(option,used[kind])
+        row.option=option
+        row:ClearAllPoints()
+        row:SetWidth(width)
+        row:SetPoint("TOPLEFT",content,"TOPLEFT",x,-rowY)
+        if option.id and option.id==highlighted then row.highlight:Show();jump=rowY
+        else row.highlight:Hide() end
+        row:Show()
+        visibleRows[#visibleRows+1]=row
+    end
+    local function addCard(group)
+        cardCount=cardCount+1
+        local card=cards[cardCount]
+        if not card then
+            card=CreateFrame("Frame",nil,content)
+            card:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
+            card:SetBackdropColor(.12,.105,.085,.88)
+            card:SetBackdropBorderColor(.30,.25,.19,1)
+            card:SetFrameLevel(content:GetFrameLevel())
+            card.title=label(card,"GameFontNormal")
+            card.title:SetPoint("TOPLEFT",10,-9)
+            cards[cardCount]=card
+        end
+        card.title:SetText(group.title)
+        card:ClearAllPoints()
+        card:SetPoint("TOPLEFT",content,"TOPLEFT",0,-y)
+        card:Show()
+        local column=0
+        local start=y
+        y=y+28
+        local width=(CONTENT_WIDTH-2*CARD_GAP)/2
+        for _, option in ipairs(group.options) do
+            if option.type=="description" or option.name=="Profile text" then
+                if column==1 then y=y+34;column=0 end
+                addRow(option,CARD_GAP,y,CONTENT_WIDTH-2*CARD_GAP)
+                y=y+34
+            else
+                addRow(option,CARD_GAP+column*width,y,width)
+                column=column+1
+                if column==2 then y=y+34;column=0 end
             end
         end
-        if query ~= "" and #visibleRows == 0 then addRow({ type = "description", name = "No matching settings." }) end
+        if column==1 then y=y+34 end
+        card:SetSize(CONTENT_WIDTH,y-start+5)
+        y=y+14
     end
-    heading:SetText(query == "" and category or "Search results")
-    for name, nav in pairs(navigation) do
-        if query == "" and name == category then nav:LockHighlight() else nav:UnlockHighlight() end
-    end
-    if S:IsReady() and query == "" and category ~= "Profiles" and #visibleRows > 0 then
-        reset:Show()
+
+    if S:IsReady() and query~="" then
+        local results={}
+        for _, option in ipairs(S.options) do
+            if matches(option,query) then
+                local path=routes[option.id]
+                if #results<100 then
+                    local open=function() selectPage(path[1],path[2],path[3],option.id) end
+                    results[#results+1]={type="button",name=option.name,buttonText=path[2],action=open,id=option.id}
+                end
+            end
+        end
+        search.firstResult=results[1] and results[1].action
+        if #results==0 then addRow({type="description",name="No matching settings."},0,0,CONTENT_WIDTH);y=34
+        else addCard({title="Matching settings",options=results}) end
+    elseif S:IsReady() and page then
+        search.firstResult=nil
+        for _, group in ipairs(page.byTab[tabName].groups) do addCard(group) end
+        remember()
     else
-        reset:Hide()
+        search.firstResult=nil
+        if S:IsReady() and collection then
+            for _, item in ipairs(collection.list) do
+                addRow({type="button",name=item.name,buttonText="Open",action=function() selectPage(category,item.name) end},
+                    0,y,CONTENT_WIDTH)
+                y=y+34
+            end
+        end
     end
-    content:SetHeight(math.max(1, #visibleRows * 34))
-    scroll:SetVerticalScroll(0)
+    heading:SetText(query~="" and "Search results" or (pageName and category.." / "..pageName or category))
+    drawNavigation()
+    drawTabs(query=="" and page or nil)
+    reset.category=category
+    if category=="Unit Frames" and (pageName=="Party" or pageName=="Raid") then reset.category="Party and Raid" end
+    if S:IsReady() and query=="" and page and category~="Profiles" and y>0 then reset:Show() else reset:Hide() end
+    content:SetHeight(math.max(1,y))
+    scroll:SetVerticalScroll(jump and math.min(math.max(0,y-scroll:GetHeight()),math.max(0,jump-36)) or 0)
     refresh()
 end
 
@@ -402,7 +664,7 @@ local function build()
 
     search = editBox(frame, 225)
     search:SetFrameLevel(frame:GetFrameLevel() + 6)
-    search:SetPoint("TOPRIGHT", -27, -35)
+    search:SetPoint("TOPRIGHT", -27, -72)
     search:SetMaxLetters(80)
     local placeholder = label(search, "GameFontDisable")
     placeholder:SetPoint("LEFT", 8, 0)
@@ -411,34 +673,54 @@ local function build()
         if self:GetText() == "" then placeholder:Show() else placeholder:Hide() end
         if frame:IsShown() then draw() end
     end)
-    search:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    search:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+        if self.firstResult then self.firstResult() end
+    end)
 
-    local sidebar = inset(frame)
-    sidebar:SetPoint("TOPLEFT", 19, -68)
-    sidebar:SetPoint("BOTTOMLEFT", 19, 18)
-    sidebar:SetWidth(167)
-    local populated = { Profiles = true }
-    for _, option in ipairs(S.options) do populated[option.category] = true end
-    for index, name in ipairs(categories) do
-        local nav = button(sidebar, 147, name)
-        nav:SetPoint("TOPLEFT", 10, -10 - (index - 1) * 30)
-        nav:SetScript("OnClick", function()
-            category = name
-            search:ClearFocus()
-            if search:GetText() == "" then draw() else search:SetText("") end
-        end)
-        if not populated[name] then nav:Disable() end
-        navigation[name] = nav
-    end
+    local banner=inset(frame)
+    banner:SetPoint("TOPLEFT",frame,"TOPLEFT",19,-29)
+    banner:SetPoint("TOPRIGHT",frame,"TOPRIGHT",-18,-29)
+    banner:SetHeight(34)
+    moveButton=button(banner,110,"Move UI")
+    moveButton:SetPoint("LEFT",7,0)
+    moveButton:SetScript("OnClick",function()
+        if addon.Layout and not InCombatLockdown() then addon.Layout:SetEditing(not addon.Layout.editing) end
+        refresh()
+    end)
+    bindButton=button(banner,132,"Keybind Mode")
+    bindButton:SetPoint("LEFT",moveButton,"RIGHT",7,0)
+    bindButton:SetScript("OnClick",function() if addon.KeybindMode then addon.KeybindMode:Start() end end)
+    local resetPositions=button(banner,135,"Reset Positions")
+    resetPositions:SetPoint("LEFT",bindButton,"RIGHT",7,0)
+    resetPositions:SetScript("OnClick",function()
+        if addon.Layout and not InCombatLockdown() then StaticPopup_Show("DRAKEISHUI_RESET_POSITIONS") end
+    end)
+    bannerProfile=label(banner)
+    bannerProfile:SetPoint("RIGHT",-12,0)
+
+    local sidebar=inset(frame)
+    sidebar:SetPoint("TOPLEFT",19,-106)
+    sidebar:SetPoint("BOTTOMLEFT",19,18)
+    sidebar:SetWidth(220)
+    tree=CreateFrame("ScrollFrame",nil,sidebar)
+    tree:SetPoint("TOPLEFT",8,-7)
+    tree:SetPoint("BOTTOMRIGHT",-22,7)
+    treeContent=CreateFrame("Frame",nil,tree)
+    treeContent:SetSize(184,1)
+    tree:SetScrollChild(treeContent)
+    NE.scrollbar.BuildCustomPixel(tree)
 
     local pane = inset(frame)
     pane:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 8, 0)
     pane:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 18)
     heading = label(pane, "GameFontNormalLarge")
     heading:SetPoint("TOPLEFT", 17, -14)
+    tabs=CreateFrame("Frame",nil,pane)
+    tabs:SetPoint("TOPLEFT",15,-40)
+    tabs:SetPoint("TOPRIGHT",-24,-40)
+    tabs:SetHeight(52)
     scroll = CreateFrame("ScrollFrame", nil, pane)
-    scroll:SetPoint("TOPLEFT", 10, -47)
-    scroll:SetPoint("BOTTOMRIGHT", -24, 48)
     content = CreateFrame("Frame", nil, scroll)
     content:SetSize(CONTENT_WIDTH, 1)
     scroll:SetScrollChild(content)
@@ -446,7 +728,7 @@ local function build()
 
     reset = button(pane, 148, "Reset this section")
     reset:SetPoint("BOTTOMRIGHT", -13, 12)
-    reset:SetScript("OnClick", function() S:Reset(category) end)
+    reset:SetScript("OnClick", function() S:Reset(reset.category) end)
     status = label(pane, "GameFontHighlightSmall")
     status:SetPoint("BOTTOMLEFT", 15, 13)
     status:SetWidth(363)
@@ -462,16 +744,37 @@ local function build()
     frame:RegisterEvent("DISPLAY_SIZE_CHANGED")
     frame:RegisterEvent("UI_SCALE_CHANGED")
     frame:SetScript("OnEvent", fit)
+    populate()
+    local db=windowState()
+    local saved=db and db.settingsPage
+    if type(saved)=="table" and pages[saved.category] and pages[saved.category].byName[saved.page] then
+        category,pageName,tabName=saved.category,saved.page,saved.tab
+    end
+    pageName=pageName or (pages[category] and pages[category].list[1].name)
+    if addon.Layout and addon.Layout.SetEditing then hooksecurefunc(addon.Layout,"SetEditing",refresh) end
     S.onRefresh = refresh
 end
 
+StaticPopupDialogs.DRAKEISHUI_RESET_POSITIONS={
+    text="Reset the positions and scales of movable frames?",
+    button1=YES,button2=NO,
+    OnAccept=function() if addon.Layout and not InCombatLockdown() then addon.Layout:ResetBars() end end,
+    timeout=0,whileDead=true,hideOnEscape=true,preferredIndex=3,
+}
+
+function S:Close()
+    if frame then frame:Hide() end
+end
+
 function S:Open(section)
-    if section then category = section end
     self:Ready()
     if not frame then build() end
-    if section and search:GetText() ~= "" then
-        search:SetText("")
-        if frame:IsShown() then return end
+    if section and pages[section] then
+        category,pageName,tabName,highlighted=section,pages[section].list[1].name,nil,nil
+        if search:GetText()~="" then
+            search:SetText("")
+            if frame:IsShown() then return end
+        end
     end
     if frame:IsShown() then draw() else frame:Show() end
 end
