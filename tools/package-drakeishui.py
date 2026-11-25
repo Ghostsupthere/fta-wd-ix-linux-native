@@ -46,6 +46,12 @@ PATCHES = {
     )],
     "modules/itemlevel.lua": [
         (
+            '    fontString:SetFont(path, size, outline)\n',
+            '    if addon.Appearance then addon.Appearance:ApplyFont(fontString, "bags", path, size, outline)\n'
+            '    else fontString:SetFont(path, size, outline) end\n',
+        ),
+
+        (
             '    if not IsModuleEnabled() then return false end\n    local config = GetModuleConfig()\n',
             '    if not IsModuleEnabled() then return false end\n'
             '    local override = addon.BagQuality and addon.BagQuality:LevelContext(context)\n'
@@ -104,7 +110,7 @@ PATCHES = {
         '    return true\n',
     )],
 }
-SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua", "chat_options.lua", "chat_footer.lua")
+SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua", "chat_options.lua", "chat_footer.lua", "appearance.lua")
 TWEAKS = "fta_ui_tweaks.lua"  # FTA changes that need the whole addon loaded first: listed last in the TOC
 
 

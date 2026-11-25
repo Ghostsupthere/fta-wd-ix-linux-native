@@ -278,6 +278,9 @@ local function refresh()
         message = "Protected changes will apply when combat ends."
     end
     status:SetText(message)
+    local r,g,b
+    if addon.Appearance then r,g,b=addon.Appearance:GetAccent() end
+    heading:SetTextColor(r or 1,g or .82,b or 0)
 end
 
 local function matches(option, query)

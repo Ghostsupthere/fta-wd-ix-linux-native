@@ -172,7 +172,7 @@ local function paint(entry, key, style, unit, blocked)
         local value=valueText(current,maximum,style)
         fs:SetWidth(0)
         if appearance and style.font == "inherit" then
-            size = appearance:ApplyFont(fs,"units",font,size,style.outline)
+            size = appearance:ApplyFont(fs,"units",font,size,style.outline,math.floor(height+1))
         else fs:SetFont(font,size,style.outline) end
         fs:SetText(value)
         local measured = fs:GetStringWidth()
