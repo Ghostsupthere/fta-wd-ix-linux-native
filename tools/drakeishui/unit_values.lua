@@ -54,7 +54,7 @@ for _, group in ipairs(groups) do
     option("outline", "Value outline", "dropdown", "OUTLINE", {choices=choices("","None","OUTLINE","Outline","THICKOUTLINE","Thick outline")})
     option("align", "Value position", "dropdown", "CENTER", {choices=choices("LEFT","Left","CENTER","Center","RIGHT","Right")})
     option("healthColor", "Health class color", "toggle", false)
-    option("powerColor", "Color power by resource", "toggle", true)
+    option("powerColor", "Color power by resource", "toggle", false)
     option("hideFull", "Hide at full", "toggle", false)
     option("hideZero", "Hide at zero", "toggle", false)
     option("hideDead", "Hide when dead", "toggle", false)
