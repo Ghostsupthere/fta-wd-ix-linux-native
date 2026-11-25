@@ -40,6 +40,13 @@ ACCOUNT_SAVED_VARIABLES = (
 # One-line source patches applied to Windows files while staging (path -> [(old, new)]); each `old` must
 # occur exactly once, so an upstream change that moves the line fails the build instead of going missing.
 PATCHES = {
+    # The 3.3.5 client ships no DressUpBackground art for High Elf, Goblin, Worgen or Murloc, so the
+    # character panel's model backdrop was plain black for those races. Borrow existing art.
+    "modules/characterpanel/model.lua": [(
+        'local RACE_FALLBACK = { GNOME = "Dwarf", TROLL = "Orc" }\n',
+        'local RACE_FALLBACK = { GNOME = "Dwarf", TROLL = "Orc", HIGHELF = "BloodElf", GOBLIN = "Orc",\n'
+        '    WORGEN = "Human", MURLOC = "Orc" }\n',
+    )],
     "modules/chat.lua": [(
         '    chat:SetPoint("BOTTOMLEFT", chatAnchor, "BOTTOMLEFT", 0, 0)\n'
         '    chat:SetScale(chatAnchor:GetScale())\n'
