@@ -61,6 +61,11 @@ local function limits()
     return math.min(900,math.max(1,UIParent:GetWidth()/scale-32)),
            math.min(500,math.max(1,UIParent:GetHeight()/scale-110))
 end
+function C:GetInset()
+    if cfg.enabled and (cfg.border or cfg.opacity>0) then return 5 end
+    return 0
+end
+
 local function showSize(w,h)
     local mw,mh=limits()
     A:SetSize(math.min(mw,math.max(240,w)),math.min(mh,math.max(80,h)))

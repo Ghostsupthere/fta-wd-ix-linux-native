@@ -40,6 +40,16 @@ ACCOUNT_SAVED_VARIABLES = (
 # One-line source patches applied to Windows files while staging (path -> [(old, new)]); each `old` must
 # occur exactly once, so an upstream change that moves the line fails the build instead of going missing.
 PATCHES = {
+    "modules/chat.lua": [(
+        '    chat:SetPoint("BOTTOMLEFT", chatAnchor, "BOTTOMLEFT", 0, 0)\n'
+        '    chat:SetScale(chatAnchor:GetScale())\n'
+        '    chat:SetSize(chatAnchor:GetWidth(), chatAnchor:GetHeight())\n',
+        '    local inset = addon.ChatOptions and addon.ChatOptions:GetInset() or 0\n'
+        '    chat:SetPoint("BOTTOMLEFT", chatAnchor, "BOTTOMLEFT", inset, inset)\n'
+        '    chat:SetScale(chatAnchor:GetScale())\n'
+        '    chat:SetSize(math.max(1, chatAnchor:GetWidth() - 2 * inset),\n'
+        '        math.max(1, chatAnchor:GetHeight() - 2 * inset))\n',
+    )],
     "modules/modules.xml": [(
         '\t<Script file="cooldowns.lua"/>\n',
         "",
