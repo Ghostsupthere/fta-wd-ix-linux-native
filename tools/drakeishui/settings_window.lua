@@ -347,7 +347,7 @@ end
 
 local barTitles={main="Main bar",bottomLeft="Bottom left",bottomRight="Bottom right",
     right="Right bar",left="Left bar",pet="Pet",stance="Stance",totem="Totem",vehicle="Vehicle",bags="Bags / Micro"}
-local unitTitles={target="Target",targettarget="Target of Target",focus="Focus",pet="Pet",party="Party",
+local unitTitles={player="Player",target="Target",targettarget="Target of Target",focus="Focus",pet="Pet",party="Party",
     raid="Raid",raidThin="Raid",boss="Boss",arena="Arena"}
 local unitText={font=true,size=true,outline=true,align=true,healthColor=true,powerColor=true}
 local function route(option)
@@ -365,6 +365,7 @@ local function route(option)
     if category=="Unit Frames" or category=="Party and Raid" then
         local unit,key=id:match("^unit%.([^.]+)%.(.+)$")
         if unitTitles[unit] then
+            if key == "portrait" then return "Unit Frames",unitTitles[unit],"Portrait","Portrait" end
             local tab=unitText[key] and "Text" or "Values"
             local section=unit=="raidThin" and "Thin raid" or unit=="raid" and "Full raid" or nil
             return "Unit Frames",unitTitles[unit],tab,section or (unitText[key] and "Text style" or "Visibility and format")
