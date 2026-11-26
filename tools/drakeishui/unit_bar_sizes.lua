@@ -36,11 +36,31 @@ function B:Register(group, category, apply)
     end
 end
 
-function B:CreateBacking(bar)
+-- The backing replaces the baked bar surround, so it carries its own thin metal edge (the baked art had one).
+-- bare = true skips the edge (raid cells already have a border).
+local EDGE = {.62, .60, .55, 1}
+function B:CreateBacking(bar, bare)
     local background = bar:CreateTexture(nil, "BACKGROUND")
     background:SetPoint("TOPLEFT", bar, "TOPLEFT", -1, 1)
     background:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 1, -1)
     background:SetTexture(.10, .08, .07, .95)
+    if bare then return background end
+    local edges = {}
+    local function edge(a, b, c, d, horizontal)
+        local line = bar:CreateTexture(nil, "OVERLAY")
+        line:SetTexture(EDGE[1], EDGE[2], EDGE[3], EDGE[4])
+        line:SetPoint(a, background, b)
+        line:SetPoint(c, background, d)
+        if horizontal then line:SetHeight(1) else line:SetWidth(1) end
+        edges[#edges + 1] = line
+    end
+    edge("BOTTOMLEFT", "TOPLEFT", "BOTTOMRIGHT", "TOPRIGHT", true)
+    edge("TOPLEFT", "BOTTOMLEFT", "TOPRIGHT", "BOTTOMRIGHT", true)
+    edge("TOPRIGHT", "TOPLEFT", "BOTTOMRIGHT", "BOTTOMLEFT")
+    edge("TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT")
+    local show, hide = background.Show, background.Hide
+    background.Show = function(self) show(self); for _, line in ipairs(edges) do line:Show() end end
+    background.Hide = function(self) hide(self); for _, line in ipairs(edges) do line:Hide() end end
     return background
 end
 
@@ -84,6 +104,16 @@ function B:ResizeParty(frame)
         end
         frame.drakeishHealthBacking:Show()
         frame.drakeishPowerBacking:Show()
+        -- Keep the gold portrait ring from the baked overlay (its left third), placed where the full overlay put it.
+        if not frame.drakeishRing then
+            local ring = frame.overlayFrame:CreateTexture(nil, "ARTWORK")
+            ring:SetTexture("Interface\\AddOns\\DrakeishUI\\assets\\PartyFrames")
+            ring:SetTexCoord(0, .33, 0, 1)
+            ring:SetSize(150 * .33, 75)
+            ring:SetPoint("TOPLEFT", frame, "TOPLEFT", -5, 8.5)
+            frame.drakeishRing = ring
+        end
+        frame.drakeishRing:Show()
         frame.overlay:Hide()
         frame.background:Hide()
     else
@@ -94,6 +124,7 @@ function B:ResizeParty(frame)
         frame.level:SetPoint("RIGHT", frame, "RIGHT", -16, 17)
         frame.drakeishHealthBacking:Hide()
         frame.drakeishPowerBacking:Hide()
+        if frame.drakeishRing then frame.drakeishRing:Hide() end
         frame.overlay:Show()
         frame.background:Show()
     end
@@ -131,7 +162,7 @@ function B:ResizeRaid(frame, width, height, hw, hh, pw, ph)
             power = CreateFrame("StatusBar", nil, frame)
             power:SetStatusBarTexture("Interface\\AddOns\\DrakeishUI\\assets\\DF-StatusBar")
             power:EnableMouse(false)
-            self:CreateBacking(power)
+            self:CreateBacking(power, true)
             frame.drakeishPowerBar = power
         end
         power:SetPoint("TOPLEFT", health, "BOTTOMLEFT", 0, -2)
