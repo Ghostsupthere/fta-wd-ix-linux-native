@@ -227,7 +227,7 @@ PATCHES["modules/dragonflightui/modules/partyframes.lua"] = (
         'elseif partyUnitEvents[event] then',
     ),
 )
-SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua", "chat_options.lua", "chat_footer.lua", "appearance.lua", "layout_dimensions.lua", "profile_exchange.lua", "action_endcaps.lua", "keybind_mode.lua", "unit_portraits.lua", "settings_interface.lua")
+SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua", "chat_options.lua", "chat_footer.lua", "appearance.lua", "layout_dimensions.lua", "profile_exchange.lua", "action_endcaps.lua", "keybind_mode.lua", "unit_portraits.lua", "settings_interface.lua", "tooltip_options.lua")
 TWEAKS = "fta_ui_tweaks.lua"  # FTA changes that need the whole addon loaded first: listed last in the TOC
 
 

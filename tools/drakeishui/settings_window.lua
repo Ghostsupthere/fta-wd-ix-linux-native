@@ -277,10 +277,15 @@ widgets.colour = function(row)
     pick:SetSize(60, 24)
     pick:SetPoint("RIGHT", -8, 0)
     pick:SetBackdrop({ bgFile = PIXEL, edgeFile = PIXEL, edgeSize = 1 })
-    pick:SetBackdropBorderColor(.37, .32, .25, 1)
-    pick:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(.85, .68, .22, 1) end)
-    pick:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(.37, .32, .25, 1) end)
+    local function border(hover)
+        if not pick:IsEnabled() then pick:SetBackdropBorderColor(.24, .23, .21, 1)
+        elseif hover then pick:SetBackdropBorderColor(.85, .68, .22, 1)
+        else pick:SetBackdropBorderColor(.37, .32, .25, 1) end
+    end
+    pick:SetScript("OnEnter", function() border(true) end)
+    pick:SetScript("OnLeave", function() border(false) end)
     pick:SetScript("OnClick", function()
+        if not pick:IsEnabled() then return end
         local option = row.option
         local original = read(option)
         local picker = ColorPickerFrame
@@ -295,7 +300,10 @@ widgets.colour = function(row)
     end)
     row.update = function(_, option)
         local rgb = read(option)
+        if option.disabled and option.disabled() then pick:Disable(); pick:SetAlpha(.55)
+        else pick:Enable(); pick:SetAlpha(1) end
         pick:SetBackdropColor(rgb[1], rgb[2], rgb[3], 1)
+        border(pick:IsMouseOver())
     end
 end
 
@@ -512,6 +520,7 @@ local function route(option)
         end
         return category,"Appearance",nil,group
     end
+    if category=="Tooltips" and id:match("^tooltip%.") then return category,"Tooltips",nil,group end
     if category=="Bags" then
         local name=id:match("^bagQuality%.level") and "Item Level" or
             (id:match("^layout%.") and "Layout" or id:match("^appearance%.") and "Text" or "Quality")

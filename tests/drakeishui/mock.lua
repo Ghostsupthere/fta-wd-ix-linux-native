@@ -27,6 +27,10 @@ function methods:Hide()
     self.shown = false
     run(self, "OnHide")
 end
+function methods:IsEnabled() return self.enabled ~= false end
+function methods:Enable() self.enabled = true end
+function methods:Disable() self.enabled = false end
+function methods:IsMouseOver() return M.focus == self end
 function methods:GetParent() return self.parent end
 function methods:GetName() return self.name end
 function methods:GetID() return self.id end
@@ -108,7 +112,7 @@ function methods:SetUnit(unit)
 end
 
 for _, key in ipairs({
-    "ClearAllPoints", "Disable", "Enable", "EnableKeyboard", "EnableMouse", "EnableMouseWheel",
+    "ClearAllPoints", "EnableKeyboard", "EnableMouse", "EnableMouseWheel",
     "LockHighlight", "RegisterForDrag", "SetBackdrop", "SetBackdropBorderColor", "SetBackdropColor",
     "SetAutoFocus", "SetClampedToScreen", "SetDrawLayer", "SetFontObject", "SetFrameStrata", "SetJustifyH", "SetMaxLetters",
     "SetMovable", "SetNormalTexture", "SetShadowOffset", "SetShadowColor", "SetOrientation", "SetScrollChild", "SetTextInsets", "SetThumbTexture",

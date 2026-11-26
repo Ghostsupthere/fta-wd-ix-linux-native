@@ -75,7 +75,7 @@ local function fontPath(key)
     if key~="client" and addon.Fonts and addon.Fonts.needsSystemFont then return addon.Fonts.PRIMARY end
     for _, choice in ipairs(fontChoices) do if choice.value==key then return choice.path end end
 end
-function A:ApplyFont(fs,group,font,size,flags,cap)
+function A:ApplyFont(fs,group,font,size,flags,cap,roleSize)
     local old=state(fs)
     if not old and not font then return size end
     local prefix=group.."."
@@ -90,6 +90,7 @@ function A:ApplyFont(fs,group,font,size,flags,cap)
         local outline=cfg[prefix.."outline"]
         if outline and outline~="current" then flags=outline end
     end
+    if roleSize and roleSize > 0 then size = roleSize end
     if cap then size=math.min(size,cap) end
     local current,currentSize,currentFlags=fs:GetFont()
     if current~=path or currentSize~=size or (currentFlags or "")~=flags then
@@ -165,11 +166,14 @@ local function tooltip(tip)
     if not name then return end
     for i=1,tip:NumLines() do
         local left,right=_G[name.."TextLeft"..i],_G[name.."TextRight"..i]
-        if left then A:ApplyFont(left,"tooltips") end
-        if right then A:ApplyFont(right,"tooltips") end
+        local role = tip == GameTooltip and (i == 1 and "header" or "body") or "comparison"
+        local size = S:Get("tooltip." .. role)
+        if left then A:ApplyFont(left,"tooltips",nil,nil,nil,nil,size) end
+        if right then A:ApplyFont(right,"tooltips",nil,nil,nil,nil,size) end
         if i==1 and left then A:ApplyColor(left,"tooltips") end
     end
 end
+A.StyleTooltip = tooltip
 local function layout()
     local coords=DrakeishUILayoutCoords
     if not coords or not coords:IsShown() then return end
