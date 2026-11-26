@@ -518,7 +518,21 @@ void CSimpleMessageScrollFrame::ScrollMessages(int32_t scroll) {
                     }
 
                     string->SetTextLength(this->m_textMaxSize);
+#if defined(WOWDECOMP_LINUX)
+                } else if (i > 0) {
+                    // Line spacing is baked into the anchor offset when a display line is created.
+                    // Re-anchor existing lines so a later SetSpacing (chat options) takes effect.
+                    float offset = CSimpleTop::RoundToPixelHeight(string->m_spacing);
+
+                    if (this->m_insertMode == INSERT_AT_BOTTOM) {
+                        string->SetPoint(FRAMEPOINT_BOTTOMLEFT, this->m_displayNodes[i - 1].m_string, FRAMEPOINT_TOPLEFT, 0.0f, offset, 1);
+                    } else {
+                        string->SetPoint(FRAMEPOINT_TOPLEFT, this->m_displayNodes[i - 1].m_string, FRAMEPOINT_BOTTOMLEFT, 0.0f, -offset, 1);
+                    }
                 }
+#else
+                }
+#endif
 
                 float spacing = CSimpleTop::RoundToPixelHeight(string->m_spacing);
                 float lineHeight = string->GetStringHeight() + spacing;
@@ -600,6 +614,11 @@ void CSimpleMessageScrollFrame::FontUpdated(CSimpleFontedFrameFont* font, int32_
     if (flags & 0x11) {
         for (uint32_t i = 0; i < this->m_displayNodes.Count(); i++) {
             this->m_displayNodes[i].m_string->SetFontObject(this->m_font);
+#if defined(WOWDECOMP_LINUX)
+            if (flags & 0x10) {
+                this->m_displayNodes[i].m_string->SetSpacing(this->m_font->m_attributes.m_spacing);
+            }
+#endif
         }
 
         this->ScrollMessages(this->m_currentScroll);
