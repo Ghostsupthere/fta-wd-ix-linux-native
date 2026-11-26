@@ -10,7 +10,7 @@ local CONTROL_WIDTH, CARD_GAP = 152, 9
 local category = "Character Panel"
 local pageName, tabName, highlighted
 local tree, treeContent, tabs, bannerProfile, moveButton, bindButton
-local frame, search, heading, scroll, content, reset, status
+local frame, search, heading, crumb, scroll, content, reset, status
 local navigation, rows, visibleRows, cards, tabButtons = {}, {}, {}, {}, {}
 local pages, routes = {}, {}
 local widgets = {}
@@ -27,6 +27,75 @@ local function button(parent, width, text)
     item:SetText(text or "")
     NE.buttonskin.Skin(item)
     return item
+end
+
+-- Flat items for the section list and the page tabs. Buttons that look like every other button made it hard to
+-- see where you were, so these show the open section with a gold bar, a tint and gold text.
+local PIXEL = "Interface\\Buttons\\WHITE8X8"
+local GOLD = { 1, .84, .25 }
+local STYLES = {
+    category = { text = { .92, .84, .64 }, active = { .20, .16, .09, .95 }, activeText = GOLD, font = "GameFontNormal", inset = 10 },
+    page = { text = { .78, .78, .76 }, active = { .30, .22, .06, .92 }, activeText = { 1, .92, .55 }, font = "GameFontHighlightSmall", inset = 24 },
+    tab = { text = { .80, .78, .70 }, active = { .16, .13, .08, .95 }, activeText = GOLD, font = "GameFontHighlightSmall", inset = 0, centre = true },
+}
+local function paint(item)
+    local style = STYLES[item.kind]
+    local text = style.text
+    local back = { 0, 0, 0, 0 }
+    if item.active then
+        text, back = style.activeText, style.active
+    elseif item.hover and item.enabled then
+        back = { .14, .12, .09, .9 }
+    end
+    if not item.enabled then text = { .5, .5, .5 } end
+    item.text:SetTextColor(text[1], text[2], text[3])
+    item.back:SetTexture(back[1], back[2], back[3], back[4])
+    if item.kind == "tab" then
+        item.line:SetHeight(item.active and 2 or 1)
+        if item.active then item.line:SetTexture(1, .78, .12, 1) else item.line:SetTexture(.30, .25, .19, 1) end
+    elseif item.active then item.bar:Show() else item.bar:Hide() end
+end
+local function flatItem(parent, width, height, kind)
+    local item = CreateFrame("Button", nil, parent)
+    item:SetSize(width, height)
+    item.kind, item.enabled = kind, true
+    item.back = item:CreateTexture(nil, "BACKGROUND")
+    item.back:SetAllPoints()
+    item.back:SetTexture(0, 0, 0, 0)
+    item.text = item:CreateFontString(nil, "ARTWORK", STYLES[kind].font)
+    item.text:SetPoint("LEFT", STYLES[kind].inset, 0)
+    item.text:SetPoint("RIGHT", -6, 0)
+    item.text:SetJustifyH(STYLES[kind].centre and "CENTER" or "LEFT")
+    if kind == "tab" then
+        item.line = item:CreateTexture(nil, "ARTWORK")
+        item.line:SetPoint("BOTTOMLEFT")
+        item.line:SetPoint("BOTTOMRIGHT")
+    else
+        item.bar = item:CreateTexture(nil, "ARTWORK")
+        item.bar:SetTexture(1, .78, .12, 1)
+        item.bar:SetPoint("TOPLEFT")
+        item.bar:SetPoint("BOTTOMLEFT")
+        item.bar:SetWidth(3)
+        item.rule = item:CreateTexture(nil, "ARTWORK")
+        item.rule:SetTexture(.30, .25, .19, 1)
+        item.rule:SetPoint("TOPLEFT", 4, 0)
+        item.rule:SetPoint("TOPRIGHT", -4, 0)
+        item.rule:SetHeight(1)
+        item.guide = item:CreateTexture(nil, "ARTWORK")
+        item.guide:SetTexture(.45, .36, .15, .8)
+        item.guide:SetPoint("TOPLEFT", 12, 0)
+        item.guide:SetPoint("BOTTOMLEFT", 12, 0)
+        item.guide:SetWidth(1)
+    end
+    item:SetScript("OnEnter", function(self) self.hover = true; paint(self) end)
+    item:SetScript("OnLeave", function(self) self.hover = nil; paint(self) end)
+    return item
+end
+local function setFlat(item, text, active, enabled)
+    item.text:SetText(text)
+    item.active, item.enabled = active and true or nil, enabled ~= false
+    if item.enabled then item:Enable() else item:Disable() end
+    paint(item)
 end
 
 local function editBox(parent, width)
@@ -513,36 +582,36 @@ end
 
 local function drawNavigation()
     local used=0
-    local function add(text,indent,active,action)
+    local function add(text,kind,active,action,first)
         used=used+1
         local item=navigation[used]
-        if not item then
-            item=button(treeContent,184,"")
+        if not item or item.kind~=kind then
+            if item then item:Hide() end
+            item=flatItem(treeContent,184,27,kind)
             navigation[used]=item
         end
         item:ClearAllPoints()
-        item:SetPoint("TOPLEFT", treeContent,"TOPLEFT",indent,-(used-1)*27)
-        item:SetWidth(184-indent)
-        item:SetText(text)
-        if action then item:Enable() else item:Disable() end
+        item:SetPoint("TOPLEFT", treeContent,"TOPLEFT",0,-(used-1)*27)
+        setFlat(item,text,active,action~=nil)
         item:SetScript("OnClick",action)
-        if active then item:LockHighlight() else item:UnlockHighlight() end
+        if item.rule then if kind=="category" and not first then item.rule:Show() else item.rule:Hide() end end
+        if item.guide then if kind=="page" then item.guide:Show() else item.guide:Hide() end end
         item:Show()
     end
     local categoryY
     for _, name in ipairs(categories) do
         local collection=pages[name]
         if name==category then categoryY=used*27 end
-        add(name,0,name==category,collection and function()
+        add(name,"category",name==category,collection and function()
             if name==category and pageName then
                 pageName=nil; tabName=nil; highlighted=nil
                 if search:GetText()~="" then search:SetText("") else draw() end
             else selectPage(name,collection.list[1].name) end
-        end or nil)
+        end or nil,name==categories[1])
         if name==category and pageName and collection then
             for _, page in ipairs(collection.list) do
                 local key=page.name
-                add(key,14,key==pageName,function() selectPage(name,key) end)
+                add(key,"page",key==pageName,function() selectPage(name,key) end)
             end
         end
     end
@@ -562,19 +631,18 @@ local function drawTabs(page)
         for i,item in ipairs(page.tabs) do
             used=i
             local tab=tabButtons[i]
-            if not tab then tab=button(tabs,108,"");tabButtons[i]=tab end
+            if not tab then tab=flatItem(tabs,108,24,"tab");tabButtons[i]=tab end
             local name=item.name
             tab:ClearAllPoints()
-            tab:SetPoint("TOPLEFT",tabs,"TOPLEFT",((i-1)%7)*112,-math.floor((i-1)/7)*26)
-            tab:SetText(name)
+            tab:SetPoint("TOPLEFT",tabs,"TOPLEFT",((i-1)%7)*112,-math.floor((i-1)/7)*28)
+            setFlat(tab,name,name==tabName)
             tab:SetScript("OnClick",function() selectPage(category,pageName,name) end)
-            if name==tabName then tab:LockHighlight() else tab:UnlockHighlight() end
             tab:Show()
         end
     end
     for i=used+1,#tabButtons do tabButtons[i]:Hide() end
     scroll:ClearAllPoints()
-    scroll:SetPoint("TOPLEFT",tabs,"TOPLEFT",-5,-6-math.ceil(used/7)*26)
+    scroll:SetPoint("TOPLEFT",tabs,"TOPLEFT",-5,-8-math.ceil(used/7)*28)
     scroll:SetPoint("BOTTOMRIGHT",tabs:GetParent(),"BOTTOMRIGHT",-24,48)
 end
 
@@ -616,6 +684,11 @@ draw=function()
             card:SetFrameLevel(content:GetFrameLevel())
             card.title=label(card,"GameFontNormal")
             card.title:SetPoint("TOPLEFT",10,-9)
+            card.rule=card:CreateTexture(nil,"ARTWORK")
+            card.rule:SetTexture(.45,.36,.15,.8)
+            card.rule:SetPoint("TOPLEFT",8,-25)
+            card.rule:SetPoint("TOPRIGHT",-8,-25)
+            card.rule:SetHeight(1)
             cards[cardCount]=card
         end
         card.title:SetText(group.title)
@@ -670,7 +743,8 @@ draw=function()
             end
         end
     end
-    heading:SetText(query~="" and "Search results" or (pageName and category.." / "..pageName or category))
+    heading:SetText(query~="" and "Search results" or (pageName or category))
+    crumb:SetText(query=="" and pageName and category or "")
     drawNavigation()
     drawTabs(query=="" and page or nil)
     reset.category=category
@@ -772,12 +846,15 @@ local function build()
     local pane = inset(frame)
     pane:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 8, 0)
     pane:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 18)
+    crumb = label(pane, "GameFontHighlightSmall")
+    crumb:SetPoint("TOPLEFT", 17, -10)
+    crumb:SetTextColor(.62, .56, .44)
     heading = label(pane, "GameFontNormalLarge")
-    heading:SetPoint("TOPLEFT", 17, -14)
+    heading:SetPoint("TOPLEFT", 17, -23)
     tabs=CreateFrame("Frame",nil,pane)
-    tabs:SetPoint("TOPLEFT",15,-40)
-    tabs:SetPoint("TOPRIGHT",-24,-40)
-    tabs:SetHeight(52)
+    tabs:SetPoint("TOPLEFT",15,-52)
+    tabs:SetPoint("TOPRIGHT",-24,-52)
+    tabs:SetHeight(56)
     scroll = CreateFrame("ScrollFrame", nil, pane)
     content = CreateFrame("Frame", nil, scroll)
     content:SetSize(CONTENT_WIDTH, 1)
