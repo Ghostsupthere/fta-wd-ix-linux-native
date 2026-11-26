@@ -634,12 +634,16 @@ local function drawNavigation()
     end
     for i=used+1,#navigation do navigation[i]:Hide() end
     treeContent:SetHeight(math.max(1,used*27))
-    if categoryY then
-        local current=tree.GetVerticalScroll and tree:GetVerticalScroll() or 0
-        if categoryY<current or categoryY+27>current+tree:GetHeight() then
-            tree:SetVerticalScroll(math.max(0,categoryY-27))
-        end
+    -- Refresh the scroll range now (it normally follows a frame later), then keep the offset inside it: after a
+    -- shorter list replaces a longer one the old offset would leave the top entries hidden with no scroll bar.
+    if tree.UpdateScrollChildRect then tree:UpdateScrollChildRect() end
+    local maxScroll=math.max(0,used*27-tree:GetHeight())
+    local current=tree.GetVerticalScroll and tree:GetVerticalScroll() or 0
+    local target=math.min(current,maxScroll)
+    if categoryY and (categoryY<target or categoryY+27>target+tree:GetHeight()) then
+        target=math.min(maxScroll,math.max(0,categoryY-27))
     end
+    if target~=current then tree:SetVerticalScroll(target) end
 end
 
 local function drawTabs(page)
