@@ -116,7 +116,7 @@ for _, key in ipairs({
     "LockHighlight", "RegisterForDrag", "SetBackdrop", "SetBackdropBorderColor", "SetBackdropColor",
     "SetAutoFocus", "SetClampedToScreen", "SetDrawLayer", "SetFontObject", "SetFrameStrata", "SetJustifyH", "SetMaxLetters",
     "SetMovable", "SetNormalTexture", "SetShadowOffset", "SetShadowColor", "SetOrientation", "SetScrollChild", "SetTextInsets", "SetThumbTexture",
-    "SetVerticalScroll", "SetStatusBarTexture", "SetVertexColor", "SetTexCoord", "StartMoving", "StopMovingOrSizing", "UnlockHighlight",
+    "SetVerticalScroll", "SetStatusBarTexture", "SetVertexColor", "StartMoving", "StopMovingOrSizing", "UnlockHighlight",
 }) do methods[key] = noop end
 
 local modelMethods = setmetatable({}, { __index = methods })

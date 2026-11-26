@@ -14,12 +14,12 @@ local function sized(group, key, fallback)
     return fallback
 end
 
-local function dimensions(group, width, height, powerWidth, powerHeight)
+function B:Dimensions(group, width, height, powerWidth, powerHeight)
     return sized(group, "healthWidth", width), sized(group, "healthHeight", height),
         sized(group, "powerWidth", powerWidth), sized(group, "powerHeight", powerHeight)
 end
 
-local function register(group, category, apply)
+function B:Register(group, category, apply)
     for _, field in ipairs(fields) do
         local key, name, minimum, maximum = unpack(field)
         S:Register({
@@ -36,7 +36,7 @@ local function register(group, category, apply)
     end
 end
 
-local function baseTexture(bar)
+function B:CreateBacking(bar)
     local background = bar:CreateTexture(nil, "BACKGROUND")
     background:SetPoint("TOPLEFT", bar, "TOPLEFT", -1, 1)
     background:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 1, -1)
@@ -51,9 +51,9 @@ local function refreshGroup()
     if addon.RefreshUnitValues then addon.RefreshUnitValues() end
 end
 
-register("party", "Party and Raid", refreshGroup)
-register("raid", "Party and Raid", refreshGroup)
-register("raidThin", "Party and Raid", refreshGroup)
+B:Register("party", "Party and Raid", refreshGroup)
+B:Register("raid", "Party and Raid", refreshGroup)
+B:Register("raidThin", "Party and Raid", refreshGroup)
 for _, group in ipairs({"raid", "raidThin"}) do
     S:Register({
         id = "unit." .. group .. ".powerBar", name = "Show separate power bar", category = "Party and Raid",
@@ -63,7 +63,7 @@ end
 
 function B:ResizeParty(frame)
     if InCombatLockdown() or not S:IsReady() then return end
-    local hw, hh, pw, ph = dimensions("party", 85, 11, 87, 7)
+    local hw, hh, pw, ph = self:Dimensions("party", 85, 11, 87, 7)
     local previous = frame.drakeishBarMetrics
     if previous and previous[1] == hw and previous[2] == hh and previous[3] == pw and previous[4] == ph then return end
     local custom = hw ~= 85 or hh ~= 11 or pw ~= 87 or ph ~= 7
@@ -80,7 +80,7 @@ function B:ResizeParty(frame)
         frame.level:ClearAllPoints()
         frame.level:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -16, -1)
         if not frame.drakeishHealthBacking then
-            frame.drakeishHealthBacking, frame.drakeishPowerBacking = baseTexture(health), baseTexture(power)
+            frame.drakeishHealthBacking, frame.drakeishPowerBacking = self:CreateBacking(health), self:CreateBacking(power)
         end
         frame.drakeishHealthBacking:Show()
         frame.drakeishPowerBacking:Show()
@@ -102,7 +102,7 @@ end
 
 function B:RaidMetrics(width, height, thin)
     local group = thin and "raidThin" or "raid"
-    local hw, hh, pw, ph = dimensions(group, width, height, width, 6)
+    local hw, hh, pw, ph = self:Dimensions(group, width, height, width, 6)
     if not S:Get("unit." .. group .. ".powerBar") then return hw, hh, hw, hh end
     return math.max(hw, pw), hh + ph + 2, hw, hh, pw, ph
 end
@@ -131,7 +131,7 @@ function B:ResizeRaid(frame, width, height, hw, hh, pw, ph)
             power = CreateFrame("StatusBar", nil, frame)
             power:SetStatusBarTexture("Interface\\AddOns\\DrakeishUI\\assets\\DF-StatusBar")
             power:EnableMouse(false)
-            baseTexture(power)
+            self:CreateBacking(power)
             frame.drakeishPowerBar = power
         end
         power:SetPoint("TOPLEFT", health, "BOTTOMLEFT", 0, -2)

@@ -132,7 +132,9 @@ end
 
 local function paint(entry, key, style, unit, blocked)
     local separatePower = entry.raid and key == "power" and entry.frame.drakeishPowerBar
-    local bar = separatePower and separatePower:IsShown() and separatePower or entry[key]
+    local totPower = key == "power" and entry.frame == TargetFrameToT and DragonflightUIToTManaBar
+    local bar = (separatePower or totPower)
+    if not bar or not bar:IsShown() then bar = entry[key] end
     if not bar then return end
     local mode = enabled and style[key] or "legacy"
     stock(entry, key, mode ~= "legacy")

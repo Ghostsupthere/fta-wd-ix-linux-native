@@ -483,7 +483,7 @@ end
 
 local barTitles={main="Main bar",bottomLeft="Bottom left",bottomRight="Bottom right",
     right="Right bar",left="Left bar",pet="Pet",stance="Stance",totem="Totem",vehicle="Vehicle",bags="Bags / Micro"}
-local unitTitles={player="Player",target="Target",targettarget="Target of Target",focus="Focus",pet="Pet",party="Party",
+local unitTitles={player="Player",target="Target",targettarget="Target of Target",focus="Focus",focustarget="Focus Target",pet="Pet",party="Party",
     raid="Raid",raidThin="Raid",boss="Boss",arena="Arena"}
 local unitText={font=true,size=true,outline=true,align=true,healthColor=true,powerColor=true}
 local function route(option)
