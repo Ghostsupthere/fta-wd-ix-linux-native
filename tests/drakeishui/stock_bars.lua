@@ -10,6 +10,7 @@ function methods:GetBottom() return self.bottom end
 function methods:GetTop() return self.top end
 function methods:GetTexCoord() return 0,0,0,1,1,0,1,1 end
 function methods:GetDrawLayer() return "OVERLAY" end
+function methods:GetCenter() return ((self.left or 0) + (self.right or 0)) / 2, ((self.top or 0) + (self.bottom or 0)) / 2 end
 
 local function frame(name, powerAvailable)
     local unit = CreateFrame("Button", name, UIParent)
@@ -28,11 +29,13 @@ end
 
 local player = frame("PlayerFrame", true)
 PlayerPortrait = player:CreateTexture("PlayerPortrait")
-PlayerPortrait.left, PlayerPortrait.right = 44, 100
+PlayerPortrait.left, PlayerPortrait.right, PlayerPortrait.top, PlayerPortrait.bottom = 44, 100, 70, 14
+player.left, player.bottom = 10, 10
+PlayerPortrait:SetSize(56, 56)
 local art = player:CreateTexture("DragonflightUIPlayerFrameBorder")
 art:SetTexture("test art")
 art:SetSize(210, 66)
-art.left, art.right = 40, 250
+art.left, art.right, art.top = 40, 250, 80
 local target = frame("TargetFrame", true)
 local tot = frame("TargetFrameToT", true)
 DragonflightUIToTManaBar = CreateFrame("StatusBar", "DragonflightUIToTManaBar", tot)
@@ -58,6 +61,16 @@ for _, item in ipairs(M.frames) do
     if item:GetTexture() == "test art" and item ~= art then slice = item end
 end
 assert(slice and slice:GetWidth() == 64 and slice.coords[5] == 64/210)
+assert(S:Set("unit.player.portraitScale", 150))
+assert(PlayerPortrait.point[1] == "CENTER" and PlayerPortrait.point[2] == player and PlayerPortrait.point[3] == "BOTTOMLEFT")
+assert(PlayerPortrait.point[4] == 62 and PlayerPortrait.point[5] == 32)
+assert(PlayerPortrait:GetWidth() == 84 and PlayerPortrait:GetHeight() == 84)
+assert(slice:GetWidth() == 96 and slice:GetHeight() == 99 and slice.point[2] == PlayerPortrait)
+assert(slice.point[1] == "TOPLEFT" and slice.point[3] == "CENTER" and slice.point[4] == -48)
+assert(S:Set("unit.player.portraitScale", 100) and PlayerPortrait.point == nil)
+assert(slice:GetWidth() == 64 and slice.point[2] == art)
+assert(S:Set("unit.player.portraitScale", 80) and math.abs(PlayerPortrait:GetWidth() - 44.8) < 1e-6)
+assert(S:Set("unit.player.portraitScale", 100))
 assert(S:Set("unit.target.powerWidth", 170) and target.powerBar:GetWidth() == 170)
 assert(target.powerBar.point[1] == "TOPRIGHT" and target.insets[1] == -45)
 assert(S:Set("unit.targettarget.powerHeight", 13))

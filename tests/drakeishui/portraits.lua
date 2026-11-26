@@ -50,4 +50,21 @@ addon.RegisterPartyPortrait("party1", party.portrait)
 assert(modelFor(party).model == "C")
 S:Reset("Unit Frames")
 assert(PlayerPortrait:GetAlpha() == 1 and not modelFor(party):IsVisible())
+-- Combat glow is a ring sized from the portrait, not the frame-wide art.
+local function ring()
+    for _, frame in ipairs(M.frames) do
+        if frame.kind == "Texture" and frame:GetTexture() == "Interface\\AddOns\\DrakeishUI\\assets\\PortraitGlow" then return frame end
+    end
+end
+PlayerPortrait:SetSize(40, 40)
+M.combat = false
+M.tick(.1)
+assert(ring() and not ring():IsShown())
+M.combat = true
+M.tick(.1)
+assert(ring():IsShown() and ring():GetWidth() == 60 and ring().point[2] == PlayerPortrait)
+assert(S:Set("unit.player.combatGlow", false))
+M.tick(.1)
+assert(not ring():IsShown())
+M.combat = false
 print("Portrait choices, reuse, fallback, retarget, hiding and late party attachment passed")

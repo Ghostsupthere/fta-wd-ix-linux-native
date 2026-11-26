@@ -37,9 +37,10 @@ end
 
 local function addEdge(entry, source, portrait, right)
     local left, rightEdge = source:GetLeft(), source:GetRight()
+    local base = entry.portraitBase
     local cut
     if portrait then
-        cut = right and portrait:GetLeft() or portrait:GetRight()
+        cut = base and (right and base.left or base.right) or right and portrait:GetLeft() or portrait:GetRight()
         if cut then cut = cut + (right and -4 or 4) end
     end
     local path = source:GetTexture()
@@ -56,14 +57,24 @@ local function addEdge(entry, source, portrait, right)
     end
     slice:SetTexture(path)
     slice:ClearAllPoints()
+    -- A scaled portrait scales the baked ring with it, about the portrait centre.
+    local scale = entry.scale or 1
+    local scaled = scale ~= 1 and base and base.cx and source:GetTop()
+    local ox, oy
+    if scaled then
+        ox = ((right and rightEdge or left) - (base.left + base.right) / 2) * scale
+        oy = (source:GetTop() - (base.top + base.bottom) / 2) * scale
+    end
     if right then
         slice:SetTexCoord(between(ulx, urx), between(uly, ury), between(llx, lrx), between(lly, lry), urx, ury, lrx, lry)
-        slice:SetPoint("TOPRIGHT", source, "TOPRIGHT")
-        slice:SetSize(width * (1 - split), source:GetHeight())
+        if scaled then slice:SetPoint("TOPRIGHT", portrait, "CENTER", ox, oy)
+        else slice:SetPoint("TOPRIGHT", source, "TOPRIGHT") end
+        slice:SetSize(width * (1 - split) * (scaled and scale or 1), source:GetHeight() * (scaled and scale or 1))
     else
         slice:SetTexCoord(ulx, uly, llx, lly, between(ulx, urx), between(uly, ury), between(llx, lrx), between(lly, lry))
-        slice:SetPoint("TOPLEFT", source, "TOPLEFT")
-        slice:SetSize(width * split, source:GetHeight())
+        if scaled then slice:SetPoint("TOPLEFT", portrait, "CENTER", ox, oy)
+        else slice:SetPoint("TOPLEFT", source, "TOPLEFT") end
+        slice:SetSize(width * split * (scaled and scale or 1), source:GetHeight() * (scaled and scale or 1))
     end
     slice:SetAlpha(entry.hidden[source] or source:GetAlpha())
     if source.GetVertexColor then slice:SetVertexColor(source:GetVertexColor()) end
@@ -122,6 +133,12 @@ local function findBars(f, frame)
             or frame.powerbar or frame.powerBar or frame.PowerBar
 end
 
+local function portraitScale(group)
+    local value = S:Get("unit." .. group .. ".portraitScale")
+    if type(value) ~= "number" or value <= 0 then return 1 end
+    return value / 100
+end
+
 local function resize(spec, rebuilt)
     if not S:IsReady() or InCombatLockdown() then return end
     local f = spec.frame
@@ -136,6 +153,8 @@ local function resize(spec, rebuilt)
     for _, key in ipairs(dimensionKeys) do
         if (S:Get("unit." .. spec.group .. "." .. key) or -1) > 0 then requested = true; break end
     end
+    local scale = portraitScale(spec.group)
+    if scale ~= 1 then requested = true end
     if not requested and not (entry and entry.active) then return end
     if not entry then
         entry = {hidden = {}, slices = {}}
@@ -147,6 +166,22 @@ local function resize(spec, rebuilt)
         entry.power = power and capture(power)
         entry.primary = power
         if not entry.active then entry.insets = {frame:GetHitRectInsets()} end
+        -- The portrait is captured before anything scales it; the ring slices and the
+        -- scaled size both work from this baseline.
+        local portrait = _G[spec.portrait or ""]
+        entry.portraitMoved = nil
+        entry.portraitBase = nil
+        if portrait and portrait.GetCenter and portrait.GetWidth then
+            local pl, pr, pt, pb = portrait:GetLeft(), portrait:GetRight(), portrait:GetTop(), portrait:GetBottom()
+            local fl, fb = frame:GetLeft(), frame:GetBottom()
+            if pl and pr and pt and pb and fl and fb then
+                entry.portraitBase = {
+                    left = pl, right = pr, top = pt, bottom = pb,
+                    cx = (pl + pr) / 2 - fl, cy = (pt + pb) / 2 - fb,
+                    layout = capture(portrait),
+                }
+            end
+        end
         local name = _G[spec.name or ""]
         if name and name.GetNumPoints then
             entry.name = name
@@ -167,19 +202,37 @@ local function resize(spec, rebuilt)
     end
     local hw, hh, pw, ph = B:Dimensions(spec.group, entry.health.width, entry.health.height,
         entry.power and entry.power.width, entry.power and entry.power.height)
+    if not entry.portraitBase then scale = 1 end
+    entry.scale = scale
     local custom = hw ~= entry.health.width or hh ~= entry.health.height
         or power and entry.power and (pw ~= entry.power.width or ph ~= entry.power.height)
+        or scale ~= 1
     if not custom then
         if not entry.active then return end
         restore(health, entry.health)
         if entry.primary and entry.power then restore(entry.primary, entry.power) end
         if entry.name then restore(entry.name, entry.nameLayout) end
+        if entry.portraitMoved and entry.portraitBase then
+            restore(_G[spec.portrait], entry.portraitBase.layout)
+            entry.portraitMoved = nil
+        end
         frame:SetHitRectInsets(unpack(entry.insets))
         resetArt(entry)
         entry.active = nil
         return
     end
 
+    local base = entry.portraitBase
+    local portraitRegion = base and _G[spec.portrait]
+    if portraitRegion and scale ~= 1 then
+        portraitRegion:ClearAllPoints()
+        portraitRegion:SetPoint("CENTER", frame, "BOTTOMLEFT", base.cx, base.cy)
+        portraitRegion:SetSize((base.right - base.left) * scale, (base.top - base.bottom) * scale)
+        entry.portraitMoved = true
+    elseif portraitRegion and entry.portraitMoved then
+        restore(portraitRegion, base.layout)
+        entry.portraitMoved = nil
+    end
     enableArt(entry, spec, frame, health, power)
     health:ClearAllPoints()
     local first = entry.health.points[1]
@@ -199,6 +252,7 @@ local function resize(spec, rebuilt)
         entry.name:SetWidth(hw)
     end
     local extraW = math.max(0, hw - entry.health.width, entry.power and pw - entry.power.width or 0)
+    if base and scale > 1 then extraW = extraW + (base.right - base.left) * (scale - 1) / 2 end
     local extraH = math.max(0, hh - entry.health.height) + math.max(0, entry.power and ph - entry.power.height or 0)
     local left, right, top, bottom = unpack(entry.insets)
     if spec.side == "right" then left = left - extraW else right = right - extraW end
@@ -213,6 +267,19 @@ end
 
 for _, group in ipairs({"player", "target", "targettarget", "focus", "focustarget", "pet", "boss", "arena"}) do
     B:Register(group, "Unit Frames", refresh)
+end
+for _, group in ipairs({"player", "target", "targettarget", "focus", "focustarget", "pet"}) do
+    S:Register({
+        id = "unit." .. group .. ".portraitScale", name = "Portrait size", category = "Unit Frames",
+        group = "Portrait", type = "slider", default = 100, min = 50, max = 200, step = 5, protected = true,
+        desc = "Percent of the normal portrait size. The ring around it scales too.",
+        keywords = group .. " portrait scale size bigger smaller",
+        validate = function(n)
+            if type(n) ~= "number" or n ~= n or math.abs(n) == math.huge then return end
+            return math.max(50, math.min(200, math.floor(n / 5 + .5) * 5))
+        end,
+        apply = refresh,
+    })
 end
 
 local lib = LibStub and LibStub("AceAddon-3.0", true)

@@ -77,6 +77,7 @@ end
 function methods:SetValueStep() end
 function methods:SetTexture(...) self.texture = { ... } end
 function methods:SetTexCoord(...) self.coords = { ... } end
+function methods:SetBlendMode(mode) self.blend = mode end
 function methods:GetTexture() return self.texture and self.texture[1] end
 function methods:CreateTexture(name, layer) return CreateFrame("Texture", name, self) end
 function methods:CreateFontString(name, layer) return CreateFrame("FontString", name, self) end
@@ -140,6 +141,8 @@ function hooksecurefunc(object, key, handler)
     end
 end
 function InCombatLockdown() return M.combat end
+function UnitAffectingCombat() return M.combat end
+function IsResting() return M.resting end
 function UnitName() return M.character end
 function GetRealmName() return "Test Realm" end
 function UnitExists(unit) return not not UnitGUID(unit) end

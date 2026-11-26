@@ -166,3 +166,89 @@ events:SetScript("OnEvent", function(_, event, unit)
         refreshAll()
     end
 end)
+
+-- Combat glow ---------------------------------------------------------------
+-- The stock frame-wide flash is baked art that cannot follow a resized frame, so it is
+-- replaced by a pulsing ring that is sized from the portrait itself.
+local GLOW_TEXTURE = "Interface\\AddOns\\DrakeishUI\\assets\\PortraitGlow"
+local GLOW_SCALE = 1.5
+local glows = {}
+
+local function playerState()
+    if UnitHasVehiclePlayerFrameUI and UnitHasVehiclePlayerFrameUI("player") then return nil end
+    if UnitAffectingCombat("player") or PlayerFrame.onHateList or PlayerFrame.inCombat then return "combat" end
+    if IsResting() then return "rest" end
+end
+
+local glowSpecs = {
+    { group = "player", portrait = "PlayerPortrait", frame = "PlayerFrame", state = playerState },
+    { group = "target", portrait = "TargetFramePortrait", frame = "TargetFrame",
+      flash = "DragonflightUITargetFrameFlash" },
+    { group = "focus", portrait = "FocusFramePortrait", frame = "FocusFrame",
+      flash = "DragonflightUIFocusFrameFlash" },
+}
+
+local function attachGlow(spec)
+    local glow = glows[spec.group]
+    if glow then return glow end
+    local portrait, frame = _G[spec.portrait], _G[spec.frame]
+    if not portrait or not frame then return end
+    local flash = spec.flash and _G[spec.flash]
+    if spec.flash and not flash then return end
+    local ring = frame:CreateTexture(nil, "OVERLAY", nil, 7)
+    ring:SetTexture(GLOW_TEXTURE)
+    ring:SetBlendMode("ADD")
+    ring:SetPoint("CENTER", portrait, "CENTER")
+    ring:Hide()
+    glow = { spec = spec, ring = ring, portrait = portrait, flash = flash }
+    glows[spec.group] = glow
+    if flash then
+        flash:SetTexture("")
+    elseif _G.PlayerStatusTexture then
+        -- Whatever draws it, the old frame-wide glow stays hidden.
+        hooksecurefunc(PlayerStatusTexture, "Show", function(self) self:Hide() end)
+        PlayerStatusTexture:Hide()
+    end
+    return glow
+end
+
+local function glowColour(state)
+    if state == "rest" then return 1, .85, .25, .55 end
+    return 1, .1, .08, 1
+end
+
+local pulse = 0
+local function updateGlow(glow)
+    local enabled = S:IsReady() and S:Get("unit." .. glow.spec.group .. ".combatGlow") ~= false
+    local state
+    if enabled then
+        if glow.flash then state = glow.flash:IsShown() and "combat" or nil
+        else state = glow.spec.state() end
+    end
+    local ring = glow.ring
+    if not state or not glow.portrait:IsVisible() then ring:Hide(); return end
+    local size = (glow.portrait:GetWidth() or 56) * GLOW_SCALE
+    ring:SetSize(size, size)
+    local r, g, b, a = glowColour(state)
+    ring:SetVertexColor(r, g, b)
+    if state == "rest" then ring:SetAlpha(a) else ring:SetAlpha(.35 + .65 * (.5 + .5 * math.sin(pulse * 4.5))) end
+    ring:Show()
+end
+
+local ticker = CreateFrame("Frame")
+ticker:SetScript("OnUpdate", function(_, elapsed)
+    pulse = pulse + elapsed
+    for _, spec in ipairs(glowSpecs) do
+        local glow = glows[spec.group] or attachGlow(spec)
+        if glow then updateGlow(glow) end
+    end
+end)
+
+for _, spec in ipairs(glowSpecs) do
+    S:Register({
+        id = "unit." .. spec.group .. ".combatGlow", name = "Combat glow", category = "Unit Frames",
+        group = "Portrait", type = "toggle", default = true,
+        desc = "A pulsing ring around the portrait while in combat (soft gold while resting).",
+        keywords = spec.group .. " combat glow pulse ring red flash",
+    })
+end

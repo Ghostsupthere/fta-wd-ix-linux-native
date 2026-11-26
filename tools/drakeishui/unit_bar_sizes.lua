@@ -72,6 +72,17 @@ local function refreshGroup()
 end
 
 B:Register("party", "Party and Raid", refreshGroup)
+S:Register({
+    id = "unit.party.portraitScale", name = "Portrait size", category = "Party and Raid",
+    group = "Portrait", type = "slider", default = 100, min = 50, max = 200, step = 5, protected = true,
+    desc = "Percent of the normal portrait size. The ring around it scales too.",
+    keywords = "party portrait scale size bigger smaller",
+    validate = function(n)
+        if type(n) ~= "number" or n ~= n or math.abs(n) == math.huge then return end
+        return math.max(50, math.min(200, math.floor(n / 5 + .5) * 5))
+    end,
+    apply = refreshGroup,
+})
 B:Register("raid", "Party and Raid", refreshGroup)
 B:Register("raidThin", "Party and Raid", refreshGroup)
 for _, group in ipairs({"raid", "raidThin"}) do
@@ -84,9 +95,11 @@ end
 function B:ResizeParty(frame)
     if InCombatLockdown() or not S:IsReady() then return end
     local hw, hh, pw, ph = self:Dimensions("party", 85, 11, 87, 7)
+    local scale = (S:Get("unit.party.portraitScale") or 100) / 100
     local previous = frame.drakeishBarMetrics
-    if previous and previous[1] == hw and previous[2] == hh and previous[3] == pw and previous[4] == ph then return end
-    local custom = hw ~= 85 or hh ~= 11 or pw ~= 87 or ph ~= 7
+    if previous and previous[1] == hw and previous[2] == hh and previous[3] == pw and previous[4] == ph
+        and previous[5] == scale then return end
+    local custom = hw ~= 85 or hh ~= 11 or pw ~= 87 or ph ~= 7 or scale ~= 1
     if not custom and not previous then return end
     local health, power = frame.healthBar, frame.powerBar
     health:SetSize(hw, hh)
@@ -94,9 +107,15 @@ function B:ResizeParty(frame)
 
     if custom then
         -- Keep the portrait fixed and let the party's existing row anchors follow the new button bounds.
-        frame:SetSize(55 + math.max(hw, pw - 2), math.max(40, 28 + hh + ph))
+        -- The portrait scales about its own centre; the bars and name keep their place relative to that centre.
+        frame:SetSize(35 + 20 * scale + math.max(hw, pw - 2), math.max(40, 28 + hh + ph, 40 * scale))
         frame.portrait:ClearAllPoints()
-        frame.portrait:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, 0)
+        frame.portrait:SetSize(40 * scale, 40 * scale)
+        frame.portrait:SetPoint("CENTER", frame, "TOPLEFT", 24, -20 * math.max(1, scale))
+        health:ClearAllPoints()
+        health:SetPoint("TOPLEFT", frame.portrait, "TOPRIGHT", 0, 8 - 20 * scale)
+        frame.name:ClearAllPoints()
+        frame.name:SetPoint("TOPLEFT", frame.portrait, "TOPRIGHT", 10, 22 - 20 * scale)
         frame.level:ClearAllPoints()
         frame.level:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -16, -1)
         if not frame.drakeishHealthBacking then
@@ -109,17 +128,23 @@ function B:ResizeParty(frame)
             local ring = frame.overlayFrame:CreateTexture(nil, "ARTWORK")
             ring:SetTexture("Interface\\AddOns\\DrakeishUI\\assets\\PartyFrames")
             ring:SetTexCoord(0, .33, 0, 1)
-            ring:SetSize(150 * .33, 75)
-            ring:SetPoint("TOPLEFT", frame, "TOPLEFT", -5, 8.5)
             frame.drakeishRing = ring
         end
+        frame.drakeishRing:SetSize(150 * .33 * scale, 75 * scale)
+        frame.drakeishRing:ClearAllPoints()
+        frame.drakeishRing:SetPoint("TOPLEFT", frame.portrait, "CENTER", -29 * scale, 28.5 * scale)
         frame.drakeishRing:Show()
         frame.overlay:Hide()
         frame.background:Hide()
     else
         frame:SetSize(140, 40)
         frame.portrait:ClearAllPoints()
+        frame.portrait:SetSize(40, 40)
         frame.portrait:SetPoint("LEFT", frame, "LEFT", 4, 0)
+        health:ClearAllPoints()
+        health:SetPoint("TOPLEFT", frame.portrait, "TOPRIGHT", 0, -12)
+        frame.name:ClearAllPoints()
+        frame.name:SetPoint("TOPLEFT", frame.portrait, "TOPRIGHT", 10, 2)
         frame.level:ClearAllPoints()
         frame.level:SetPoint("RIGHT", frame, "RIGHT", -16, 17)
         frame.drakeishHealthBacking:Hide()
@@ -128,7 +153,7 @@ function B:ResizeParty(frame)
         frame.overlay:Show()
         frame.background:Show()
     end
-    frame.drakeishBarMetrics = {hw, hh, pw, ph}
+    frame.drakeishBarMetrics = {hw, hh, pw, ph, scale}
 end
 
 function B:RaidMetrics(width, height, thin)
