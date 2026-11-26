@@ -90,8 +90,17 @@ end
 local function minimap()
     local size=D:Value("minimap","size")
     setSize(Minimap,size,size)
-    local ring=size and (size+16)*math.sqrt(2)
-    setSize(DrakeishUI_MinimapBorder,ring,ring)
+    -- The ring art is drawn at a fixed proportion of the map (160 around the stock 140), so it grows and shrinks
+    -- with the map. A fixed margin let the map spill past the ring on larger sizes.
+    local ring=DrakeishUI_MinimapBorder
+    local stock=originals[Minimap]
+    if ring and size and stock and stock.w>0 then
+        local base=originals[ring]
+        if not base then base={w=ring:GetWidth(),h=ring:GetHeight()};originals[ring]=base end
+        setSize(ring,base.w*size/stock.w,base.h*size/stock.w)
+    else
+        setSize(ring)
+    end
 end
 local function tracker()
     setSize(WatchFrame,D:Value("tracker","width"),D:Value("tracker","height"))

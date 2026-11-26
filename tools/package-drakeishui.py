@@ -75,15 +75,20 @@ PATCHES = {
         '    {"DrakeishUICombinedBags","Combined bags"}, {"DrakeishUI_RaidFrames","Raid frames"},\n'
         '    {"pUiMicroMenu","Micro menu",96,24}}',
     )],
-    # The metal frame art reaches 8 px past the left edge, 4 px past the right and 3 px below the bottom of its
-    # frame, so the combined bag showed a dark rim outside its body. Draw the border inside the frame instead.
+    # The combined bag fill reached 5 px past the metal border on the left, leaving a dark rim outside the window.
+    # Pull it back to the border.
     "modules/native_inventory.lua": [(
         'layout="ButtonFrameTemplateNoPortrait",noPortrait=true,noCloseButton=true}) end\n',
         'layout="ButtonFrameTemplateNoPortrait",noPortrait=true,noCloseButton=true}) end\n'
-        '    if host.NineSlice then\n'
-        '        host.NineSlice:ClearAllPoints()\n'
-        '        host.NineSlice:SetPoint("TOPLEFT",host,"TOPLEFT",8,0);host.NineSlice:SetPoint("BOTTOMRIGHT",host,"BOTTOMRIGHT",-4,3)\n'
+        '    if host.Bg then\n'
+        '        host.Bg:ClearAllPoints()\n'
+        '        host.Bg:SetPoint("TOPLEFT",host,"TOPLEFT",6,-4);host.Bg:SetPoint("BOTTOMRIGHT",host,"BOTTOMRIGHT",-1,2)\n'
         '    end\n',
+    )],
+    # The streak band of the stock bag frame stayed visible under the combined window and darkened outside its border.
+    "modules/native_bags.lua": [(
+        'frame.TopTileStreaks,frame.Title,',
+        'frame.TopTileStreaks,frame._neTopTileStreaks,frame.Title,',
     )],
     "modules/buffs.lua": [(
         'end\n\n-- Reuse one driver; aura/anchor bursts',
@@ -204,6 +209,22 @@ PATCHES["modules/dragonflightui/modules/partyframes.lua"] = (
         '            frame.portrait:SetPoint("LEFT", frame, "LEFT", 4, 0)',
         '            frame.portrait:SetPoint("LEFT", frame, "LEFT", 4, 0)\n'
         '            if addon.RegisterPartyPortrait then addon.RegisterPartyPortrait(unit, frame.portrait) end',
+    ),
+    # UNIT_POWER_UPDATE is a later-client event. This client reports power as UNIT_MANA, UNIT_ENERGY and so on, so the
+    # party mana and energy bars only refreshed when a health event happened to fire (ticket #14).
+    (
+        'f:RegisterEvent("UNIT_POWER_UPDATE")\n',
+        'f:RegisterEvent("UNIT_POWER_UPDATE")\n'
+        'local partyUnitEvents = { UNIT_HEALTH = true, UNIT_POWER_UPDATE = true, UNIT_PORTRAIT_UPDATE = true, UNIT_NAME_UPDATE = true }\n'
+        'for _, powerEvent in ipairs({ "UNIT_MANA", "UNIT_RAGE", "UNIT_ENERGY", "UNIT_FOCUS", "UNIT_RUNIC_POWER", "UNIT_MAXMANA",\n'
+        '        "UNIT_MAXRAGE", "UNIT_MAXENERGY", "UNIT_MAXFOCUS", "UNIT_MAXRUNIC_POWER", "UNIT_MAXHEALTH", "UNIT_DISPLAYPOWER" }) do\n'
+        '    f:RegisterEvent(powerEvent)\n'
+        '    partyUnitEvents[powerEvent] = true\n'
+        'end\n',
+    ),
+    (
+        'elseif event == "UNIT_HEALTH" or event == "UNIT_POWER_UPDATE" or event == "UNIT_PORTRAIT_UPDATE" or event == "UNIT_NAME_UPDATE" then',
+        'elseif partyUnitEvents[event] then',
     ),
 )
 SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua", "chat_options.lua", "chat_footer.lua", "appearance.lua", "layout_dimensions.lua", "profile_exchange.lua", "action_endcaps.lua", "keybind_mode.lua", "unit_portraits.lua", "settings_interface.lua")
