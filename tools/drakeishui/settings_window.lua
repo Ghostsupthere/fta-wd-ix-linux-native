@@ -501,6 +501,10 @@ local function route(option)
     if category=="Unit Frames" or category=="Party and Raid" then
         local unit,key=id:match("^unit%.([^.]+)%.(.+)$")
         if unitTitles[unit] then
+            if group == "Bar Size" then
+                local section = unit == "raidThin" and "Thin raid" or unit == "raid" and "Full raid" or group
+                return "Unit Frames",unitTitles[unit],"Bar Size",section
+            end
             if key == "portrait" then return "Unit Frames",unitTitles[unit],"Portrait","Portrait" end
             local tab=unitText[key] and "Text" or "Values"
             local section=unit=="raidThin" and "Thin raid" or unit=="raid" and "Full raid" or nil

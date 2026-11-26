@@ -108,7 +108,16 @@ end
 
 local function valueRegion(entry, key, bar)
     local fs = entry[key.."Text"]
-    if fs then return fs end
+    if fs then
+        if fs.drakeishBar ~= bar then
+            local overlay = fs:GetParent()
+            overlay:ClearAllPoints()
+            overlay:SetAllPoints(bar)
+            fs.drakeishBar = bar
+            entry[key.."Look"] = nil
+        end
+        return fs
+    end
     local overlay = CreateFrame("Frame", nil, entry.frame)
     overlay:EnableMouse(false)
     overlay:SetAllPoints(bar)
@@ -116,12 +125,14 @@ local function valueRegion(entry, key, bar)
     fs = overlay:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
     if fs.SetWordWrap then fs:SetWordWrap(false) end
     if fs.SetNonSpaceWrap then fs:SetNonSpaceWrap(false) end
+    fs.drakeishBar = bar
     entry[key.."Text"] = fs
     return fs
 end
 
 local function paint(entry, key, style, unit, blocked)
-    local bar = entry[key]
+    local separatePower = entry.raid and key == "power" and entry.frame.drakeishPowerBar
+    local bar = separatePower and separatePower:IsShown() and separatePower or entry[key]
     if not bar then return end
     local mode = enabled and style[key] or "legacy"
     stock(entry, key, mode ~= "legacy")
@@ -148,7 +159,7 @@ local function paint(entry, key, style, unit, blocked)
     end
     local height, width = bar:GetHeight(), bar:GetWidth()
     local anchor, x, y = "CENTER", 0, 0
-    if entry.raid then
+    if entry.raid and bar ~= separatePower then
         width = width*.46
         height = height/2
         anchor, x, y = "RIGHT", -2, key == "health" and height/2 or -height/2

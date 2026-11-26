@@ -110,29 +110,51 @@ PATCHES = {
         'end\n'
         'local function UnitWidth() return RaidDimension("width",72) end\n',
     ), (
-        '    if RaidFrameStyle() == 2 then return UNIT_H_THIN end\n    return UNIT_H_FULL',
-        '    if RaidFrameStyle() == 2 then return RaidDimension("height", UNIT_H_THIN) end\n    return RaidDimension("height", UNIT_H_FULL)',
+        'local function UnitHeight()\n'
+        '    if RaidFrameStyle() == 2 then return UNIT_H_THIN end\n'
+        '    return UNIT_H_FULL\n'
+        'end',
+        'local function UnitMetrics()\n'
+        '    local thin = RaidFrameStyle() == 2\n'
+        '    local width, height = UnitWidth(), RaidDimension("height", thin and UNIT_H_THIN or UNIT_H_FULL)\n'
+        '    if addon.UnitBarSizes then return addon.UnitBarSizes:RaidMetrics(width, height, thin) end\n'
+        '    return width, height\n'
+        'end\n'
+        'local function CellWidth() return UnitMetrics() end\n'
+        'local function UnitHeight() local _, height = UnitMetrics(); return height end',
     ), (
         'local GROUP_GAP = 6',
         'local function GroupGap() return RaidDimension("gap",6) end',
     ), (
         'f:SetWidth(UNIT_W)',
-        'f:SetWidth(UnitWidth())',
+        'f:SetWidth(CellWidth())',
     ), (
         '(UNIT_W + GROUP_GAP) * GROUPS_PER_ROW',
-        '(UnitWidth() + GroupGap()) * GROUPS_PER_ROW',
+        '(CellWidth() + GroupGap()) * GROUPS_PER_ROW',
     ), (
         '            if raidUnits[i] then raidUnits[i]:SetHeight(h) end\n',
         '            if raidUnits[i] then raidUnits[i]:SetSize(UnitWidth(),h) end\n',
     ), (
         '        if raidPet then raidPet:SetHeight(h) end',
-        '        if raidPet then raidPet:SetSize(UnitWidth(),h) end',
+        '        if raidPet then resizeCell(raidPet) end',
     ), (
         'col * (UNIT_W + GROUP_GAP)',
-        'col * (UnitWidth() + GroupGap())',
+        'col * (CellWidth() + GroupGap())',
     ), (
         'cols * (UNIT_W + GROUP_GAP) - GROUP_GAP + PAD',
-        'cols * (UnitWidth() + GroupGap()) - GroupGap() + PAD',
+        'cols * (CellWidth() + GroupGap()) - GroupGap() + PAD',
+    ), (
+        '        local h = UnitHeight()\n        for i = 1, 40 do',
+        '        local width, height, hw, hh, pw, ph = UnitMetrics()\n'
+        '        local function resizeCell(frame)\n'
+        '            if addon.UnitBarSizes then addon.UnitBarSizes:ResizeRaid(frame, width, height, hw, hh, pw, ph)\n'
+        '            else frame:SetSize(width, height) end\n'
+        '        end\n'
+        '        for i = 1, 40 do',
+    ), (
+        '    local curPP = UnitPower(unit) or 0',
+        '    local curPP = UnitPower(unit) or 0\n'
+        '    if addon.UnitBarSizes then addon.UnitBarSizes:UpdateRaidPower(frame, unit, curPP, maxPP) end',
     )],
     "modules/itemlevel.lua": [
         (
@@ -206,6 +228,11 @@ PATCHES = {
 }
 PATCHES["modules/dragonflightui/modules/partyframes.lua"] = (
     (
+        '        SetPortraitTexture(frame.portrait, unit)',
+        '        if addon.UnitBarSizes then addon.UnitBarSizes:ResizeParty(frame) end\n'
+        '        SetPortraitTexture(frame.portrait, unit)',
+    ),
+    (
         '            frame.portrait:SetPoint("LEFT", frame, "LEFT", 4, 0)',
         '            frame.portrait:SetPoint("LEFT", frame, "LEFT", 4, 0)\n'
         '            if addon.RegisterPartyPortrait then addon.RegisterPartyPortrait(unit, frame.portrait) end',
@@ -227,7 +254,7 @@ PATCHES["modules/dragonflightui/modules/partyframes.lua"] = (
         'elseif partyUnitEvents[event] then',
     ),
 )
-SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua", "chat_options.lua", "chat_footer.lua", "appearance.lua", "layout_dimensions.lua", "profile_exchange.lua", "action_endcaps.lua", "keybind_mode.lua", "unit_portraits.lua", "settings_interface.lua", "tooltip_options.lua")
+SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua", "chat_options.lua", "chat_footer.lua", "appearance.lua", "layout_dimensions.lua", "profile_exchange.lua", "action_endcaps.lua", "keybind_mode.lua", "unit_portraits.lua", "settings_interface.lua", "tooltip_options.lua", "unit_bar_sizes.lua")
 TWEAKS = "fta_ui_tweaks.lua"  # FTA changes that need the whole addon loaded first: listed last in the TOC
 
 
