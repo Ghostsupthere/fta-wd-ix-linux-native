@@ -271,11 +271,15 @@ widgets.slider = function(row)
 end
 
 widgets.colour = function(row)
-    local pick = button(row, 60)
+    -- A flat swatch: the colour fills the whole control and a thin edge keeps dark colours visible. The red
+    -- button art showed around an inset preview.
+    local pick = CreateFrame("Button", nil, row)
+    pick:SetSize(60, 24)
     pick:SetPoint("RIGHT", -8, 0)
-    local swatch = pick:CreateTexture(nil, "ARTWORK")
-    swatch:SetPoint("TOPLEFT", 8, -5)
-    swatch:SetPoint("BOTTOMRIGHT", -8, 5)
+    pick:SetBackdrop({ bgFile = PIXEL, edgeFile = PIXEL, edgeSize = 1 })
+    pick:SetBackdropBorderColor(.37, .32, .25, 1)
+    pick:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(.85, .68, .22, 1) end)
+    pick:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(.37, .32, .25, 1) end)
     pick:SetScript("OnClick", function()
         local option = row.option
         local original = read(option)
@@ -291,7 +295,7 @@ widgets.colour = function(row)
     end)
     row.update = function(_, option)
         local rgb = read(option)
-        swatch:SetTexture(rgb[1], rgb[2], rgb[3], 1)
+        pick:SetBackdropColor(rgb[1], rgb[2], rgb[3], 1)
     end
 end
 
