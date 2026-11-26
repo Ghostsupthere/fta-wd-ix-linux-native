@@ -123,6 +123,13 @@ local function actions()
                     originals[frame]=nil
                     frame:SetSize(stockColumns*stockSize+(stockColumns-1)*gap,math.ceil(12/stockColumns)*(stockSize+gap)-gap)
                 end
+            elseif custom then
+                -- The main bar's holder carries the metal border art; keep it the size of the buttons it frames
+                -- (the stock holder is 526 x 42: twelve 37 px buttons, eleven 7 px gaps and a 5 px margin).
+                local rows=math.ceil(12/cols)
+                setSize(frame,cols*size+(cols-1)*gap+5,rows*size+(rows-1)*gap+5)
+            elseif originals[frame] then
+                setSize(frame)
             end
             local first=_G[prefix..1]
             for i=1,12 do

@@ -75,6 +75,16 @@ PATCHES = {
         '    {"DrakeishUICombinedBags","Combined bags"}, {"DrakeishUI_RaidFrames","Raid frames"},\n'
         '    {"pUiMicroMenu","Micro menu",96,24}}',
     )],
+    # The metal frame art reaches 8 px past the left edge, 4 px past the right and 3 px below the bottom of its
+    # frame, so the combined bag showed a dark rim outside its body. Draw the border inside the frame instead.
+    "modules/native_inventory.lua": [(
+        'layout="ButtonFrameTemplateNoPortrait",noPortrait=true,noCloseButton=true}) end\n',
+        'layout="ButtonFrameTemplateNoPortrait",noPortrait=true,noCloseButton=true}) end\n'
+        '    if host.NineSlice then\n'
+        '        host.NineSlice:ClearAllPoints()\n'
+        '        host.NineSlice:SetPoint("TOPLEFT",host,"TOPLEFT",8,0);host.NineSlice:SetPoint("BOTTOMRIGHT",host,"BOTTOMRIGHT",-4,3)\n'
+        '    end\n',
+    )],
     "modules/buffs.lua": [(
         'end\n\n-- Reuse one driver; aura/anchor bursts',
         '    if addon.Dimensions then addon.Dimensions:ApplyAuras(OFFSET_X) end\n'
@@ -146,8 +156,12 @@ PATCHES = {
         ),
         (
         '    elseif InterfaceOptionsFrame_OpenToCategory then InterfaceOptionsFrame_OpenToCategory(showPanel()) end\n',
-        '    elseif message:match("^%s*$") and addon.Settings then addon.Settings:Open()\n'
+        '    elseif addon.Settings then addon.Settings:Open()\n'
         '    elseif InterfaceOptionsFrame_OpenToCategory then InterfaceOptionsFrame_OpenToCategory(showPanel()) end\n',
+    ), (
+        # The Interface Options pages move into the DrakeishUI settings window (settings_interface.lua).
+        'local function showPanel()\n    if not panel then\n',
+        'local function showPanel()\n    if addon.Settings then return nil end\n    if not panel then\n',
     )],
     "modules/characterpanel/settingscog.lua": [
         (
@@ -192,7 +206,7 @@ PATCHES["modules/dragonflightui/modules/partyframes.lua"] = (
         '            if addon.RegisterPartyPortrait then addon.RegisterPartyPortrait(unit, frame.portrait) end',
     ),
 )
-SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua", "chat_options.lua", "chat_footer.lua", "appearance.lua", "layout_dimensions.lua", "profile_exchange.lua", "action_endcaps.lua", "keybind_mode.lua", "unit_portraits.lua")
+SETTINGS_FILES = ("settings_profiles.lua", "settings_commands.lua", "settings_character.lua", "settings_window.lua", "action_cooldowns.lua", "unit_values.lua", "bag_quality.lua", "chat_options.lua", "chat_footer.lua", "appearance.lua", "layout_dimensions.lua", "profile_exchange.lua", "action_endcaps.lua", "keybind_mode.lua", "unit_portraits.lua", "settings_interface.lua")
 TWEAKS = "fta_ui_tweaks.lua"  # FTA changes that need the whole addon loaded first: listed last in the TOC
 
 
