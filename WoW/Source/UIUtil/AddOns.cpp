@@ -2,6 +2,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <malloc.h>
+#include <string_view>
+#include <unordered_set>
+#include <vector>
 #include "Engine/Source/Base/CDataStore.h"
 #include "Engine/Source/Base/Status.h"
 #include "Engine/Source/BlizzardCore/SFile2-Core.h"
@@ -15,6 +18,7 @@
 #include "Engine/Source/lua-5.1/src/lua.h"
 #include "WoW/Source/Client.h"
 #include "WoW/Source/UIUtil/BannedAddOns.h"
+#include "WoW/Source/UIUtil/RequiredAddons.h"
 #include "WoW/Source/Ui/AddOns.h"
 #include "WoW/Source/WowSvcs/WowSvcsClient/ClientServices.h"
 #include "ThirdParty/zlib/zlib.h"
@@ -24,6 +28,11 @@
 #endif
 #include "WoW/Source/Ui/UIBindings.h"
 
+// Addons of the client-owned bundle (Data\\addon.MPQ) carry "## X-WarcraftXL-Required: 1". They, and what they require, stay enabled
+// whatever an old saved state says and are left out of the public list (character screen, ACP); named queries still find them.
+// Ported from the Waystone x64 client.
+static std::unordered_set<UIADDON*> s_requiredAddOns;
+
 // STATIC: 0x00AD17B4
 static const char* s_addOnLoadableTokens[12] = { "LOADABLE", "MISSING", "DISABLED", "BANNED", "CORRUPT", "INSECURE", "DEMAND_LOADED", "INTERFACE_VERSION", "INCOMPATIBLE", "SECURE", "INSECURE", "BANNED" };
 
@@ -32,6 +41,26 @@ static TSList<ADDONSTATELIST> s_addOnStates;
 
 // STATIC: 0x00C2491C
 static TSHashTable<UIADDON, HASHKEY_STRI> s_addons;
+
+static void RefreshRequiredAddOns() {
+    s_requiredAddOns.clear();
+    std::vector<UIADDON*> pending;
+    for (UIADDON* addon = s_addons.m_fulllist.Head(); addon; addon = s_addons.m_fulllist.Next(addon)) {
+        UIADDON::METADATA* tag = addon->m_metadata.Ptr("X-WarcraftXL-Required");
+        if (tag && tag->m_value && wxl::source::required_addons::Tagged(tag->m_value)) {
+            s_requiredAddOns.insert(addon);
+            pending.push_back(addon);
+        }
+    }
+    for (size_t i = 0; i < pending.size(); ++i) {
+        for (uint32_t d = 0; d < pending[i]->m_requiredDeps.Count(); ++d) {
+            UIADDON* addon = s_addons.Ptr(pending[i]->m_requiredDeps[d]);
+            if (addon && s_requiredAddOns.insert(addon).second) {
+                pending.push_back(addon);
+            }
+        }
+    }
+}
 
 // STATIC: 0x00C24944
 static TSGrowableArray<const char*> s_addOnInfo;
@@ -619,6 +648,7 @@ void ShutdownAddOns() {
         return;
     }
 
+    s_requiredAddOns.clear();
     s_addons.InternalClear(0);
     s_addOnInfo.Clear();
     s_addOnStates.Clear();
@@ -771,7 +801,7 @@ void SetAddOnInfoRequest(CDataStore* msg) {
     s_addOnInfo.SetCount(0);
 
     for (UIADDON* addon = s_addons.m_fulllist.Head(); addon; addon = s_addons.m_fulllist.Next(addon)) {
-        if (!addon->m_blizzard) {
+        if (wxl::source::required_addons::PubliclyListed(addon->m_blizzard, s_requiredAddOns.count(addon) != 0)) {
             *s_addOnInfo.New() = addon->m_key.m_str;
         }
     }
@@ -786,6 +816,12 @@ int32_t GetAddOnEnableState(const char* name, const char* character, bool comput
 
     if (!addon) {
         return 0;
+    }
+
+    // Override stale saved disable flags too, before checking per-character state.
+    // Loadability still performs all version, security and missing-dependency checks.
+    if (s_requiredAddOns.count(addon)) {
+        return 2;
     }
 
     uint32_t total = 0;
@@ -1386,6 +1422,38 @@ static void LoadAddOnInfo(const char* name) {
     }
 }
 
+// Discover bundled TOCs even when an MPQ has no (listfile): the bundle lists its addon folders in Interface\\AddOns\\NativeAddons.manifest.
+// The manifest only discovers; trust, dependencies and load-on-demand rules still come from the TOC parser.
+static void LoadNativeAddOnManifest() {
+    namespace policy = wxl::source::required_addons;
+    SFileImpl* file = nullptr;
+    if (!SFile::OpenEx(nullptr, policy::ManifestPath, 1, &file)) {
+        return;
+    }
+
+    uint32_t high = 0;
+    uint32_t size = SFileGetFileSize(file, &high);
+    if (high || !size || size > policy::MaximumManifestBytes) {
+        SFileCloseFile(file);
+        return;
+    }
+
+    std::vector<char> bytes(size);
+    uint32_t read = 0;
+    bool complete = SFileReadFile(file, bytes.data(), size, &read, nullptr, 0) && read == size;
+    SFileCloseFile(file);
+    if (!complete) {
+        return;
+    }
+
+    policy::VisitManifest(std::string_view(bytes.data(), bytes.size()), [](std::string_view name) {
+        char folder[policy::MaximumNameBytes + 1];
+        memcpy(folder, name.data(), name.size());
+        folder[name.size()] = '\0';
+        LoadAddOnInfo(folder);
+    });
+}
+
 // VERIFY: 786cc374 manual
 // OFFSET: 0x005F8E80
 static int32_t EnumAddOnsArchive(const char* fileName, void* param) {
@@ -1423,8 +1491,11 @@ static int32_t EnumAddOnsDisk(OS_FILE_DATA& data, void* param) {
 // VERIFY: 605b03d2 manual
 // OFFSET: 0x005F8F50
 void InitializeAddOns() {
+    LoadNativeAddOnManifest();
     ListInterfaceArchive("Interface\\AddOns\\", EnumAddOnsArchive, nullptr);
     OsFileList("Interface\\AddOns\\", "*", EnumAddOnsDisk, nullptr, 0);
+
+    RefreshRequiredAddOns();
 
     for (UIADDON* addon = s_addons.m_fulllist.Head(); addon; addon = s_addons.m_fulllist.Next(addon)) {
         for (uint32_t i = 0; i < addon->m_loadWith.Count(); i++) {
@@ -1449,7 +1520,7 @@ void InitializeAddOns(const char* accountName) {
 // VERIFY: ee1f2414 manual
 // OFFSET: 0x005F90B0
 void SetAddOnEnableState(const char* name, const char* character, int32_t state) {
-    bool enabled = state != 0;
+    bool enabled = state != 0 || s_requiredAddOns.count(s_addons.Ptr(name)) != 0;
 
     for (ADDONSTATELIST* list = s_addOnStates.Head(); list; list = s_addOnStates.Next(list)) {
         if (character && SStrCmpI(list->m_name, character, STORM_MAX_STR)) {

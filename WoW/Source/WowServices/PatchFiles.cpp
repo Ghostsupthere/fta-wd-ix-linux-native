@@ -27,7 +27,9 @@ int32_t PatchFiles::EnumPatchArchives(OS_FILE_DATA& data, void* param) {
 // VERIFY: 4fd60074 manual
 // OFFSET: 0x00405AB0
 PatchFiles::PatchFiles(const char* locale, bool flag) {
-    PATCHARCHIVESPEC specs[16] = {
+    PATCHARCHIVESPEC specs[17] = {
+        // Optional client-owned addon bundle (see UIUtil/RequiredAddons.h); moved above every other archive below.
+        { 0, 0, false, "Data\\", "addon.MPQ" },
         { 0, 0, false, "Data\\", "patch-?.MPQ" },
         { 0, 0, false, "Data\\%s\\", "patch-%s-?.MPQ" },
         // FTA extension: two-letter lettered patches (e.g. Patch-YB.mpq, patch-ZB.mpq)
@@ -77,6 +79,19 @@ PatchFiles::PatchFiles(const char* locale, bool flag) {
 
         if (pass == 0) {
             quicksort(this->m_files.Ptr(), this->m_files.Count(), sizeof(char*), CompareStrings, nullptr);
+        }
+    }
+
+    // OpenArchives walks this list backwards with increasing priorities. Keep the client-owned bundle above every other
+    // patch without changing their order.
+    for (uint32_t i = 1; i < this->m_files.Count(); ++i) {
+        if (!SStrCmpI(this->m_files[i], "Data\\addon.MPQ", STORM_MAX_STR)) {
+            char* bundle = this->m_files[i];
+            for (uint32_t j = i; j; --j) {
+                this->m_files[j] = this->m_files[j - 1];
+            }
+            this->m_files[0] = bundle;
+            break;
         }
     }
 }
