@@ -92,7 +92,11 @@ for i = 2, #line do
 end
 zone = string.rep("Long zone name", 20)
 M.tick(1)
-assert(#slots() == 2)
+-- Too wide for the panel: nothing is hidden, labels are dropped and the slots still do not overlap.
+local wide = slots()
+assert(#wide == 3)
+for i = 2, #wide do assert(wide[i - 1].point[4] + wide[i - 1]:GetWidth() <= wide[i].point[4]) end
+assert(not M.find("FontString", "Zone:", true))
 assert(S:Set("footer.2.entry", "itemLevel"))
 assert(M.find("FontString", "iLvl --", true))
 assert(S:Set("footer.enabled", false) and original:GetAlpha() == 1 and #slots() == 0)

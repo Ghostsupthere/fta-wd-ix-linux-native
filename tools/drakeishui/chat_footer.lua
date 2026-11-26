@@ -20,6 +20,7 @@ end
 local names={}
 for _, item in ipairs(entries) do names[item[1]]=item[2] end
 local cfg, slots, savedCoordinates = {}, {}, nil
+local labeledNow=true
 local refresh
 local function apply() refresh() end
 local function option(key,label,kind,default,extra,group)
@@ -59,7 +60,10 @@ end
 
 local function clock()
     local h,m
-    if cfg.time:match("^local") then h,m=tonumber(date("%H")),tonumber(date("%M"))
+    -- The WarcraftXL visual time option pins the client's game clock (GetGameTime) to a fixed hour, so a server
+    -- clock would read the same time forever; show the computer's clock in that case.
+    local pinned=WarcraftXL_GetVisualTime and WarcraftXL_GetVisualTime()
+    if cfg.time:match("^local") or pinned then h,m=tonumber(date("%H")),tonumber(date("%M"))
     else h,m=GetGameTime() end
     if cfg.time:match("12$") then return ("%d:%02d %s"):format((h-1)%12+1,m,h<12 and "AM" or "PM") end
     return ("%02d:%02d"):format(h,m)
@@ -107,7 +111,7 @@ local readers={
     end,
     coordinates=coordinates,
     coordsFPS=function()
-        local format=cfg.style=="labeled" and "%.1f" or "%.0f FPS"
+        local format=labeledNow and "%.1f" or "%.0f FPS"
         return coordinates(), format:format(GetFramerate())
     end,
     xp=function()
@@ -168,39 +172,56 @@ local function placeText(text, slot, value, x)
     return x+math.ceil(text:GetStringWidth())
 end
 
+-- Fills one slot's texts and returns its width, or nil when the readout has nothing to show.
+local function fill(slot, labeled)
+    local reader=readers[slot.entry]
+    if not reader then return end
+    labeledNow=labeled
+    local value, extra=reader()
+    if not value or value=="" then return end
+    slot.value=extra and (value.."  "..extra) or value
+    local x=placeText(slot.label,slot,labeled and labels[slot.entry] or nil,2)
+    x=placeText(slot.fs,slot,value,x)
+    local color=slot.color
+    if labeled and cfg.zoneColor and slot.entry=="zone" then
+        local zoneType=GetZonePVPInfo and GetZonePVPInfo() or "neutral"
+        color=zoneColors[zoneType:lower()] or zoneColors.neutral
+    end
+    slot.fs:SetTextColor(unpack(color))
+    if extra then
+        x=placeText(slot.extraLabel,slot,labeled and "FPS:" or nil,x+6)
+        x=placeText(slot.extra,slot,extra,x)
+    else
+        slot.extraLabel:Hide()
+        slot.extra:Hide()
+    end
+    return x+2
+end
+
+-- Slots sit side by side from the left edge. When the labelled text is wider than the chat panel the labels are
+-- dropped; a slot is never hidden for lack of room (it runs past the panel instead).
 local function render()
     if not cfg.enabled or not host:IsVisible() then return end
-    local width, offset = anchor:GetWidth(), 4
+    local width=anchor:GetWidth()
+    local labeled=cfg.style=="labeled"
+    local sizes={}
+    for pass=1,2 do
+        local total=4
+        for i,slot in ipairs(slots) do
+            sizes[i]=i<=cfg.count and fill(slot,labeled) or nil
+            total=total+(sizes[i] or 0)
+        end
+        if total<=width or not labeled then break end
+        labeled=false
+    end
+    local offset=4
     for i,slot in ipairs(slots) do
-        local reader=i<=cfg.count and readers[slot.entry]
-        local value, extra
-        if reader then value,extra=reader() end
-        if value and value~="" then
-            slot.value=extra and (value.."  "..extra) or value
-            local labeled=cfg.style=="labeled"
-            local x=placeText(slot.label,slot,labeled and labels[slot.entry] or nil,2)
-            x=placeText(slot.fs,slot,value,x)
-            local color=slot.color
-            if labeled and cfg.zoneColor and slot.entry=="zone" then
-                local zoneType=GetZonePVPInfo and GetZonePVPInfo() or "neutral"
-                color=zoneColors[zoneType:lower()] or zoneColors.neutral
-            end
-            slot.fs:SetTextColor(unpack(color))
-            if extra then
-                x=placeText(slot.extraLabel,slot,labeled and "FPS:" or nil,x+6)
-                x=placeText(slot.extra,slot,extra,x)
-            else
-                slot.extraLabel:Hide()
-                slot.extra:Hide()
-            end
-            local size=x+2
-            if offset+size <= width then
-                slot:ClearAllPoints()
-                slot:SetPoint("LEFT",host,"LEFT",offset,0)
-                slot:SetWidth(size)
-                slot:Show()
-                offset=offset+size
-            else slot:Hide() end
+        if sizes[i] then
+            slot:ClearAllPoints()
+            slot:SetPoint("LEFT",host,"LEFT",offset,0)
+            slot:SetWidth(sizes[i])
+            slot:Show()
+            offset=offset+sizes[i]
         else slot:Hide() end
     end
 end

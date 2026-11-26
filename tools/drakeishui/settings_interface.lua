@@ -122,14 +122,16 @@ local function refreshBags() if L.RefreshBags then L:RefreshBags() end end
 local function bagOption(key, name, kind, default, extra, after)
     local option = extra or {}
     option.name, option.type, option.default = name, kind, default
-    option.category, option.group, option.protected = "Bags", "Combined bags", true
+    option.category, option.protected = "Bags", true
+    option.group = option.group or "Combined bags"
     option.localGet = function() return db()[key] end
     option.localSet = function(value) db()[key] = value; if after then after() end; refreshBags() end
     register("layout." .. key, option)
 end
 bagOption("combined", "Combine carried bags into one window", "toggle", false, { keywords = "backpack single window" })
 bagOption("bagScale", "Bag scale", "slider", 1, { min = .5, max = 1.5, step = .05 })
-bagOption("bagSpacing", "Space between separate bags", "slider", 14, { min = 4, max = 40, step = 1 })
+bagOption("bagSpacing", "Space between separate bags", "slider", 14, { min = 4, max = 40, step = 1, group = "Separate bags",
+    keywords = "gap distance windows only when bags are not combined" })
 bagOption("columns", "Combined bag columns", "slider", 20, { min = 8, max = 28, step = 1 })
 bagOption("bagSlotSpacing", "Combined bag item spacing", "slider", 4, { min = 0, max = 16, step = 1 })
 bagOption("sortMode", "Sort and group by", "dropdown", "Type", {
