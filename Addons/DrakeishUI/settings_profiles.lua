@@ -13,6 +13,13 @@ end
 
 function S:Register(option)
     assert(type(option.id) == "string" and not self.byID[option.id], "Duplicate settings ID")
+    -- Options stored here (not localGet ones) can have their default replaced by shipped_defaults.lua.
+    local shipped = addon.ShippedDefaults
+    local value
+    if shipped and not option.localGet then value = shipped.settings[option.id] end
+    -- The option's own check can swap a value this client lacks (3D portraits become 2D without engine support).
+    if value ~= nil and option.validate then value = option.validate(value) end
+    if value ~= nil then option.default = value end
     self.byID[option.id] = option
     self.options[#self.options + 1] = option
 end

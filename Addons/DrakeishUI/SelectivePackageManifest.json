@@ -3,8 +3,8 @@
   "files": [
     {
       "path": "DrakeishUI.toc",
-      "size": 2027,
-      "sha256": "e1deac814b592e8e5ecd106168f62a9516c161c26c932773217f40cc7b4ae106",
+      "size": 2048,
+      "sha256": "5cb60ff7fc6a9e0ac88330967112d21fed0a5e99c0b71856e7ec9a9857ffb9c4",
       "source": "windows"
     },
     {
@@ -7106,6 +7106,12 @@
       "source": "fta"
     },
     {
+      "path": "shipped_defaults.lua",
+      "size": 4952,
+      "sha256": "6484c9e300a2e2a22afd2ba1804cf9c2197e19c2ec9a43ed2879dd3e7aabdf77",
+      "source": "fta"
+    },
+    {
       "path": "nameplate_options.lua",
       "size": 15187,
       "sha256": "1f1427264bafeca684ec97e93652963126a8765b1b6a1e1a6e0072ff6f1903fc",
@@ -7125,8 +7131,8 @@
     },
     {
       "path": "modules/Kui_Nameplates/Core/Core.lua",
-      "size": 17312,
-      "sha256": "0e7d6317b6eb2cc763ba7e26e0fb94226b9cef0af1bcc21a3cc3eb712e8894eb",
+      "size": 17742,
+      "sha256": "f66c1176e6efaf86e764c4749ef78053f7ac5f4958eef6864845b7c1e656c3e6",
       "source": "kui-nameplates"
     },
     {
@@ -8751,8 +8757,8 @@
     },
     {
       "path": "modules/native_layout.lua",
-      "size": 26495,
-      "sha256": "d3b7145caccf96c27c0b0fa97f1b4f53933cc622070248887d50405e04c2e9ed",
+      "size": 26832,
+      "sha256": "88f398e48275630b56469a1657f12ee7c4cd19ff5c5a0e363bcb1e0490961d65",
       "source": "windows"
     },
     {
@@ -9249,8 +9255,8 @@
     },
     {
       "path": "settings_profiles.lua",
-      "size": 9375,
-      "sha256": "5dddb927f17c1b5ff074736e6b6d7eafaca31a30ec9aeb1af282c0939830dd19",
+      "size": 9867,
+      "sha256": "5cc95ee6e79f84cc0c182af5691268a76d3344f8f648eb03456398d5c7edb79e",
       "source": "fta-tweaks"
     },
     {

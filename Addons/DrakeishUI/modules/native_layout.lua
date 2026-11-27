@@ -9,7 +9,11 @@ L.outlineTypes={{"Equipment",.25,.6,1},{"Consumables",.25,1,.35},{"Trade goods",
     {"Quest items",1,.9,.15},{"Recipes",.8,.35,1},{"Gems",1,.3,.5},{"Junk",.55,.55,.55}}
 local function finite(n) return type(n)=="number" and n==n and math.abs(n)<100000 end
 function L:DB()
-    if type(DrakeishUI_LayoutDB)~="table" then DrakeishUI_LayoutDB={} end
+    if type(DrakeishUI_LayoutDB)~="table" then
+        DrakeishUI_LayoutDB={}
+        -- A character with no saved layout starts with the one in shipped_defaults.lua.
+        if addon.ShippedDefaults then addon.ShippedDefaults:SeedLayout(DrakeishUI_LayoutDB) end
+    end
     local db=DrakeishUI_LayoutDB
     for key,value in pairs(defaults) do
         if type(db[key])~=type(value) or (type(value)=="number" and not finite(db[key])) then db[key]=value end
@@ -242,6 +246,7 @@ function L:ResetBars()
     if InCombatLockdown() then return end
     local db=self:DB()
     db.bars={};db.bagX=nil;db.bagY=nil;self.applying=true
+    if addon.ShippedDefaults then addon.ShippedDefaults:SeedPositions(db) end
     for _,entry in pairs(self.scaleBases) do entry.frame:SetScale(entry.scale) end
     if DrakeishUI_MinimapBorder then DrakeishUI_MinimapBorder:SetScale(1) end
     for _,entry in pairs(self.entries) do
@@ -250,7 +255,9 @@ function L:ResetBars()
     end
     if MinimalChatAnchor then
         MinimalChatAnchor:ClearAllPoints();MinimalChatAnchor:SetPoint("BOTTOMLEFT",UIParent,"BOTTOMLEFT",16,40)
-        db.bars.MinimalChatAnchor={x=166/UIParent:GetWidth(),y=90/UIParent:GetHeight(),scale=1}
+        if not db.bars.MinimalChatAnchor then
+            db.bars.MinimalChatAnchor={x=166/UIParent:GetWidth(),y=90/UIParent:GetHeight(),scale=1}
+        end
     end
     self.applying=false
     if MultiActionBar_Update then MultiActionBar_Update() end

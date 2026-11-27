@@ -4,6 +4,7 @@
 -- All rights reserved
 -- Backported by: Kader at https://github.com/bkader
 ]]
+local _, ns = ... -- DrakeishUI's shared table
 local addon = LibStub("AceAddon-3.0"):NewAddon("KuiNameplates", "AceEvent-3.0", "AceTimer-3.0")
 -- Embedded under DrakeishUI, so Kui_Nameplates is not a registered AddOn name.
 addon.version = GetAddOnMetadata("Kui_Nameplates", "Version")
@@ -496,6 +497,16 @@ do
 end
 ------------------------------------------------------------------------ init --
 function addon:OnInitialize()
+	-- FTA: shipped_defaults.lua replaces some of Kui's defaults.
+	local shipped = ns and ns.ShippedDefaults
+	if shipped then
+		local font = defaults.profile.fonts.options.font
+		shipped:Merge(defaults.profile, shipped.nameplates)
+		-- The shipped font has Latin glyphs only; other locales keep Kui's choice.
+		if not latin then
+			defaults.profile.fonts.options.font = font
+		end
+	end
 	self.db = LibStub("AceDB-3.0"):New("KuiNameplatesGDB", defaults)
 	self:FinalizeOptions()
 

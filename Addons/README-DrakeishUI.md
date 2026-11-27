@@ -43,6 +43,22 @@ If `--3way` cannot find the base files in your checkout, use `git apply -p3 --re
 
 Some features depend on the Linux client engine in this repo and may behave differently on other clients.
 
+## Starting settings
+
+`shipped_defaults.lua` holds the look a new player gets, so it does not have to be set up by hand. Edit that one file to change it.
+
+| Table | Applies to |
+|---|---|
+| `settings` | Every character that has not changed that option. Resetting the option returns to this value. |
+| `nameplates` | The same, for Kui Nameplates settings. |
+| `layout` | Characters with no saved layout: bag layout, chat size, message positions, bar and minimap sizes. |
+| `frames` | Frame positions and scales for those characters, and for **Reset Positions**. |
+
+- **A character with a saved layout keeps it.** To get the new positions, use **Reset Positions**. It does not change bar sizes or bag layout.
+- Resetting a settings section still returns sizes and element scales to their stock values, not to the `layout` table.
+- Positions are distances from a screen edge or the centre, so their spacing holds on other screen shapes. They were set on an ultrawide screen at UI scale 0.83. The game's UI scale is a video setting, and the addon does not change it.
+- A choice the client does not support falls back: 3D party portraits become 2D without the Linux client's engine support.
+
 ## Tests
 
 The tests need `lua5.1` and a complete addon folder (the bundle's copy with this folder copied over it). From the repo root:
