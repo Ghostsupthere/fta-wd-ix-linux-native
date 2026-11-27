@@ -49,6 +49,26 @@ S:Register({
     end,
 })
 
+-- The extras that come with the Drakeish texture (modules\Kui_Nameplates\Modules\Drakeish.lua).
+for _, extra in ipairs({
+    { "drakeishBorder", "drakeishborder", "Drakeish border and background" },
+    { "drakeishMarker", "drakeishmarker", "Drakeish moving marker" },
+}) do
+    local id, key, name = unpack(extra)
+    S:Register({
+        id = "nameplates." .. id, name = name, type = "toggle", default = true,
+        category = CATEGORY, page = STYLE_PAGE, group = "Drakeish texture", keywords = "kui cast bar spark frame",
+        desc = "Applies when Status bar texture, on the General display page, is set to Drakeish.",
+        localGet = function() local n = kui(); return not n or n.db.profile.general[key] ~= false end,
+        localSet = function(on)
+            local n = kui()
+            if not n then return end
+            n.db.profile.general[key] = on ~= false
+            n:GetModule("DrakeishStyle"):Refresh()
+        end,
+    })
+end
+
 -- Kui's options ----------------------------------------------------------------------------------------------
 local function plain(text, fallback)
     if type(text) ~= "string" then return fallback end
@@ -184,6 +204,99 @@ local function walk(args, handler, path, page, group)
     end
 end
 
+-- Separate fonts for names and health text (modules\Kui_Nameplates\Modules\TextFonts.lua).
+local function textFontRows()
+    local library = LibStub("LibSharedMedia-3.0")
+    local function fontChoices()
+        local result = { { value = "same", name = "Same as Font" } }
+        for _, name in ipairs(library:List("font")) do
+            result[#result + 1] = { value = name, name = name, path = library:Fetch("font", name) }
+        end
+        return result
+    end
+    local function row(id, key, option)
+        option.id, option.category, option.page, option.group = "nameplates." .. id, CATEGORY, "Fonts", "Name and health text"
+        option.keywords = "kui nameplate enemy name health text font bold"
+        option.localGet = function()
+            local value = kui().db.profile.general[key]
+            if value == nil then return option.default end
+            return value
+        end
+        option.localSet = function(value)
+            if value == option.default then value = nil end
+            kui().db.profile.general[key] = value
+            kui():GetModule("TextFonts"):Refresh()
+        end
+        S:Register(option)
+    end
+    local boldHelp = "Works with Arial Narrow (using the look-alike Nimbus Sans Narrow Bold) and Expressway. "
+        .. "FrancoisOne and Yanone Kaffesatz are always bold. Other fonts have no bold version."
+    for _, part in ipairs({ { "name", "Enemy name" }, { "health", "Health text" } }) do
+        local key, title = unpack(part)
+        row(key .. "Font", key .. "font", { name = title .. " font", type = "font", default = "same", choices = fontChoices,
+            desc = "Same as Font follows the shared Font setting on this page." })
+        row(key .. "Bold", key .. "bold", { name = title .. " bold", type = "toggle", default = false, desc = boldHelp })
+    end
+end
+
+local function shortenRow()
+    S:Register({
+        id = "nameplates.shortenNames", name = "Shorten long enemy names", type = "toggle", default = false,
+        category = CATEGORY, page = "Text", group = "Name", keywords = "kui nameplate truncate cut off dots",
+        desc = "Cuts names that are wider than the health bar and ends them with three dots. Off shows the whole name.",
+        localGet = function() return not not kui().db.profile.general.shortennames end,
+        localSet = function(on)
+            local nameplates = kui()
+            nameplates.db.profile.general.shortennames = on and true or nil
+            for _, plate in pairs(nameplates.frameList) do
+                local f = plate.kui
+                if f and f:IsShown() and not f.nameonly then f:SetName() end
+            end
+        end,
+    })
+end
+
+-- The debuff rows (modules\Kui_Nameplates\Modules\Debuffs.lua).
+local function debuffRows()
+    local function module() return kui():GetModule("Debuffs") end
+    local function row(key, group, name, kind, extra)
+        local option = extra or {}
+        local default = module().db.defaults.profile[key]
+        option.id, option.name, option.type, option.default = "nameplates.debuffs." .. key, name, kind, default
+        option.category, option.page, option.group = CATEGORY, "Debuffs", group
+        option.keywords = "kui nameplate debuff aura dot " .. name
+        option.localGet = function() return module().db.profile[key] end
+        option.localSet = function(value)
+            if value == nil then value = default end
+            module().db.profile[key] = value
+            module():Refresh()
+        end
+        S:Register(option)
+    end
+    local function slider(key, group, name, minimum, maximum, desc)
+        row(key, group, name, "slider", { min = minimum, max = maximum, step = 1, desc = desc })
+    end
+    row("enabled", "Debuffs", "Show debuffs", "toggle")
+    row("filter", "Debuffs", "Whose debuffs", "dropdown", {
+        desc = "Only yours includes your pet and vehicle.",
+        choices = { { value = "mine", name = "Only yours" }, { value = "all", name = "Everyone's" } },
+    })
+    row("position", "Debuffs", "Position", "dropdown", {
+        desc = "Under the bar, the icons move below the cast bar while one is showing.",
+        choices = { { value = "below", name = "Under the health bar" }, { value = "above", name = "Above the nameplate" } },
+    })
+    slider("size", "Layout", "Icon size", 8, 40)
+    slider("max", "Layout", "Most icons shown", 1, 12, "The ones with the least time left come first.")
+    slider("spacing", "Layout", "Icon spacing", 0, 10)
+    slider("x", "Layout", "Horizontal offset", -60, 60)
+    slider("y", "Layout", "Vertical offset", -60, 60, "Positive values move the icons up.")
+    row("timer", "Icon details", "Time left numbers", "toggle")
+    row("sweep", "Icon details", "Cooldown sweep", "toggle")
+    row("stacks", "Icon details", "Stack count", "toggle")
+    row("colour", "Icon details", "Border color by debuff type", "toggle",
+        { desc = "Magic blue, curse purple, disease brown, poison green, others red. Off uses a black border." })
+end
+
 local function build()
     local nameplates = kui()
     if built or not nameplates then return end
@@ -199,6 +312,9 @@ local function build()
             walk(entry.args, entry.handler or root.handler, { item.key }, page, "General")
         end
     end
+    textFontRows()
+    shortenRow()
+    debuffRows()
     built = true
     applyMode()
     S:Refresh()

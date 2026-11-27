@@ -302,6 +302,176 @@ assert(S:Get("nameplates.height") == 40 and Kui.db.profile.general.offsety == 40
 InterfaceOptionsCombatPanel:Hide(); InterfaceOptionsCombatPanel:Show()
 InterfaceOptionsFrame:Hide(); noErrors("interface options")
 
+-- The Drakeish texture: cast bar art, a marker on the fill's edge, and the two extras.
+do
+    local texture = "nameplates.kui.general.bartexture"
+    local bar = plate.kui.health
+    assert(not bar.drakeishArt, "nothing is added until the texture is chosen")
+    local listed
+    for _, choice in ipairs(S.byID[texture].choices()) do listed = listed or choice.value == "Drakeish" end
+    assert(listed, "Drakeish is not in the texture list")
+    assert(S:Set(texture, "Drakeish")); tick(); noErrors("drakeish")
+    local art = assert(bar.drakeishArt)
+    assert(bar:GetStatusBarTexture()._texture:match("drakeish%-fill$"))
+    assert(art.border._texture:match("CastingBarFrame2$") and art.background._texture:match("CastingBarBackground2$"))
+    assert(art.border:IsShown() and art.background:IsShown() and plate.kui.bg.fill._vertex[4] == 0)
+    local point = art.marker._points[#art.marker._points]
+    assert(point[2] == bar:GetStatusBarTexture() and point[3] == "RIGHT", "marker rides the fill edge")
+    -- Kui animates health; each animation step goes through the bar's original SetValue.
+    local step = bar.OrigSetValue or bar.SetValue
+    bar:SetMinMaxValues(0, 100); step(bar, 60)
+    assert(art.marker:IsShown())
+    step(bar, 100); assert(not art.marker:IsShown(), "hidden on a full bar")
+    step(bar, 0); assert(not art.marker:IsShown(), "hidden on an empty bar")
+    step(bar, 40); assert(art.marker:IsShown())
+    bar:SetStatusBarColor(1, 0, 0)
+    assert(art.marker._vertex[1] == 1 and art.marker._vertex[2] == .5 and art.marker._vertex[3] == .5)
+    assert(S:Set("nameplates.kui.general.hheight", 22)); noErrors("drakeish resize")
+    assert(bar:GetHeight() == 20 and art.marker:GetHeight() == 64 and art.border._points[1][5] == 4)
+    assert(S:Set("nameplates.drakeishBorder", false))
+    assert(not art.border:IsShown() and not art.background:IsShown() and art.marker:IsShown())
+    assert(plate.kui.bg.fill._vertex[4] == .2)
+    assert(S:Set("nameplates.drakeishMarker", false) and not art.marker:IsShown())
+    step(bar, 70); assert(not art.marker:IsShown())
+    assert(S:Set("nameplates.drakeishBorder", true) and S:Set("nameplates.drakeishMarker", true))
+    assert(art.border:IsShown() and art.marker:IsShown())
+    plate:Hide(); plate:Show(); tick(); noErrors("drakeish reshow")
+    S.byID["nameplates.kui.general.hheight"].localSet(nil)
+    S.byID[texture].localSet(nil); tick(); noErrors("drakeish off")
+    assert(not art.border:IsShown() and not art.background:IsShown() and not art.marker:IsShown())
+    assert(plate.kui.bg.fill._vertex[4] == .2)
+end
+
+-- Separate name and health fonts, with bold where a bold file exists.
+do
+    local K_PATH = "Interface\\AddOns\\DrakeishUI\\modules\\Kui_Nameplates\\Media\\f\\"
+    local nameText, healthText, level = plate.kui.name, plate.kui.health.p, plate.kui.level
+    local function font(region) return (region:GetFont()) end
+    local shared = font(level)
+    local library = LibStub("LibSharedMedia-3.0")
+    local expressway = assert(library:Fetch("font", "Expressway", true))
+    assert(font(nameText) == shared and font(healthText) == shared)
+    local listed
+    for _, choice in ipairs(S.byID["nameplates.nameFont"].choices()) do listed = listed or choice.value == "Expressway" end
+    assert(listed, "Expressway is not listed")
+    assert(S:Set("nameplates.nameFont", "Expressway")); tick(); noErrors("name font")
+    assert(font(nameText) == expressway and font(healthText) == shared and font(level) == shared)
+    assert(S:Set("nameplates.nameBold", true) and font(nameText) == K_PATH .. "expressway-bold.ttf")
+    assert(S:Set("nameplates.healthFont", "Arial Narrow") and S:Set("nameplates.healthBold", true))
+    assert(font(healthText) == K_PATH .. "nimbus-sans-narrow-bold.otf")
+    assert(font(nameText) == K_PATH .. "expressway-bold.ttf")
+    -- Changing the shared font, sizes or outline must not undo the separate ones.
+    assert(S:Set("nameplates.kui.fonts.options.font", "Skurri")); tick(); noErrors("shared font")
+    assert(font(level) == library:Fetch("font", "Skurri"))
+    assert(font(nameText) == K_PATH .. "expressway-bold.ttf" and font(healthText) == K_PATH .. "nimbus-sans-narrow-bold.otf")
+    assert(S:Set("nameplates.kui.fonts.options.fontscale", 1.5) and S:Set("nameplates.kui.fonts.options.outline", true))
+    plate:Hide(); plate:Show(); tick(); noErrors("fonts reshow")
+    assert(font(nameText) == K_PATH .. "expressway-bold.ttf")
+    -- Same as Font follows the shared one; a font without a bold file stays as it is.
+    assert(S:Set("nameplates.nameFont", "same"))
+    assert(font(nameText) == font(level), "Skurri has no bold version")
+    for _, id in ipairs({ "nameFont", "nameBold", "healthFont", "healthBold" }) do S.byID["nameplates." .. id].localSet(nil) end
+    for _, id in ipairs({ "font", "fontscale", "outline" }) do S.byID["nameplates.kui.fonts.options." .. id].localSet(nil) end
+    tick(); noErrors("fonts reset")
+    assert(Kui.db.profile.general.namefont == nil and Kui.db.profile.general.healthbold == nil)
+    assert(font(nameText) == font(level) and font(healthText) == font(level))
+    for _, file in ipairs({ "expressway-bold.ttf", "nimbus-sans-narrow-bold.otf" }) do
+        assert(io.open(K .. "Media/f/" .. file), file .. " is missing")
+    end
+end
+
+-- Long names show in full unless shortening is switched on.
+do
+    local long = "Wastewander Bandit Ringleader of the Southern Dunes"
+    name._text = long
+    plate:Hide(); plate:Show(); tick(); noErrors("long name")
+    assert(plate.kui.name:GetText() == long, "name was cut: " .. plate.kui.name:GetText())
+    assert(S:Set("nameplates.shortenNames", true)); noErrors("shorten")
+    local short = plate.kui.name:GetText()
+    assert(short:match("%.%.%.$") and #short < #long and plate.kui.name:GetStringWidth() <= plate.kui.health:GetWidth())
+    assert(S:Set("nameplates.shortenNames", false) and plate.kui.name:GetText() == long)
+    name._text = "Wastewander Thief"
+    plate:Hide(); plate:Show(); tick()
+end
+
+-- Debuff rows, read through the client's nameplate unit tokens.
+do
+    local debuffs = {}
+    local function aura(spell, caster, left, duration, kind, stacks)
+        return { spell, "", "Interface\\Icons\\" .. spell, stacks or 0, kind, duration, duration > 0 and (now + left) or 0, caster }
+    end
+    function UnitDebuff(unit, index)
+        assert(unit == "nameplate3", unit)
+        if debuffs[index] then return unpack(debuffs[index], 1, 8) end
+    end
+    local present = true
+    C_NamePlate = {
+        GetNamePlates = function() return present and { plate } or {} end,
+        GetNamePlateForUnit = function(unit) if present and unit == "nameplate3" then return plate end end,
+    }
+    local Module = Kui:GetModule("Debuffs")
+    local f = plate.kui
+    local function row() Module:Scan(); noErrors("debuff scan"); return f.debuffs end
+    local function shown()
+        local list = {}
+        if f.debuffs and f.debuffs:IsShown() then
+            for _, button in ipairs(f.debuffs.buttons) do
+                if button:IsShown() then list[#list + 1] = button.icon._texture:match("([^\\]+)$") end
+            end
+        end
+        return table.concat(list, ",")
+    end
+    local function point() local p = f.debuffs._points[#f.debuffs._points]; return p[1], p[2], p[3], p[4], p[5] end
+    plate:Hide(); plate:Show(); tick()
+    assert(not f.debuffs or not f.debuffs:IsShown())
+    debuffs = { aura("Rend", "player", 12, 15, ""), aura("Sunder", "party1", 25, 30, nil, 3),
+        aura("Poison", "pet", 4, 12, "Poison", 2), aura("Mark", "player", 0, 0, "Magic"), aura("Unknown", nil, 8, 10, "Curse") }
+    row()
+    assert(shown() == "Poison,Rend,Mark", "only yours, soonest first, permanent last: " .. shown())
+    local first, last = f.debuffs.buttons[1], f.debuffs.buttons[3]
+    assert(first.time:GetText() == "4" and first.count:IsShown() and first.count:GetText() == 2)
+    assert(first.border._vertex[2] == .6 and first.border._vertex[1] == 0, "poison border")
+    assert(not last.time:IsShown() and not last.cooldown:IsShown(), "permanent debuffs have no timer")
+    assert(f.debuffs:GetWidth() == 3 * 16 + 2 * 2)
+    local a, to, b, _, y = point()
+    assert(a == "TOP" and to == f.health and b == "BOTTOM" and y == -5)
+    -- The cooldown is only restarted when the debuff is applied again.
+    local sets = 0
+    first.cooldown.SetCooldown = function() sets = sets + 1 end
+    row(); row(); assert(sets == 0)
+    debuffs[3] = aura("Poison", "pet", 12, 12, "Poison", 2); row()
+    assert(shown() == "Rend,Poison,Mark", shown())
+    -- Under a casting bar the row drops below the cast text.
+    if f.castbar then
+        f.castbar:Show(); row()
+        a, to = point(); assert(to == (f.castbar.name or f.castbar.bg), "row should sit under the cast bar")
+        f.castbar:Hide(); row(); a, to = point(); assert(to == f.health)
+    end
+    assert(S:Set("nameplates.debuffs.filter", "all")); noErrors("all debuffs")
+    assert(shown() == "Unknown,Rend,Poison,Sunder,Mark", shown())
+    assert(S:Set("nameplates.debuffs.max", 2) and shown() == "Unknown,Rend", shown())
+    assert(S:Set("nameplates.debuffs.size", 24) and f.debuffs.buttons[1]:GetWidth() == 24)
+    assert(S:Set("nameplates.debuffs.position", "above"))
+    a, to, b = point(); assert(a == "BOTTOM" and to == f.name and b == "TOP")
+    assert(S:Set("nameplates.debuffs.colour", false) and f.debuffs.buttons[1].border._vertex[1] == 0)
+    assert(S:Set("nameplates.debuffs.timer", false) and not f.debuffs.buttons[1].time:IsShown())
+    assert(S:Set("nameplates.debuffs.sweep", false) and not f.debuffs.buttons[1].cooldown:IsShown())
+    assert(S:Set("nameplates.kui.fonts.options.font", "Skurri")); noErrors("debuff font")
+    S.byID["nameplates.kui.fonts.options.font"].localSet(nil)
+    assert(S:Set("nameplates.debuffs.enabled", false) and shown() == "")
+    assert(S:Set("nameplates.debuffs.enabled", true) and shown() ~= "")
+    -- A recycled plate drops the old icons at once; a plate that is gone is left alone.
+    plate:Hide(); plate:Show(); assert(shown() == "", "stale debuffs on a recycled plate")
+    tick(); row(); assert(shown() ~= "", "shown=" .. tostring(f:IsShown()))
+    debuffs = {}; row(); assert(shown() == "")
+    S:Reset("Nameplates"); tick()
+    assert(Module.db.profile.filter == "mine" and Module.db.profile.size == 16 and Module.db.profile.position == "below")
+    present = false; row()
+    C_NamePlate = nil; row()
+    -- Leave the tick() driver harmless for the rest of the test.
+    function UnitDebuff() end
+end
+
 assert(SlashCmdList.KUINAMEPLATES); SlashCmdList.KUINAMEPLATES(); assert(opened == "Nameplates")
 
 -- Every generated row: reads as saved, accepts another value, and returns to its default.
@@ -370,7 +540,7 @@ for _, option in ipairs(S.options) do
         drawn[#drawn + 1] = option.id
     end
 end
-assert(#drawn == 95, #drawn .. " rows drawn")
+assert(#drawn == 114, #drawn .. " rows drawn")
 
 print("Nameplates: load, client plate layout, styles, height, /knp and " .. count .. " Kui settings passed ("
     .. table.concat(summary, ", ") .. ")")
