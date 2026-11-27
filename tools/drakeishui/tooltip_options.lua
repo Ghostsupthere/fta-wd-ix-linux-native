@@ -4,8 +4,10 @@ if not tip then return end
 
 local prefix = "tooltip."
 local comparisons = { ShoppingTooltip1, ShoppingTooltip2, ShoppingTooltip3 }
-local ownerAnchor, defaultOwner, stock, lastX, lastY
+local ownerAnchor, defaultOwner, stock, lastPoint, lastX, lastY
+local settledOwner, settledHeight
 local originalAlpha, idLine, idKind, idValue
+local worldUnit, lastAlpha
 local refresh
 local controls = CreateFrame("Frame")
 controls:Hide()
@@ -36,7 +38,10 @@ end
 register("anchor", "Placement", "Placement", "dropdown", "stock", {choices = choices(
     "stock", "Stock", "cursor", "Cursor", "left", "Cursor left", "right", "Cursor right", "fixed", "Fixed")})
 register("x", "Horizontal offset", "Placement", "slider", 0, {min = -300, max = 300, step = 1})
-register("y", "Vertical offset", "Placement", "slider", 0, {min = -300, max = 300, step = 1})
+register("y", "Vertical offset", "Placement", "slider", 0, {min = -300, max = 300, step = 1,
+    desc = "In the cursor modes, a negative value is the gap from the cursor down to the top of the tooltip."})
+register("instant", "Hide tooltips instantly (no fade)", "Visibility", "toggle", false,
+    {keywords = "fade fading slow linger disappear"})
 register("combat", "Hide in combat", "Visibility", "toggle", false)
 register("modifier", "Show hidden tips with", "Visibility", "dropdown", "shift", {choices = choices(
     "none", "None", "shift", "Shift", "ctrl", "Control", "alt", "Alt")})
@@ -97,7 +102,7 @@ end
 local function restorePlacement()
     if not stock then return end
     local saved = stock
-    stock, lastX, lastY = nil, nil, nil
+    stock, lastPoint, lastX, lastY = nil, nil, nil, nil
     tip:SetAnchorType(saved.anchor, saved.x, saved.y)
     tip:ClearAllPoints()
     for _, point in ipairs(saved.points) do tip:SetPoint(unpack(point, 1, 5)) end
@@ -111,14 +116,34 @@ local function place(mode)
     local cursorX, cursorY = screenW, 0
     if mode ~= "fixed" then cursorX, cursorY = GetCursorPosition() end
     local width, height = tip:GetWidth() * scale, tip:GetHeight() * scale
-    local shift = mode == "cursor" and width * .5 or (mode == "left" or mode == "fixed") and width or 0
-    local x = math.max(0, math.min(screenW - width, cursorX - shift + value("x") * screenScale))
-    local y = math.max(0, math.min(screenH - height, cursorY + value("y") * screenScale))
+    -- Attach the corner or edge that faces the cursor. Refreshed tooltips are
+    -- shown before other addons finish adding lines, so the position must not
+    -- depend on the size, or it jumps for a frame on every refresh.
+    local horizontal = mode == "cursor" and "" or mode == "right" and "LEFT" or "RIGHT"
+    local shift = mode == "cursor" and width * .5 or mode == "right" and 0 or width
+    local x = cursorX + value("x") * screenScale
+    x = math.max(shift, math.min(screenW - width + shift, x))
+    local vertical = "BOTTOM"
+    local offsetY = value("y") * screenScale
+    local y = cursorY + offsetY
+    if mode ~= "fixed" and offsetY < 0 then
+        -- Decide the side using the finished height from the last refresh.
+        local needed = height
+        if settledHeight and settledOwner == tip:GetOwner() then needed = math.max(height, settledHeight) end
+        if y - needed >= 0 then
+            vertical, y = "TOP", math.min(screenH, y)
+        else
+            -- No room underneath: use the same gap above instead.
+            y = cursorY - offsetY
+        end
+    end
+    if vertical == "BOTTOM" then y = math.max(0, math.min(screenH - height, y)) end
     x, y = x / scale, y / scale
-    if x ~= lastX or y ~= lastY then
+    local point = vertical .. horizontal
+    if point ~= lastPoint or x ~= lastX or y ~= lastY then
         tip:ClearAllPoints()
-        tip:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, y)
-        lastX, lastY = x, y
+        tip:SetPoint(point, UIParent, "BOTTOMLEFT", x, y)
+        lastPoint, lastX, lastY = point, x, y
     end
 end
 
@@ -206,8 +231,9 @@ refresh = function()
 end
 
 hooksecurefunc(tip, "SetOwner", function(_, _, anchor, x, y)
-    defaultOwner, stock, lastX, lastY = nil, nil, nil, nil
+    defaultOwner, stock, lastPoint, lastX, lastY = nil, nil, nil, nil, nil
     originalAlpha, idLine, idKind, idValue = nil, nil, nil, nil
+    worldUnit, lastAlpha = nil, nil
     -- Native SetOwner clears content, so a new owner takes precedence over
     -- the previous snapshot even when it happens to use the same frame.
     ownerAnchor = {anchor or "ANCHOR_LEFT", x, y}
@@ -228,12 +254,45 @@ tip:HookScript("OnHide", function()
     controls:Hide()
     if originalAlpha ~= nil then tip:SetAlpha(originalAlpha); originalAlpha = nil end
     restorePlacement()
-    defaultOwner = nil
+    defaultOwner, worldUnit, lastAlpha = nil, nil, nil
+end)
+
+local function instant()
+    return S:IsReady() and value("instant")
+end
+-- Unit frames and Lua code fade through this method.
+if tip.FadeOut then
+    hooksecurefunc(tip, "FadeOut", function() if instant() then tip:Hide() end end)
+end
+-- The client fades world tooltips natively, without calling the Lua method.
+tip:HookScript("OnTooltipSetUnit", function()
+    worldUnit = GetMouseFocus() == WorldFrame and UnitExists("mouseover") and true or nil
+    lastAlpha = nil
+end)
+tip:HookScript("OnUpdate", function()
+    if not instant() or originalAlpha ~= nil then lastAlpha = nil; return end
+    if GetMouseFocus() ~= WorldFrame then lastAlpha = nil; return end
+    -- Creatures: the mouseover unit goes away as soon as the cursor leaves.
+    -- World objects have no unit, so catch the first falling alpha instead.
+    local alpha = tip:GetAlpha()
+    if (worldUnit and not UnitExists("mouseover"))
+        or (defaultOwner and lastAlpha and alpha < lastAlpha) then
+        tip:Hide()
+    else
+        lastAlpha = alpha
+    end
 end)
 for _, frame in pairs(comparisons) do frame:HookScript("OnShow", updateFonts) end
-controls:SetScript("OnUpdate", function()
+local function reposition()
     local mode = value("anchor")
-    if stock and mode and mode ~= "stock" then place(mode) end
+    if stock and mode and mode ~= "stock" then place(mode); return true end
+end
+-- Screen edge limits depend on the size, so apply them again when it changes.
+tip:HookScript("OnSizeChanged", function() if S:IsReady() then reposition() end end)
+controls:SetScript("OnUpdate", function()
+    -- By the next frame every addon has added its lines.
+    if tip:IsShown() then settledOwner, settledHeight = tip:GetOwner(), tip:GetHeight() * tip:GetEffectiveScale() end
+    reposition()
 end)
 controls:RegisterEvent("MODIFIER_STATE_CHANGED")
 controls:RegisterEvent("PLAYER_REGEN_DISABLED")

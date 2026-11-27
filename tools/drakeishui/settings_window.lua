@@ -3,7 +3,7 @@ local S = addon.Settings
 local NE = DrakeishUI_SocialNE
 local categories = {
     "General", "Action Bars", "Unit Frames", "Bags", "Chat", "Cast Bar",
-    "Buffs", "Minimap", "Tooltips", "Character Panel", "Layout", "Profiles",
+    "Buffs", "Minimap", "Nameplates", "Tooltips", "Character Panel", "Layout", "Profiles",
 }
 local WIDTH, HEIGHT, CONTENT_WIDTH = 1080, 676, 781
 local CONTROL_WIDTH, CARD_GAP = 152, 9
@@ -489,6 +489,8 @@ local unitText={font=true,size=true,outline=true,align=true,healthColor=true,pow
 local function route(option)
     local id, category, group=option.id,option.category,option.group
     if category=="General" then return category,"Appearance and Fonts",nil,group end
+    if category=="Nameplates" then return category,option.page or "General",nil,group end
+    if id:match("^scale%.") then return category,"Element Scale",nil,group end
     if category=="Character Panel" then return category,"General",nil,group end
     if category=="Action Bars" then
         local bar=id:match("^cooldown%.([^.]+)%.")

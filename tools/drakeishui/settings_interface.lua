@@ -37,6 +37,48 @@ register("frames.hidePet", {
     localSet = function(on) hide_pet_frame_state = on and 1 or 0; updateFrames() end,
 })
 
+-- Whole-element scale, shared with the Move UI layout data ----------------------------------------------------
+local function numbered(format, count)
+    local names = {}
+    for i = 1, count do names[i] = format:format(i) end
+    return names
+end
+for _, spec in ipairs({
+    { "player", "Player frame", { "PlayerFrame" } },
+    { "target", "Target frame", { "TargetFrame" } },
+    { "targettarget", "Target of Target frame", { "TargetFrameToT" } },
+    { "focus", "Focus frame", { "FocusFrame" } },
+    { "focustarget", "Focus Target frame", { "FocusFrameToT" } },
+    { "pet", "Pet frame", { "PetFrame" } },
+    { "party", "Party frames", numbered("CustomPartyFrame%d", 4) },
+    { "raid", "Raid frames", { "DrakeishUI_RaidFrames" } },
+    { "boss", "Boss frames", numbered("Boss%dTargetFrame", 4) },
+    { "arena", "Arena enemy frames", numbered("ArenaEnemyFrame%d", 5) },
+    { "mainbar", "Main action bar", { "pUiMainBar" }, "Action bars" },
+    { "bottomleft", "Bottom left bar", { "MultiBarBottomLeft" }, "Action bars" },
+    { "bottomright", "Bottom right bar", { "MultiBarBottomRight" }, "Action bars" },
+    { "rightbar", "Right bar", { "MultiBarRight" }, "Action bars" },
+    { "leftbar", "Left bar", { "MultiBarLeft" }, "Action bars" },
+    { "petbar", "Pet bar", { "pUiPetBarHolder" }, "Action bars" },
+    { "stancebar", "Stance / form bar", { "pUiStanceHolder" }, "Action bars" },
+    { "micromenu", "Micro menu", { "pUiMicroMenu" }, "Action bars" },
+    { "bagbar", "Bag buttons bar", { "pUiBagsBar" }, "Action bars" },
+    { "minimap", "Minimap", { "Minimap" }, "Other" },
+    { "buffs", "Buffs", { "BuffFrame" }, "Other" },
+    { "castbar", "Cast bar", { "ImprovedUICastBar", "CastingBarFrame" }, "Other" },
+    { "chat", "Chat", { "MinimalChatAnchor" }, "Other" },
+    { "tracker", "Objective tracker", { "WatchFrame" }, "Other" },
+}) do
+    local key, name, names, other = unpack(spec, 1, 4)
+    register("scale." .. key, {
+        name = name .. " scale", type = "slider", default = 1, min = .5, max = 2, step = .05,
+        category = other and "Layout" or "Unit Frames", group = other or "Frames",
+        keywords = "size bigger smaller resize overall element " .. key, protected = true,
+        localGet = function() return L:ElementScale(names[1]) end,
+        localSet = function(value) L:SetElementScale(names, value or 1) end,
+    })
+end
+
 -- Action Bars ------------------------------------------------------------------------------------------------
 -- The four optional bars and the "always show empty slots" switch, handled the way the Blizzard Action Bars
 -- page does: SetActionBarToggles with the fifth value, the SHOW_MULTI_ACTIONBAR_n globals, then the updates.
