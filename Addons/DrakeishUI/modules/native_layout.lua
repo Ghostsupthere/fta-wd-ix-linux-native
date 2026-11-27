@@ -11,8 +11,7 @@ local function finite(n) return type(n)=="number" and n==n and math.abs(n)<10000
 function L:DB()
     if type(DrakeishUI_LayoutDB)~="table" then
         DrakeishUI_LayoutDB={}
-        -- A character with no saved layout starts with the one in shipped_defaults.lua.
-        if addon.ShippedDefaults then addon.ShippedDefaults:SeedLayout(DrakeishUI_LayoutDB) end
+        self.created=DrakeishUI_LayoutDB -- tells shipped_defaults.lua this is not a saved layout
     end
     local db=DrakeishUI_LayoutDB
     for key,value in pairs(defaults) do
@@ -246,7 +245,7 @@ function L:ResetBars()
     if InCombatLockdown() then return end
     local db=self:DB()
     db.bars={};db.bagX=nil;db.bagY=nil;self.applying=true
-    if addon.ShippedDefaults then addon.ShippedDefaults:SeedPositions(db) end
+    if addon.ShippedDefaults and addon.ShippedDefaults.newPlayer then addon.ShippedDefaults:SeedPositions(db) end
     for _,entry in pairs(self.scaleBases) do entry.frame:SetScale(entry.scale) end
     if DrakeishUI_MinimapBorder then DrakeishUI_MinimapBorder:SetScale(1) end
     for _,entry in pairs(self.entries) do

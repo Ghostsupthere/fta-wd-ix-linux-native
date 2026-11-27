@@ -13,13 +13,6 @@ end
 
 function S:Register(option)
     assert(type(option.id) == "string" and not self.byID[option.id], "Duplicate settings ID")
-    -- Options stored here (not localGet ones) can have their default replaced by shipped_defaults.lua.
-    local shipped = addon.ShippedDefaults
-    local value
-    if shipped and not option.localGet then value = shipped.settings[option.id] end
-    -- The option's own check can swap a value this client lacks (3D portraits become 2D without engine support).
-    if value ~= nil and option.validate then value = option.validate(value) end
-    if value ~= nil then option.default = value end
     self.byID[option.id] = option
     self.options[#self.options + 1] = option
 end
@@ -272,8 +265,11 @@ events:RegisterEvent("PLAYER_ENTERING_WORLD")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:SetScript("OnEvent", function(self, event, name)
     if event == "ADDON_LOADED" and name == addonName then
-        if type(DrakeishUI_Config) ~= "table" then DrakeishUI_Config = {} end
+        local hadConfig = type(DrakeishUI_Config) == "table"
+        if not hadConfig then DrakeishUI_Config = {} end
         local saved = DrakeishUI_Config
+        -- Players new to DrakeishUI get the starting look from shipped_defaults.lua.
+        if addon.ShippedDefaults then addon.ShippedDefaults:Start(saved, hadConfig, S.options, addon.Layout) end
         if saved.version == nil then saved.version = 1 end
         if saved.version == 1 then
             if type(saved.characters) ~= "table" then saved.characters = {} end

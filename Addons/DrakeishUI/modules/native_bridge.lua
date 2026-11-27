@@ -80,6 +80,8 @@ function addon:ShouldDeferModuleDisable() return true end
 addon.UpdateItemLevelSlot = addon.UpdateItemLevelSlot or function() end
 
 ensureDB()
+-- Saved settings load after the files and replace this table; shipped_defaults.lua compares the two.
+if addon.ShippedDefaults then addon.ShippedDefaults.freshBags = DrakeishUI_BagDB end
 local boot = CreateFrame("Frame")
 boot:RegisterEvent("ADDON_LOADED")
 boot:RegisterEvent("PLAYER_LOGIN")

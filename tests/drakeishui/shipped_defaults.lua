@@ -32,8 +32,13 @@ local L = addon.Layout
 
 -- The screen these were taken from (3432x1362 at UI scale .83); the fractions are the saved ones.
 UIParent:SetSize(2331.59, 925.30)
-DrakeishUI_LayoutDB = nil
-local db = L:DB()
+local function newCharacter()
+    DrakeishUI_LayoutDB = nil
+    local layout = L:DB()
+    D:SeedLayout(layout)
+    return layout
+end
+local db = newCharacter()
 local expected = {
     PlayerFrame = { .39925, .26376 }, TargetFrame = { .60152, .26376 }, FocusFrame = { .28083, .37184 },
     MultiBarBottomLeft = { .50854, .09824 }, MultiBarRight = { .99035, .45157 }, MultiBarLeft = { .97105, .45157 },
@@ -55,8 +60,7 @@ assert(D.layout.sizes.main.size == 50, "characters get copies")
 
 -- On a 16:9 screen the distances stay the same.
 UIParent:SetSize(1365.33, 768)
-DrakeishUI_LayoutDB = nil
-db = L:DB()
+db = newCharacter()
 for name, spec in pairs(D.frames) do
     local saved = db.bars[name]
     if spec[1] then
@@ -66,19 +70,6 @@ end
 local gap = (db.bars.TargetFrame.x - db.bars.PlayerFrame.x) * 1365.33
 assert(near(gap, 472, .01), "player and target keep their spacing")
 assert(near((1 - db.bars.MultiBarRight.x) * 1365.33, 23, .01), "the right bar stays by the right edge")
-
--- A saved layout is left alone.
-DrakeishUI_LayoutDB = { columns = 20, bars = { PlayerFrame = { x = .1, y = .2 } } }
-db = L:DB()
-assert(db.columns == 20 and db.combined == false and db.bars.PlayerFrame.x == .1 and not db.bars.TargetFrame)
-
--- Reset Positions returns to the shipped positions.
-L:RefreshBars()
-L:ResetBars()
-db = L:DB()
-assert(near(db.bars.PlayerFrame.x, (1365.33 / 2 - 235) / 1365.33) and db.bars.PlayerFrame.scale == 1.15)
-assert(near(player:GetScale(), 1.15))
-assert(near(db.bagY, (768 / 2 + 207) / 768))
 
 -- Nameplates: each name must be one Kui knows, or one of ours -------------------------------------
 local core = read("modules/Kui_Nameplates/Core/Core.lua")
@@ -106,20 +97,82 @@ D:Merge(kui, D.nameplates)
 assert(kui.general.bartexture == "Drakeish" and kui.general.width == 124 and kui.general.thheight == 7)
 assert(kui.fonts.sizes.name == 15 and kui.fonts.sizes.spellname == 11)
 
--- A new character gets the shipped values, and a value the player chose wins --------------------
-local fresh = M.addon()
-fresh.ShippedDefaults = D
-M.load(fresh, "settings_profiles.lua")
-local R = fresh.Settings
-R:Register({ id = "chat.size", type = "slider", min = 8, max = 24, default = 12 })
-R:Register({ id = "tooltip.y", type = "slider", min = -300, max = 300, default = 0 })
-DrakeishUI_Config = nil
-M.event("ADDON_LOADED", "DrakeishUI")
+-- Who gets the starting look ----------------------------------------------------------------------
+UIParent:SetSize(1365.33, 768)
+local realUnitName, realRealm = UnitName, GetRealmName
+-- One login in the client's order: addon files run, saved settings load over their globals, ADDON_LOADED.
+local function login(saved)
+    DrakeishUI_Config, DrakeishUI_LayoutDB, DrakeishUI_BagDB = nil, nil, nil
+    local session = M.addon()
+    M.load(session, "shipped_defaults.lua")
+    M.load(session, "modules/native_bridge.lua")
+    M.load(session, "modules/native_layout.lua")
+    M.load(session, "settings_profiles.lua")
+    local R = session.Settings
+    R:Register({ id = "chat.size", type = "slider", min = 8, max = 24, default = 12 })
+    R:Register({ id = "tooltip.y", type = "slider", min = -300, max = 300, default = 0 })
+    session.Layout:DB() -- some modules read the layout while the files load
+    if saved.early then saved.early(session) end
+    for name, value in pairs(saved.variables or {}) do _G[name] = value end
+    M.event("ADDON_LOADED", "DrakeishUI")
+    return session, R, session.Layout
+end
+
+-- New to DrakeishUI: the whole starting look.
+local session, R, layout = login({})
+assert(session.ShippedDefaults.newPlayer and DrakeishUI_Config.newPlayer == true)
 assert(R:Desired("chat.size") == 14 and R:Desired("tooltip.y") == -26)
+assert(layout:DB().columns == 10 and layout:DB().sizes.main.size == 50 and layout:DB().bars.PlayerFrame.scale == 1.15)
 R:Set("chat.size", 18)
-assert(R:Desired("chat.size") == 18)
 R:Reset()
 assert(R:Desired("chat.size") == 14, "Reset returns to the shipped value")
+R:Set("chat.size", 18)
+layout:DB().columns = 12
+local config, bags, saved = DrakeishUI_Config, DrakeishUI_BagDB, layout:DB()
+
+-- Their next login keeps the look, their own choices and their saved layout.
+session, R, layout = login({ variables = { DrakeishUI_Config = config, DrakeishUI_BagDB = bags, DrakeishUI_LayoutDB = saved } })
+assert(session.ShippedDefaults.newPlayer and R:Desired("chat.size") == 18 and R:Desired("tooltip.y") == -26)
+assert(layout:DB() == saved and layout:DB().columns == 12)
+-- Their second character, with no saved layout, starts with the shipped one.
+session, R, layout = login({ variables = { DrakeishUI_Config = config, DrakeishUI_BagDB = bags } })
+assert(layout:DB().columns == 10 and layout:DB().bars.TargetFrame)
+
+-- Returning players keep what they had: settings, layout, and what Reset gives them.
+local function unchanged(label, variables)
+    local session, R, layout = login({ variables = variables })
+    assert(not session.ShippedDefaults.newPlayer and DrakeishUI_Config.newPlayer == false, label)
+    assert(R:Desired("chat.size") == 12 and R:Desired("tooltip.y") == 0, label)
+    R:Reset()
+    assert(R:Desired("chat.size") == 12, label)
+    assert(layout:DB().columns == 20 and not layout:DB().bars.TargetFrame, label)
+    layout:RefreshBars()
+    layout:ResetBars()
+    assert(not layout:DB().bars.TargetFrame and not layout:DB().bagX, label .. ": Reset Positions stays stock")
+    return DrakeishUI_Config
+end
+local old = unchanged("v0.3.19 player", { DrakeishUI_Config = { version = 1, characters = {}, shared = {} },
+    DrakeishUI_BagDB = { profile = {} } })
+unchanged("their next login", { DrakeishUI_Config = old, DrakeishUI_BagDB = { profile = {} } })
+unchanged("a player from before the settings table", { DrakeishUI_BagDB = { profile = {} } })
+unchanged("a player with only the settings table", { DrakeishUI_Config = { version = 1, characters = {}, shared = {} } })
+-- If the bag table check cannot run, nobody's settings are changed.
+local blind = login({ early = function(s) s.ShippedDefaults.freshBags = nil end })
+assert(not blind.ShippedDefaults.newPlayer)
+
+-- A client without a choice keeps the built-in default; one whose check swaps in a fallback uses it.
+D.settings["fixture.unsupported"], D.settings["fixture.fallback"] = "b", "3d"
+local options = {
+    { id = "fixture.unsupported", default = "a", validate = function(v) if v == "a" then return v end end },
+    { id = "fixture.fallback", default = "old", validate = function() return "2d" end },
+}
+D:Start({ newPlayer = true }, true, options, nil)
+assert(options[1].default == "a" and options[2].default == "2d")
+D.settings["fixture.unsupported"], D.settings["fixture.fallback"] = nil, nil
+UnitName, GetRealmName = realUnitName, realRealm
+
+-- Nameplate defaults apply to everyone: they are not tied to being new.
+assert(not core:match("shipped%.newPlayer"))
 
 -- Settings window options -------------------------------------------------------------------------
 M.enableClip() -- this client can draw round 3D portraits
@@ -136,6 +189,7 @@ for _, file in ipairs({ "unit_values.lua", "chat_options.lua", "chat_footer.lua"
     "action_cooldowns.lua", "tooltip_options.lua", "unit_portraits.lua" }) do
     M.load(addon, file)
 end
+D:Start({ newPlayer = true }, true, S.options, nil)
 local count = 0
 for id, value in pairs(D.settings) do
     local option = assert(S.byID[id], id .. " is a registered option")
@@ -145,14 +199,4 @@ for id, value in pairs(D.settings) do
     count = count + 1
 end
 assert(S.byID["cooldown.main.size"] and S.byID["tooltip.spellID"])
--- A client without a choice keeps the built-in default.
-D.settings["fixture.unsupported"] = "b"
-S:Register({ id = "fixture.unsupported", type = "dropdown", default = "a", validate = function(v) if v == "a" then return v end end })
-assert(S.byID["fixture.unsupported"].default == "a")
--- One whose check swaps in a fallback (3D portraits become 2D) uses the fallback.
-D.settings["fixture.fallback"] = "3d"
-S:Register({ id = "fixture.fallback", type = "dropdown", default = "old", validate = function() return "2d" end })
-assert(S.byID["fixture.fallback"].default == "2d")
-D.settings["fixture.unsupported"], D.settings["fixture.fallback"] = nil, nil
-
-print("Shipped defaults: " .. count .. " options, nameplate settings, new-character layout, 16:9 spacing and Reset Positions passed")
+print("Shipped defaults: " .. count .. " options, nameplate settings, 16:9 spacing, new players only and returning players unchanged passed")

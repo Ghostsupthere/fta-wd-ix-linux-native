@@ -1,14 +1,17 @@
 -- FTA addition: the starting look of DrakeishUI. To change what a new player gets, edit this file.
 --
---  * settings   replace the built-in default of a settings window option. They apply to every character that
---               has not changed that option, and "Reset" returns to them.
---  * nameplates replace Kui Nameplates' built-in defaults in the same way.
+--  * nameplates replace Kui Nameplates' built-in defaults, for everyone. Kui's own settings still win.
+--
+-- The rest is only for players new to DrakeishUI (no saved settings on the account when it first ran), so an
+-- update never changes what somebody already has:
+--
+--  * settings   replace the built-in default of a settings window option, and "Reset" returns to them.
 --  * layout     is copied into a character that has no saved layout yet.
 --  * frames     are the starting frame positions and scales, also used by "Reset Positions".
 --
 -- This file loads before everything that reads it.
 local _, addon = ...
-local D = {}
+local D = { newPlayer = false }
 addon.ShippedDefaults = D
 
 D.settings = {
@@ -138,4 +141,34 @@ end
 function D:SeedLayout(layout)
     self:Merge(layout, self.layout)
     self:SeedPositions(layout)
+end
+
+-- Called once, when saved settings have loaded and before any option is applied. hadConfig says whether
+-- DrakeishUI_Config came from a saved file.
+function D:Start(config, hadConfig, options, Layout)
+    -- Decided on the first run and remembered: from the second login a new player has saved settings too.
+    if type(config.newPlayer) ~= "boolean" then
+        -- native_bridge.lua creates a bag table while the files load. Saved settings load after that and
+        -- replace it, so a different table means an earlier session, including one from before DrakeishUI_Config.
+        local savedBags = not self.freshBags or DrakeishUI_BagDB ~= self.freshBags
+        config.newPlayer = not hadConfig and not savedBags
+    end
+    self.newPlayer = config.newPlayer
+    if not self.newPlayer then return end
+
+    for _, option in ipairs(options) do
+        local value
+        if not option.localGet then value = self.settings[option.id] end
+        -- The option's own check can swap a value this client lacks (3D portraits become 2D without support).
+        if value ~= nil and option.validate then value = option.validate(value) end
+        if value ~= nil then option.default = value end
+    end
+
+    -- A table the layout code created this session (or none at all) means this character had no saved layout.
+    if Layout then
+        local saved = DrakeishUI_LayoutDB
+        if type(saved) ~= "table" or saved == Layout.created then
+            self:SeedLayout(Layout:DB())
+        end
+    end
 end

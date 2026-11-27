@@ -45,17 +45,34 @@ Some features depend on the Linux client engine in this repo and may behave diff
 
 ## Starting settings
 
-`shipped_defaults.lua` holds the look a new player gets, so it does not have to be set up by hand. Edit that one file to change it.
+`shipped_defaults.lua` holds the starting look. Edit that one file to change it.
 
 | Table | Applies to |
 |---|---|
-| `settings` | Every character that has not changed that option. Resetting the option returns to this value. |
-| `nameplates` | The same, for Kui Nameplates settings. |
-| `layout` | Characters with no saved layout: bag layout, chat size, message positions, bar and minimap sizes. |
-| `frames` | Frame positions and scales for those characters, and for **Reset Positions**. |
+| `nameplates` | Everyone. These replace Kui Nameplates' built-in defaults. |
+| `settings` | New players only. Replaces the default of a settings window option; resetting the option returns to this value. |
+| `layout` | New players only. Copied into a character with no saved layout: bag layout, chat size, message positions, bar and minimap sizes. |
+| `frames` | New players only. Frame positions and scales for those characters, and for **Reset Positions**. |
 
-- **A character with a saved layout keeps it.** To get the new positions, use **Reset Positions**. It does not change bar sizes or bag layout.
-- Resetting a settings section still returns sizes and element scales to their stock values, not to the `layout` table.
+**A new player** is an account with no saved DrakeishUI settings the first time this version runs. The result is remembered in `DrakeishUI_Config.newPlayer`. Everyone else keeps their own settings and the stock defaults, apart from the nameplates.
+
+**If you already use DrakeishUI** you count as a returning player. To get the full starting look, enter this in game:
+
+```
+/run DrakeishUI_Config.newPlayer = true; ReloadUI()
+```
+
+Then:
+
+- Options you have not changed use the starting values.
+- Characters with no saved layout start with the shipped layout.
+- On a character with a saved layout, **Reset Positions** applies the shipped frame positions and scales. It does not change bar sizes or the bag layout.
+
+Setting the value to `false` and reloading restores the stock defaults. Layouts that were already saved stay saved.
+
+Other notes:
+
+- Resetting a settings section returns sizes and element scales to their stock values, not to the `layout` table.
 - Positions are distances from a screen edge or the centre, so their spacing holds on other screen shapes. They were set on an ultrawide screen at UI scale 0.83. The game's UI scale is a video setting, and the addon does not change it.
 - A choice the client does not support falls back: 3D party portraits become 2D without the Linux client's engine support.
 

@@ -7107,8 +7107,8 @@
     },
     {
       "path": "shipped_defaults.lua",
-      "size": 4952,
-      "sha256": "6484c9e300a2e2a22afd2ba1804cf9c2197e19c2ec9a43ed2879dd3e7aabdf77",
+      "size": 6592,
+      "sha256": "aae86836034a0728a280e98fc331d7ac246ee214cad86b20e266a480f76f799e",
       "source": "fta"
     },
     {
@@ -8733,8 +8733,8 @@
     },
     {
       "path": "modules/native_bridge.lua",
-      "size": 3963,
-      "sha256": "6acf98f43058586d6a56a09f1a9b6c4d68a0710f35957d5d447908ad840cd1d1",
+      "size": 4150,
+      "sha256": "3a287642850e9ec9ee449cf31c4ac1ad14408f8aeb0ba0d0b9281022b11bc0b4",
       "source": "windows"
     },
     {
@@ -8757,8 +8757,8 @@
     },
     {
       "path": "modules/native_layout.lua",
-      "size": 26832,
-      "sha256": "88f398e48275630b56469a1657f12ee7c4cd19ff5c5a0e363bcb1e0490961d65",
+      "size": 26781,
+      "sha256": "efd95bab59181e40f9f180ca97fa49b72e52257e815fc20b0958ed18526d5c92",
       "source": "windows"
     },
     {
@@ -9255,8 +9255,8 @@
     },
     {
       "path": "settings_profiles.lua",
-      "size": 9867,
-      "sha256": "5cc95ee6e79f84cc0c182af5691268a76d3344f8f648eb03456398d5c7edb79e",
+      "size": 9614,
+      "sha256": "dbd497b22ebe180101a4ed6ede1fafdb8727ceeec8e3d080371658e5bd606d1d",
       "source": "fta-tweaks"
     },
     {
