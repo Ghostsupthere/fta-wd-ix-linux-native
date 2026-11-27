@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# DrakeishUI ships with a size and sha256 manifest, so its files must not be line-ending converted.
+Addons/DrakeishUI/** -text
