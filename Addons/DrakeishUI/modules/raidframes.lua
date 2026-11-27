@@ -6,7 +6,11 @@
     Anchored top-left like party frames; shares the party toggle for show/hide + position.
 ]]
 
-local UNIT_W = 72
+local _, addon = ...
+local function RaidDimension(key,default)
+    return addon.Dimensions and addon.Dimensions:Value("raid",key,default) or default
+end
+local function UnitWidth() return RaidDimension("width",72) end
 local UNIT_H_FULL = 36
 local UNIT_H_THIN = 18
 
@@ -27,12 +31,16 @@ local function RaidFrameStyle()
     return style
 end
 
-local function UnitHeight()
-    if RaidFrameStyle() == 2 then return UNIT_H_THIN end
-    return UNIT_H_FULL
+local function UnitMetrics()
+    local thin = RaidFrameStyle() == 2
+    local width, height = UnitWidth(), RaidDimension("height", thin and UNIT_H_THIN or UNIT_H_FULL)
+    if addon.UnitBarSizes then return addon.UnitBarSizes:RaidMetrics(width, height, thin) end
+    return width, height
 end
+local function CellWidth() return UnitMetrics() end
+local function UnitHeight() local _, height = UnitMetrics(); return height end
 local PAD = 2
-local GROUP_GAP = 6
+local function GroupGap() return RaidDimension("gap",6) end
 local BAND_GAP = 8
 local GROUPS_PER_ROW = 4
 local HP_BG_ALPHA = 0.55
@@ -252,7 +260,7 @@ end
 
 local function CreateRaidUnit(parent, index)
     local f = CreateFrame("Button", "DrakeishUI_RaidUnit" .. index, parent, "SecureUnitButtonTemplate")
-    f:SetWidth(UNIT_W)
+    f:SetWidth(CellWidth())
     f:SetHeight(UnitHeight())
     f:RegisterForClicks("AnyUp")
     -- menu shown via OnMouseUp (party-frame style); not SecureUnitButton type2
@@ -329,7 +337,7 @@ local function EnsureRaidRoot()
     if raidRoot then return raidRoot end
 
     raidRoot = CreateFrame("Frame", "DrakeishUI_RaidFrames", UIParent)
-    raidRoot:SetWidth((UNIT_W + GROUP_GAP) * GROUPS_PER_ROW)
+    raidRoot:SetWidth((CellWidth() + GroupGap()) * GROUPS_PER_ROW)
     raidRoot:SetHeight((UnitHeight() + PAD) * 5 * 2 + BAND_GAP)
     raidRoot:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -200)
     raidRoot:SetMovable(true)
@@ -407,6 +415,7 @@ local function UpdateRaidUnit(frame, unit)
 
     local maxPP = UnitPowerMax(unit) or 0
     local curPP = UnitPower(unit) or 0
+    if addon.UnitBarSizes then addon.UnitBarSizes:UpdateRaidPower(frame, unit, curPP, maxPP) end
     local powerPct = (maxPP > 0) and math.floor((curPP / maxPP) * 100 + 0.5) or 0
 
     if UnitIsDeadOrGhost(unit) then
@@ -552,11 +561,15 @@ function DrakeishUI_UpdateRaidFrames()
     DrakeishUI_UpdateRaidFramePositions()
 
     if not (InCombatLockdown and InCombatLockdown()) then
-        local h = UnitHeight()
-        for i = 1, 40 do
-            if raidUnits[i] then raidUnits[i]:SetHeight(h) end
+        local width, height, hw, hh, pw, ph = UnitMetrics()
+        local function resizeCell(frame)
+            if addon.UnitBarSizes then addon.UnitBarSizes:ResizeRaid(frame, width, height, hw, hh, pw, ph)
+            else frame:SetSize(width, height) end
         end
-        if raidPet then raidPet:SetHeight(h) end
+        for i = 1, 40 do
+            if raidUnits[i] then raidUnits[i]:SetSize(UnitWidth(),h) end
+        end
+        if raidPet then resizeCell(raidPet) end
     end
 
     local showPet = DrakeishUI_ShouldShowRaidStylePet()
@@ -595,7 +608,7 @@ function DrakeishUI_UpdateRaidFrames()
                     frame:ClearAllPoints()
                     frame:SetPoint(
                         "TOPLEFT", raidRoot, "TOPLEFT",
-                        col * (UNIT_W + GROUP_GAP),
+                        col * (CellWidth() + GroupGap()),
                         -(bandY + (row - 1) * (UnitHeight() + PAD))
                     )
                 end
@@ -623,7 +636,7 @@ function DrakeishUI_UpdateRaidFrames()
                 totalH = totalH + BAND_GAP
             end
         end
-        raidRoot:SetWidth(cols * (UNIT_W + GROUP_GAP) - GROUP_GAP + PAD)
+        raidRoot:SetWidth(cols * (CellWidth() + GroupGap()) - GroupGap() + PAD)
         raidRoot:SetHeight(math.max(UnitHeight(), totalH))
     end
 

@@ -7,7 +7,8 @@ local VANILLA_X, VANILLA_Y = 65, -78
 
 -- Blizzard's own DressUpTexturePath applies this same fallback: the 3.3.5a client ships no
 -- Gnome or Troll backdrop art.
-local RACE_FALLBACK = { GNOME = "Dwarf", TROLL = "Orc" }
+local RACE_FALLBACK = { GNOME = "Dwarf", TROLL = "Orc", HIGHELF = "BloodElf", GOBLIN = "Orc",
+    WORGEN = "Human", MURLOC = "Orc" }
 
 local function raceKey()
     local _, fileName = UnitRace("player")

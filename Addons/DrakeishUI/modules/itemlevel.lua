@@ -42,6 +42,8 @@ end
 -- Every display context has its own checkbox; missing key defaults to on
 local function IsContextEnabled(context)
     if not IsModuleEnabled() then return false end
+    local override = addon.BagQuality and addon.BagQuality:LevelContext(context)
+    if override ~= nil then return override end
     local config = GetModuleConfig()
     return (not config) or config[context] ~= false
 end
@@ -166,7 +168,8 @@ local function ApplyFont(fontString, sizeDelta)
     local path = ResolveFontPath() or NumberFontNormalSmall:GetFont()
     local outline = VALID_OUTLINES[config and config.font_outline] or "THICKOUTLINE"
 
-    fontString:SetFont(path, size, outline)
+    if addon.Appearance then addon.Appearance:ApplyFont(fontString, "bags", path, size, outline)
+    else fontString:SetFont(path, size, outline) end
     -- A missing font file leaves the string unrendered, so verify and fall back
     if not fontString:GetFont() then
         fontString:SetFont(NumberFontNormalSmall:GetFont(), size, outline)
@@ -240,6 +243,7 @@ local function DrawItemLevel(button, ilvl, r, g, b, anchorTo)
     fontString:SetText(ilvl)
     fontString:SetTextColor(r or 1, g or 1, b or 1)
     fontString:Show()
+    if addon.BagQuality then addon.BagQuality:PaintLevel(button, fontString, anchorTo or button) end
 end
 
 local function SetButtonItemLevel(button, link, anchorTo, context)

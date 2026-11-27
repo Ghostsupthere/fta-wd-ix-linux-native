@@ -664,6 +664,7 @@ local function sectionVisible(key)
     local cfg = CP:Config()
     if key == "itemlevel" then return cfg.show_item_level ~= false end
     if key == "gearscore" then return cfg.show_gear_score and true or false end
+    if key == "PLAYERSTAT_TERTIARY" then return FTA_Tertiary ~= nil and FTA_Tertiary.UpdateRows ~= nil end
     return true
 end
 

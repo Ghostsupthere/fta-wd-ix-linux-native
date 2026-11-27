@@ -249,6 +249,7 @@ local function UpdatePartyFrame(frame, unit)
     else
         frame:Hide()
     end
+        if addon.UnitBarSizes then addon.UnitBarSizes:ResizeParty(frame) end
         SetPortraitTexture(frame.portrait, unit)
         local name = UnitName(unit) or "Unknown"
 local _, class = UnitClass(unit)
@@ -345,6 +346,7 @@ local function CreateCustomPartyFrames()
             frame.portrait:SetDrawLayer("ARTWORK", 1)
             frame.portrait:SetSize(40, 40)
             frame.portrait:SetPoint("LEFT", frame, "LEFT", 4, 0)
+            if addon.RegisterPartyPortrait then addon.RegisterPartyPortrait(unit, frame.portrait) end
 
             -- Name (truncated in UpdatePartyFrame so it never overlaps level)
             frame.name = frame:CreateFontString(nil, "OVERLAY")
@@ -556,6 +558,12 @@ f:RegisterEvent("PARTY_LEADER_CHANGED")
 f:RegisterEvent("PARTY_LOOT_METHOD_CHANGED")
 f:RegisterEvent("UNIT_HEALTH")
 f:RegisterEvent("UNIT_POWER_UPDATE")
+local partyUnitEvents = { UNIT_HEALTH = true, UNIT_POWER_UPDATE = true, UNIT_PORTRAIT_UPDATE = true, UNIT_NAME_UPDATE = true }
+for _, powerEvent in ipairs({ "UNIT_MANA", "UNIT_RAGE", "UNIT_ENERGY", "UNIT_FOCUS", "UNIT_RUNIC_POWER", "UNIT_MAXMANA",
+        "UNIT_MAXRAGE", "UNIT_MAXENERGY", "UNIT_MAXFOCUS", "UNIT_MAXRUNIC_POWER", "UNIT_MAXHEALTH", "UNIT_DISPLAYPOWER" }) do
+    f:RegisterEvent(powerEvent)
+    partyUnitEvents[powerEvent] = true
+end
 f:RegisterEvent("UNIT_PORTRAIT_UPDATE")
 f:RegisterEvent("UNIT_NAME_UPDATE")
 f:RegisterEvent("ADDON_LOADED") -- Register for addon load events
@@ -613,7 +621,7 @@ f:SetScript("OnEvent", function(self, event, arg1)
         -- Hook into party frame positioning for automatic updates
         HookPartyFramePositioning()
 
-    elseif event == "UNIT_HEALTH" or event == "UNIT_POWER_UPDATE" or event == "UNIT_PORTRAIT_UPDATE" or event == "UNIT_NAME_UPDATE" then
+    elseif partyUnitEvents[event] then
         if arg1 and string.find(arg1, "party") then
             local index = tonumber(string.match(arg1, "%d"))
             if index and customPartyFrames[index] then

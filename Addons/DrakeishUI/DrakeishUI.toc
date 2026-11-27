@@ -7,15 +7,32 @@
 ## OptionalDeps: ProfessionLibrary, ExtraGlyphSlots, Transmogrification, Transmogrification-2.8.0, FTA_Resilience
 ## Author: F@bagun
 ## Credits: DragonflightUI: Yuritsuki | DragonUI: NeticSoul | DragonUI New Era: DragonUI_NewEra team | Classic API: Tsoukie | Bagster/BagSort: DragonUI (NeticSoul) | Loss of Control Alerts: RomanSpector & Blizzard | Cromulent: phyber (Cartographer_ZoneInfo: ckknight) | MoP Item Tooltips: ZEUStiger | Kui Nameplates: Kesava (backported by bkader) | LibStub: Kaelten, Cladhaire, ckknight, Mikk, Ammo, Nevcairiel | LibTourist-3.0: ckknight, Arrowmaster (credits: Abydos) | LibBabble-Zone-3.0: ckknight | UTF8: Pastamancer | pretty_actionbar: s0high | SetXpBar: Dinkledork | BlizzMove: Kiatra | IdTip: Skrylas |
-## SavedVariables: DragonflightUIDB, collapse_state, buffs_state, bags_state,quest_state, chat_state, party_state, caps_state, stance_state, bottombars_state, sidebars_state, hide_toggle_buttons, unitframes_state, gryphon_style_state, diablo_orbs_state, hide_pet_frame_state, raid_frames_state, raid_frame_style_state, D32MiniMapButtonPosition, darken_ui_state, DrakeishUI_BagDB, DrakeishUI_SocialDB
+## SavedVariables: DragonflightUIDB, collapse_state, buffs_state, bags_state,quest_state, chat_state, party_state, caps_state, stance_state, bottombars_state, sidebars_state, hide_toggle_buttons, unitframes_state, gryphon_style_state, diablo_orbs_state, hide_pet_frame_state, raid_frames_state, raid_frame_style_state, D32MiniMapButtonPosition, darken_ui_state, DrakeishUI_BagDB, DrakeishUI_SocialDB, DrakeishUI_Config, KuiNameplatesGDB
 ## SavedVariablesPerCharacter: D32CharacterData, DrakeishUI_LayoutDB, MinimalChatDB
 
+linux_compat_bags.lua
 libs\ClassicAPI\Load.xml
 libs\LibStub\LibStub.lua
 libs\LibCustomGlow-1.0\LibCustomGlow-1.0.xml
 DrakeishUI.xml
-
-
-
-
-
+settings_profiles.lua
+settings_commands.lua
+settings_character.lua
+settings_window.lua
+action_cooldowns.lua
+unit_values.lua
+bag_quality.lua
+chat_options.lua
+chat_footer.lua
+appearance.lua
+layout_dimensions.lua
+profile_exchange.lua
+action_endcaps.lua
+keybind_mode.lua
+unit_portraits.lua
+settings_interface.lua
+tooltip_options.lua
+nameplate_options.lua
+unit_bar_sizes.lua
+stock_unit_bar_sizes.lua
+fta_ui_tweaks.lua

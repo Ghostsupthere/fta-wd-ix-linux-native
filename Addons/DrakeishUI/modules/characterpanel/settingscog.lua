@@ -15,12 +15,14 @@ local cog
 
 local function setDarkBackground(dark)
     CP:Config().dark_background = dark and true or false
-    CP.ApplyBodyBackground()
+    if not addon.Settings or not addon.Settings:IsReady() then CP.ApplyBodyBackground() end
 end
 
 local function setGreyBackdrop(grey)
     CP:Config().grey_model_backdrop = grey and true or false
-    if CP.ApplyModelBackdrop then CP.ApplyModelBackdrop() end
+    if (not addon.Settings or not addon.Settings:IsReady()) and CP.ApplyModelBackdrop then
+        CP.ApplyModelBackdrop()
+    end
 end
 
 local function addTitle(text, entries)
@@ -41,7 +43,9 @@ end
 
 local function setStatShown(key, shown)
     CP:Config()[key] = shown and true or false
-    if CP.ApplyGearSummaryVisibility then CP.ApplyGearSummaryVisibility() end
+    if (not addon.Settings or not addon.Settings:IsReady()) and CP.ApplyGearSummaryVisibility then
+        CP.ApplyGearSummaryVisibility()
+    end
 end
 
 StaticPopupDialogs["DRAKEISHUI_RESET_STAT_ORDER"] = {
@@ -118,6 +122,11 @@ local function build()
 
     cog:SetScript("OnClick", function(self)
         local entries = {}
+        if addon.Settings then
+            entries[#entries + 1] = { text = addon.L["DrakeishUI Settings"], func = function()
+                addon.Settings:Open("Character Panel")
+            end }
+        end
         menuEntries(entries)
         addon.Menu.Open(self, entries)
     end)

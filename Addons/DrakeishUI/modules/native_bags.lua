@@ -108,7 +108,7 @@ addon.SkinNativeBag=skin
 function addon.SetNativeBagCombined(frame,enabled)
     frame._duiCombined=enabled and true or nil
     local name=frame:GetName()
-    local regions={frame.NineSlice,frame.Bg,frame.TopTileStreaks,frame.Title,frame.TitleText,
+    local regions={frame.NineSlice,frame.Bg,frame.TopTileStreaks,frame._neTopTileStreaks,frame.Title,frame.TitleText,
         frame.TitleContainer,frame._neTitleBand,frame._neTitle,_G[name.."Name"],
         _G[name.."Portrait"],_G[name.."PortraitButton"],_G[name.."CloseButton"],frame._duiBagMenu}
     -- Some chrome fields are absent; ipairs would stop at the first nil.

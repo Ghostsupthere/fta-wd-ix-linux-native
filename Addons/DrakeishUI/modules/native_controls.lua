@@ -42,6 +42,7 @@ local function updateFrames()
 end
 
 local function showPanel()
+    if addon.Settings then return nil end
     if not panel then
         panel = CreateFrame("Frame", "DrakeishUINativeOptions", UIParent)
         panel.name = "DrakeishUI"
@@ -214,11 +215,13 @@ end)
 if IsLoggedIn and IsLoggedIn() then initialize() end
 SLASH_DRAKEISHUINATIVE1 = "/drakeish"
 SlashCmdList.DRAKEISHUINATIVE = function(message)
+    if addon.Settings and addon.Settings.HandleCommand and addon.Settings:HandleCommand(message or "") then return end
     message=string.lower(message or "")
     if addon.Layout and message=="move" then addon.Layout:SetEditing(true)
     elseif addon.Layout and message=="lock" then addon.Layout:SetEditing(false)
     elseif addon.Layout and message=="layout" then addon.Layout:OpenOptions()
     elseif addon.Messages and (message=="text" or message=="messages") then addon.Messages:OpenOptions()
     elseif addon.Inventory and message=="bags" then addon.Inventory:ShowTools()
+    elseif addon.Settings then addon.Settings:Open()
     elseif InterfaceOptionsFrame_OpenToCategory then InterfaceOptionsFrame_OpenToCategory(showPanel()) end
 end

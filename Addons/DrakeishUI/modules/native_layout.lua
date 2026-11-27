@@ -49,7 +49,15 @@ local specs={{"pUiMainBar","Main action bar"},{"MultiBarBottomLeft","Bottom left
     {"PetFrame","Pet"},{"CustomPartyFrame1","Party 1"},{"CustomPartyFrame2","Party 2"},
     {"CustomPartyFrame3","Party 3"},{"CustomPartyFrame4","Party 4"},
     {"Minimap","Minimap"},{"BuffFrame","Buffs",220,70},{"CastingBarFrame","Cast bar"},
-    {"MinimalChatAnchor","Chat"}}
+    {"MinimalChatAnchor","Chat"}, {"ImprovedUICastBar","Player cast bar"}, {"WatchFrame","Objective tracker"},
+    {"DrakeishUICombinedBags","Combined bags"}, {"DrakeishUI_RaidFrames","Raid frames"},
+    {"pUiMicroMenu","Micro menu",96,24}}
+-- Frames that can be scaled but have no Move UI handle.
+local scaleOnly={"TargetFrameToT","FocusFrameToT","Boss1TargetFrame","Boss2TargetFrame","Boss3TargetFrame",
+    "Boss4TargetFrame","ArenaEnemyFrame1","ArenaEnemyFrame2","ArenaEnemyFrame3","ArenaEnemyFrame4",
+    "ArenaEnemyFrame5","pUiBagsBar"}
+L.scaleBases={}
+local function clampScale(n) return math.max(.5,math.min(2,n)) end
 local function effectiveScale(frame)
     return frame.GetEffectiveScale and frame:GetEffectiveScale() or frame:GetScale()
 end
@@ -63,7 +71,11 @@ function L:ApplyBar(frame)
     local saved=entry and self:DB().bars[entry.name]
     if not entry or self.moving==entry or type(saved)~="table" then return end
     self.applying=true
-    if finite(saved.scale) then frame:SetScale(entry.scale*math.max(.5,math.min(1.5,saved.scale))) end
+    if finite(saved.scale) then
+        frame:SetScale(entry.scale*clampScale(saved.scale))
+        -- The minimap ring is not a child of the map, so scale it alongside.
+        if entry.name=="Minimap" and DrakeishUI_MinimapBorder then DrakeishUI_MinimapBorder:SetScale(clampScale(saved.scale)) end
+    end
     local width,height=UIParent:GetWidth(),UIParent:GetHeight()
     if width>0 and height>0 and finite(saved.x) and finite(saved.y) then
         local ratio=effectiveScale(UIParent)/effectiveScale(frame)
@@ -119,9 +131,48 @@ local function makeMover(entry)
     end)
     handle:Hide()
 end
+function L:ApplyScaleOnly()
+    if InCombatLockdown() then self.pending=true;return end
+    for _,name in ipairs(scaleOnly) do
+        local frame,saved=_G[name],self:DB().bars[name]
+        if frame and type(saved)=="table" and finite(saved.scale) then
+            local entry=self.scaleBases[name]
+            if not entry then
+                -- Captured before our first change, so this is the frame's own scale.
+                entry={frame=frame,scale=frame:GetScale()};self.scaleBases[name]=entry
+                hooksecurefunc(frame,"SetScale",function()
+                    if not L.applying and not InCombatLockdown() then L:ApplyScaleOnly() end
+                end)
+            end
+            self.applying=true
+            frame:SetScale(entry.scale*clampScale(saved.scale))
+            self.applying=false
+        end
+    end
+end
+function L:ElementScale(name)
+    local saved=self:DB().bars[name]
+    return type(saved)=="table" and finite(saved.scale) and clampScale(saved.scale) or 1
+end
+function L:SetElementScale(names,value)
+    if InCombatLockdown() or not finite(value) then return end
+    self:RefreshBars()
+    for _,name in ipairs(names) do
+        local saved=self:DB().bars[name]
+        -- Leave untouched elements alone when asked for their normal size.
+        if type(saved)=="table" or clampScale(value)~=1 then
+            if type(saved)~="table" then saved={};self:DB().bars[name]=saved end
+            saved.scale=clampScale(value)
+            if self.entries[name] then self:ApplyBar(self.entries[name].frame) end
+        end
+    end
+    self:ApplyScaleOnly()
+    if self.selectionChanged then self.selectionChanged() end
+end
 function L:RefreshBars()
     if InCombatLockdown() then self.pending=true;return end
     self.pending=false
+    self:ApplyScaleOnly()
     for _,spec in ipairs(specs) do
         local name,label=spec[1],spec[2]
         local frame=_G[name]
@@ -166,7 +217,7 @@ function L:SetSelectedScale(value)
     if not entry then return end
     local saved=self:DB().bars[entry.name]
     if type(saved)~="table" then saved={} end
-    saved.scale=math.max(.5,math.min(1.5,value));self:DB().bars[entry.name]=saved
+    saved.scale=clampScale(value);self:DB().bars[entry.name]=saved
     self:ApplyBar(entry.frame)
 end
 function L:SetEditing(value)
@@ -191,6 +242,8 @@ function L:ResetBars()
     if InCombatLockdown() then return end
     local db=self:DB()
     db.bars={};db.bagX=nil;db.bagY=nil;self.applying=true
+    for _,entry in pairs(self.scaleBases) do entry.frame:SetScale(entry.scale) end
+    if DrakeishUI_MinimapBorder then DrakeishUI_MinimapBorder:SetScale(1) end
     for _,entry in pairs(self.entries) do
         entry.frame:SetScale(entry.scale);entry.frame:ClearAllPoints()
         if entry.point[1] then entry.frame:SetPoint(unpack(entry.point)) end

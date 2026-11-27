@@ -69,6 +69,10 @@ local function makeHost()
     host:SetScript("OnDragStart",beginMove);host:SetScript("OnDragStop",endMove)
     local NE=DrakeishUI_SocialNE
     if NE and NE.panelchrome then NE.panelchrome.Apply(host,{title="Carried bags",layout="ButtonFrameTemplateNoPortrait",noPortrait=true,noCloseButton=true}) end
+    if host.Bg then
+        host.Bg:ClearAllPoints()
+        host.Bg:SetPoint("TOPLEFT",host,"TOPLEFT",6,-4);host.Bg:SetPoint("BOTTOMRIGHT",host,"BOTTOMRIGHT",-1,2)
+    end
     -- A header above the native container children remains draggable while
     -- locked. Shift-dragging an item keeps its normal split/link behavior.
     local header=CreateFrame("Frame",nil,host);host.header=header
@@ -150,34 +154,50 @@ local function placeTools(h)
     tools.embedded=h and true or false
 end
 local function combinedGrid(carried,columns,pitch,groupMode)
-    local positions={}
+    -- Every slot sits on a fixed column, so columns line up in every row. When the bags are sorted by the chosen
+    -- grouping, each item group starts on a new row with a small gap above it; when they are not sorted (one group
+    -- would be split into many runs) the grid stays dense, because a break at every change would leave mostly
+    -- empty rows.
+    local positions,groups={},{}
     local groupSpace=6
-    local x,y,widest=0,0,0
-    local previous
     for _,frame in ipairs(carried) do
         local bag=frame:GetID()
         for slot=1,frame.size do
-            local newRow=#positions%columns==0
-            if newRow then
-                x=0
-                if #positions>0 then y=y+pitch end
-            end
+            local group
             if groupMode then
                 local _,_,_,_,_,_,link=GetContainerItemInfo(bag,slot)
-                local group
                 if link then
                     local _,_,quality,_,_,class=GetItemInfo(link)
                     if groupMode=="Type" then group=class else group=quality end
                 end
-                if group~=nil and previous~=nil and group~=previous then
-                    if newRow then y=y+groupSpace else x=x+groupSpace end
-                end
-                previous=group
             end
-            positions[#positions+1]={x=x,y=y}
-            widest=math.max(widest,x+pitch)
-            x=x+pitch
+            if group==nil then group=false end
+            groups[#groups+1]=group
         end
+    end
+    local sorted=groupMode and true or false
+    if sorted then
+        local seen,last={},nil
+        for _,group in ipairs(groups) do
+            if group then
+                if group~=last then
+                    if seen[group] then sorted=false;break end
+                    seen[group]=true;last=group
+                end
+            end
+        end
+    end
+    local column,y,widest,previous=0,0,0,nil
+    for index,group in ipairs(groups) do
+        local newGroup=sorted and group and previous and group~=previous
+        if column>=columns or (newGroup and column>0) then
+            column=0;y=y+pitch
+            if newGroup then y=y+groupSpace end
+        elseif newGroup and index>1 then y=y+groupSpace end
+        if group then previous=group end
+        positions[index]={x=column*pitch,y=y}
+        widest=math.max(widest,column*pitch+pitch)
+        column=column+1
     end
     return positions,widest+24,y+pitch+94
 end

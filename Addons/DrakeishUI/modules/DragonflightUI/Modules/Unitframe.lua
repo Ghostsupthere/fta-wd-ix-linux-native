@@ -1987,7 +1987,7 @@ function Module.ChangeTargetFrame()
     
     -- Hook target frame buff updates to style buttons with border
     -- Limit visibility to maximum 3 rows (18 buttons: 6 per row)
-    hooksecurefunc("TargetFrame_UpdateAuras", function()
+    hooksecurefunc("TargetFrame_UpdateAuras", function(auraFrame)
         -- Reapply castbar position when buffs update (prevents Blizzard from repositioning it)
         if TargetFrameSpellBar and TargetFrameSpellBar:IsShown() then
             TargetFrameSpellBar:ClearAllPoints()
@@ -1998,6 +1998,10 @@ function Module.ChangeTargetFrame()
         if UnitExists('target') then
             Module.ReApplyTargetFrame()
         end
+        
+        -- Focus updates call this too. Blizzard has not re-laid out the target's
+        -- auras then, so the buff offset below would stack on every call.
+        if auraFrame ~= TargetFrame then return end
         
         local MAX_VISIBLE_AURAS = 18 -- 3 rows * 6 buttons per row
         
@@ -2024,7 +2028,9 @@ function Module.ChangeTargetFrame()
         -- Find TargetFrameBuff13 to anchor the first debuff under it
         local buff13 = _G["TargetFrameBuff13"]
         local debuffAnchor = nil
-        if buff13 and buff13:IsShown() then
+        -- Friendly targets only: otherwise Blizzard hangs the buffs below
+        -- Debuff1, and anchoring Debuff1 to a buff would be circular.
+        if buff13 and buff13:IsShown() and UnitIsFriend("player", "target") then
             debuffAnchor = buff13
         end
         
@@ -2034,9 +2040,9 @@ function Module.ChangeTargetFrame()
                 NormalizeTargetAuraSize(debuff)
                 
                 -- Position first debuff directly under TargetFrameBuff13
-                if i == 1 and debuffAnchor then
+                if i == 1 and debuffAnchor and debuff:IsShown() then
                     debuff:ClearAllPoints()
-                    debuff:SetPoint("TOPRIGHT", debuffAnchor, "BOTTOMRIGHT", 0, -6)
+                    debuff:SetPoint("TOPLEFT", debuffAnchor, "BOTTOMLEFT", 0, -6)
                 end
                 
                 -- Hide debuffs beyond the maximum visible count

@@ -777,7 +777,7 @@ function Module.CreateNewCastbar()
             --f.Spark:SetPoint('CENTER', f.Bar, 'LEFT', sizeX / 2, 0 + 15)
             f.Spark:Show()
             local dx = 2
-            f.Spark:SetPoint('CENTER', f.Bar, 'LEFT', (value * sizeX) / statusMax, 0)
+            f.Spark:SetPoint('CENTER', f.Bar, 'LEFT', (value * f:GetWidth()) / statusMax, 0)
         end
     end
 
@@ -837,7 +837,7 @@ function Module.CreateNewCastbar()
         tick:SetTexture('Interface\\ChatFrame\\ChatFrameBackground')
         tick:SetVertexColor(0, 0, 0)
         tick:SetAlpha(0.75)
-        tick:SetSize(2.5, sizeY - 2)
+        tick:SetSize(2.5, f:GetHeight() - 2)
         tick:SetPoint('CENTER', f.Bar, 'LEFT', sizeX / 2, 0)
         ticks[i] = tick
     end

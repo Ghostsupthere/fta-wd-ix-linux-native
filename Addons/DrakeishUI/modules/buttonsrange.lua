@@ -27,8 +27,9 @@ local function EnsureOverlay(btn)
     -- small white texture recolored to red
     sq:SetTexture("Interface\\Buttons\\WHITE8x8")
     sq:SetVertexColor(1, 0, 0, 0.7)          -- red, 60% alpha
-    sq:SetSize(37, 37)                       -- size to match button texture (37x37 pixels)
-    sq:SetPoint("CENTER", btn, "CENTER", 0, 0)  -- center the overlay on the button
+    -- Follow the icon: button sizes and bar scales are adjustable.
+    local name = btn:GetName()
+    sq:SetAllPoints(name and _G[name .. "Icon"] or btn)
     sq:SetDrawLayer("ARTWORK", 0)           -- place above button texture but under border
     
     -- BLEND MODE OPTIONS (choose one):

@@ -322,8 +322,10 @@ local endCapLeftX, endCapRightX, endCapBaseY = -95, 95, -23
 local function RefreshEndCapPositions()
 	if not MainMenuBarLeftEndCap or not MainMenuBarRightEndCap then return end
 	local y = endCapBaseY + (both - mainBarYOffset)
-	MainMenuBarLeftEndCap:SetClearPoint('BOTTOMLEFT', endCapLeftX, y)
-	MainMenuBarRightEndCap:SetClearPoint('BOTTOMRIGHT', endCapRightX, y)
+	local left, right = endCapLeftX, endCapRightX
+	if addon.GetEndCapOffsets then left, right = addon.GetEndCapOffsets(left, right) end
+	MainMenuBarLeftEndCap:SetClearPoint('BOTTOMLEFT', left, y)
+	MainMenuBarRightEndCap:SetClearPoint('BOTTOMRIGHT', right, y)
 end
 
 function addon.SetEndCapBasePoints(leftX, rightX, baseY)

@@ -161,6 +161,7 @@ local function ShiftBuffsLeft()
             -- We just need to ensure the parent frame is shown
         end
     end
+    if addon.Dimensions then addon.Dimensions:ApplyAuras(OFFSET_X) end
 end
 
 -- Reuse one driver; aura/anchor bursts must not allocate permanent frames.

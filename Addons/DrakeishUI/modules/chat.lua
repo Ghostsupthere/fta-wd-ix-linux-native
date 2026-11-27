@@ -79,9 +79,11 @@ end
 local function ApplyChatGeometry(chat)
     applyingGeometry = true
     chat:ClearAllPoints()
-    chat:SetPoint("BOTTOMLEFT", chatAnchor, "BOTTOMLEFT", 0, 0)
+    local inset = addon.ChatOptions and addon.ChatOptions:GetInset() or 0
+    chat:SetPoint("BOTTOMLEFT", chatAnchor, "BOTTOMLEFT", inset, inset)
     chat:SetScale(chatAnchor:GetScale())
-    chat:SetSize(chatAnchor:GetWidth(), chatAnchor:GetHeight())
+    chat:SetSize(math.max(1, chatAnchor:GetWidth() - 2 * inset),
+        math.max(1, chatAnchor:GetHeight() - 2 * inset))
     -- Docked secondary windows cannot accept SetUserPlaced in the native API.
     -- Their geometry still follows our anchor; the stock dock owns their flags.
     if chat:IsMovable() or chat:IsResizable() then
