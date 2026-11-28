@@ -392,7 +392,7 @@ void TEXTURECACHE::TextureCallback(EGxTexCommand command, uint32_t width, uint32
     }
 
     TEXTURECACHE* cache = static_cast<TEXTURECACHE*>(userArg);
-    bool smooth = cache->m_theFace && (cache->m_theFace->m_fontFlags & kGxFontFlagSmooth) && !(cache->m_theFace->m_fontFlags & (1 | 2));
+    bool smooth = cache->m_theFace && (cache->m_theFace->m_fontFlags & kGxFontFlagScaledText) && !(cache->m_theFace->m_fontFlags & (1 | 2));
 
     // s_textureData is shared by every font page. Filtering also reads texels
     // between glyphs, so clear it to transparent white (black would fringe).

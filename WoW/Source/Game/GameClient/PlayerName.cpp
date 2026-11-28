@@ -99,7 +99,7 @@ void PlayerNameInitialize() {
     const char* fontName;
 
     if (FrameScript_GetVariable("UNIT_NAME_FONT", fontName)) {
-        GxuFontCreateFont(fontName, 0.99f, s_playerNameFont, 4);
+        GxuFontCreateFont(fontName, 0.99f, s_playerNameFont, kGxFontFlagLinear);
     }
 
     s_playerNameBatch = GxuFontCreateBatch(true, true);

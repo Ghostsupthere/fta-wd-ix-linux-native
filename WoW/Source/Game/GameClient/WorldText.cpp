@@ -604,7 +604,7 @@ void WorldTextInitialize() {
     // the font can be smooth and resized without affecting UI text. The old call
     // also converted the height to NDC twice.
     if (fontName && *fontName) {
-        GxuFontCreateFont(fontName, DDCToNDCHeight(kBaseTextHeight), s_worldTextFont, kGxFontFlagSmooth);
+        GxuFontCreateFont(fontName, DDCToNDCHeight(kBaseTextHeight), s_worldTextFont, kGxFontFlagScaledText);
     }
     s_worldTextBatch = GxuFontCreateBatch(false, false);
 

@@ -15,10 +15,12 @@ class CImVector;
 struct CGxFont;
 struct CGxStringBatch;
 
-// GxuFontCreateFont flag for text that is drawn at changing sizes: the glyph
-// atlas is sampled with linear filtering and keeps transparent gaps around
-// glyphs. Bit 2 is the filter argument of TEXTURECACHE::CreateTexture().
-constexpr uint32_t kGxFontFlagSmooth = 0x4;
+// GxuFontCreateFont flags. 0x1, 0x2 and 0x8 are outline, monochrome and thick.
+// Linear only filters the glyph atlas; the unit names (PlayerName.cpp) use it.
+constexpr uint32_t kGxFontFlagLinear = 0x4;
+// For screen text drawn at changing sizes (floating combat text): linear
+// filtering plus transparent gaps around glyphs and a higher pixel size cap.
+constexpr uint32_t kGxFontFlagScaledText = 0x10;
 
 extern FT_Library g_FTLibrary;
 extern CGxShader* g_fontPixelShader;
