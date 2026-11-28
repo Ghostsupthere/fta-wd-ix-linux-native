@@ -1,6 +1,7 @@
--- FTA addition: the "pretty" item tooltip. A DrakeishUI metal frame, a header shaded by item quality, and
--- sections split by a metal bar with a gold star. The design follows PrettyTooltip (MIT, Copyright (c)
--- FallenShard) for the quality header, glow and body colours.
+-- FTA addition: the "pretty" tooltips. A DrakeishUI metal frame, a shaded header, and sections split by a
+-- metal bar with a gold star. This file holds the shared drawing and the item layout; pretty_unit_tooltip.lua
+-- adds NPCs and players. The design follows PrettyTooltip (MIT, Copyright (c) FallenShard) for the quality
+-- header, glow and body colours.
 --
 -- The game's own lines stay where other addons expect them: this only moves, hides and decorates them after
 -- the engine has laid the tooltip out. That needs the client's OnTooltipLayout script; without it, tooltips
@@ -16,6 +17,9 @@ local BLUE = "|cff66ccff"
 -- Where replaced and unwanted lines go. Transparency alone does not hide them: another addon recolouring a
 -- line (WarcraftXLControl does that to the armour type) makes it opaque again.
 local OFFSCREEN = -20000
+-- Between the parts of a subtitle. Plain ASCII: with the game's own font a middle dot came out as "?",
+-- drawn over the letter after it.
+local SEPARATOR = " - "
 -- The item name is bold and outlined. Only these fonts have a matching bold file.
 local BOLD_NARROW = "Interface\\AddOns\\DrakeishUI\\modules\\Kui_Nameplates\\Media\\f\\nimbus-sans-narrow-bold.otf"
 local BOLD = "Interface\\AddOns\\DrakeishUI\\modules\\Kui_Nameplates\\Media\\f\\expressway-bold.ttf"
@@ -23,12 +27,14 @@ local BOLD = "Interface\\AddOns\\DrakeishUI\\modules\\Kui_Nameplates\\Media\\f\\
 local TOOLTIPS = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "ShoppingTooltip3",
     "ItemRefShoppingTooltip1", "ItemRefShoppingTooltip2", "ItemRefShoppingTooltip3" }
 local states = {}
+-- What each kind of tooltip needs: its option, its layout and, if it moved something else, how to put it back.
+local kinds = {}
 local reported
 
 local refreshAll
 S:Register({ id = "tooltip.pretty", name = "Pretty item tooltips", category = "Tooltips", group = "Style",
     type = "toggle", default = true, keywords = "item quality header frame star pretty",
-    desc = "A metal frame, a header coloured by item quality and star dividers. Hold Alt for item IDs and every bot upgrade.",
+    desc = "A metal frame, a header colored by item quality and star dividers. Hold Alt for item IDs and every bot upgrade.",
     apply = function() refreshAll() end })
 
 -------------------------------------------------------------------------------------------------- helpers --
@@ -283,7 +289,9 @@ end
 local function restore(tip)
     local st = states[tip]
     if not st.active then return end
+    local kind = kinds[st.active]
     st.active = nil
+    if kind.restore then kind.restore(tip, st) end
     hideArt(st.art)
     restoreTitle(st)
     local name = tip:GetName()
@@ -311,9 +319,28 @@ local function restore(tip)
 end
 
 ------------------------------------------------------------------------------------------------- reading --
-local function read(tip, equipLoc, itemType, boxed)
+-- Socket and threat icons hang off the left of their line, further out than our margin. Pull each one close
+-- to its line; returns how far the line then has to move right, so the icon starts at the margin.
+local function lineIcons(tip, u)
+    local inset = {}
+    for index = 1, 10 do
+        local icon = _G[tip:GetName() .. "Texture" .. index]
+        if icon and icon:IsShown() then
+            local _, anchor = icon:GetPoint(1)
+            if anchor then
+                local gap = u(5)
+                icon:ClearAllPoints()
+                icon:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -gap, 0)
+                inset[anchor] = icon:GetWidth() + gap
+            end
+        end
+    end
+    return inset
+end
+
+local function read(tip, equipLoc, itemType, boxed, u)
     local name = tip:GetName()
-    local money, inset = {}, {}
+    local money, inset = {}, lineIcons(tip, u)
     for index = 1, tip.shownMoneyFrames or 0 do
         local frame = _G[name .. "MoneyFrame" .. index]
         if frame and frame:IsShown() then
@@ -321,15 +348,6 @@ local function read(tip, equipLoc, itemType, boxed)
             if anchor then money[anchor] = frame end
         end
     end
-    -- Icons the game puts beside a line (sockets, for one) need room on its left.
-    for index = 1, 10 do
-        local icon = _G[name .. "Texture" .. index]
-        if icon and icon:IsShown() then
-            local _, anchor = icon:GetPoint(1)
-            if anchor then inset[anchor] = (inset[anchor] or 0) + icon:GetWidth() + 2 end
-        end
-    end
-
     local model = { lines = {}, body = {}, botRows = {}, money = {}, hidden = {} }
     local binds = bindingTexts()
     local durabilityPattern = toPattern(DURABILITY_TEMPLATE or "Durability %d / %d")
@@ -409,9 +427,9 @@ local function subtitle(model, itemType, subType)
         end
         if model.slot.hasRight then add(model.slot.right, plain(model.slot.right)) end
         add(model.slot.left, model.slot.text)
-        return table.concat(parts, " \194\183 ")
+        return table.concat(parts, SEPARATOR)
     end
-    if subType and subType ~= "" and subType ~= itemType then return (itemType or "") .. " \194\183 " .. subType end
+    if subType and subType ~= "" and subType ~= itemType then return (itemType or "") .. SEPARATOR .. subType end
     return itemType or ""
 end
 
@@ -422,28 +440,116 @@ local function height(line)
     return value
 end
 
+-- Takes over a tooltip: remembers how to put it back and removes the game's backdrop.
+local function prepare(tip, st, kind)
+    if not st.firstPoint then
+        local point, relative, relativePoint, x, y = _G[tip:GetName() .. "TextLeft1"]:GetPoint(1)
+        st.firstPoint = { point or "TOPLEFT", relative or tip, relativePoint or "TOPLEFT", x or 10, y or -10 }
+    end
+    if not st.active then
+        st.backdrop = tip:GetBackdrop()
+        tip:SetBackdrop(nil)
+    end
+    st.active = kind
+    return build(tip)
+end
+
+-- How to move lines in a tooltip with this padding and content width.
+local function lineTools(tip, pad, content, u)
+    local function place(line, x, y)
+        line.left:ClearAllPoints()
+        line.left:SetPoint("TOPLEFT", tip, "TOPLEFT", x, -y)
+        if line.hasRight then
+            line.right:ClearAllPoints()
+            line.right:SetPoint("RIGHT", line.left, "LEFT", pad + content - x, 0)
+        end
+    end
+    -- The line stays shown and keeps its text for other addons; it is only moved out of sight.
+    local function hide(line)
+        line.left:SetAlpha(0)
+        line.right:SetAlpha(0)
+        line.left:ClearAllPoints()
+        line.left:SetPoint("TOPLEFT", tip, "TOPLEFT", OFFSCREEN, 0)
+        if line.hasRight then
+            line.right:ClearAllPoints()
+            line.right:SetPoint("RIGHT", line.left, "LEFT", 0, 0)
+        end
+    end
+    -- A normal body line, wrapped when it is longer than the tooltip.
+    local function row(line, y)
+        if not line.hasRight and line.left:GetStringWidth() > content - line.inset then
+            line.left:SetWidth(content - line.inset)
+        end
+        place(line, pad + line.inset, y)
+        return y + height(line) + u(3)
+    end
+    return place, hide, row
+end
+
+-- Body lines in the game's order; blank lines become a small space between them.
+local function bodyRows(lines, y, row, u)
+    local drawn, pendingGap = false, false
+    for _, line in ipairs(lines) do
+        if line.gap then
+            pendingGap = drawn
+        else
+            if pendingGap then y = y + u(6) end
+            pendingGap, drawn = false, true
+            y = row(line, y)
+        end
+    end
+    return y
+end
+
+local OPACITY = { body = .94, header = .96 }
+
+-- Background, shaded header, metal frame and an optional glow, once the size is known.
+local function decorate(tip, art, u, headerBottom, header, glow, opacity)
+    opacity = opacity or OPACITY
+    local tr, tg, tb = 0, 0, 0
+    if glow then tr, tg, tb = glow[1], glow[2], glow[3] end
+    local r, g, b = header[1], header[2], header[3]
+    local frameSize = u(6)
+
+    art.body:ClearAllPoints()
+    -- The header lies over the body, so their transparencies multiply. For a header that should let the
+    -- world through, the body has to start below it.
+    local bodyTop = opacity.split and headerBottom or frameSize / 2
+    art.body:SetPoint("TOPLEFT", tip, "TOPLEFT", frameSize / 2, -bodyTop)
+    art.body:SetPoint("BOTTOMRIGHT", tip, "BOTTOMRIGHT", -frameSize / 2, frameSize / 2)
+    art.body:SetGradientAlpha("VERTICAL", .016 + tr * .02, .012 + tg * .02, .016 + tb * .02, opacity.body,
+        .052 + tr * .06, .040 + tg * .06, .050 + tb * .06, opacity.body)
+    art.body:Show()
+
+    art.header:ClearAllPoints()
+    art.header:SetPoint("TOPLEFT", tip, "TOPLEFT", frameSize / 2, -frameSize / 2)
+    art.header:SetPoint("BOTTOMRIGHT", tip, "TOPRIGHT", -frameSize / 2, -headerBottom)
+    art.header:SetGradientAlpha("VERTICAL", r * .12, g * .12, b * .12, opacity.header,
+        r * .38, g * .38, b * .38, opacity.header)
+    art.header:Show()
+
+    placeSlice(tip, art.frame, frameSize, 0)
+    sliceShown(art.frame, true)
+    sliceShown(art.glow, false)
+    if glow then
+        placeSlice(tip, art.glow, u(16), 1)
+        for _, piece in pairs(art.glow) do piece:SetVertexColor(tr, tg, tb, .55) end
+        sliceShown(art.glow, true)
+    end
+end
+
 local function style(tip, st)
     local _, link = tip:GetItem()
     if not link then return false end
     local itemName, _, quality, level, _, itemType, subType, _, equipLoc, icon = GetItemInfo(link)
     if not itemName then return false end
 
-    local art = build(tip)
+    local art = prepare(tip, st, "item")
     local name = tip:GetName()
-    if not st.firstPoint then
-        local point, relative, relativePoint, x, y = _G[name .. "TextLeft1"]:GetPoint(1)
-        st.firstPoint = { point or "TOPLEFT", relative or tip, relativePoint or "TOPLEFT", x or 10, y or -10 }
-    end
-    if not st.active then
-        st.backdrop = tip:GetBackdrop()
-        tip:SetBackdrop(nil)
-        st.active = true
-    end
-
     local u = metrics(tip)
     local alt = IsAltKeyDown()
     local boxed = equipLoc and equipLoc ~= "" and (level or 0) > 1
-    local model = read(tip, equipLoc, itemType, boxed)
+    local model = read(tip, equipLoc, itemType, boxed, u)
     if not model.title then return false end
     hideArt(art)
     boldTitle(st, model.title.left)
@@ -503,33 +609,7 @@ local function style(tip, st)
     end
 
     local pad = u(16)
-    local function place(line, x, y)
-        line.left:ClearAllPoints()
-        line.left:SetPoint("TOPLEFT", tip, "TOPLEFT", x, -y)
-        if line.hasRight then
-            line.right:ClearAllPoints()
-            line.right:SetPoint("RIGHT", line.left, "LEFT", pad + content - x, 0)
-        end
-    end
-    -- The line stays shown and keeps its text for other addons; it is only moved out of sight.
-    local function hide(line)
-        line.left:SetAlpha(0)
-        line.right:SetAlpha(0)
-        line.left:ClearAllPoints()
-        line.left:SetPoint("TOPLEFT", tip, "TOPLEFT", OFFSCREEN, 0)
-        if line.hasRight then
-            line.right:ClearAllPoints()
-            line.right:SetPoint("RIGHT", line.left, "LEFT", 0, 0)
-        end
-    end
-    -- A normal body line, wrapped when it is longer than the tooltip.
-    local function row(line, y)
-        if not line.hasRight and line.left:GetStringWidth() > content - line.inset then
-            line.left:SetWidth(content - line.inset)
-        end
-        place(line, pad + line.inset, y)
-        return y + height(line) + u(3)
-    end
+    local place, hide, row = lineTools(tip, pad, content, u)
 
     for _, line in ipairs(model.hidden) do hide(line) end
 
@@ -592,16 +672,7 @@ local function style(tip, st)
     y = headerBottom + u(6)
 
     -- Stats, enchants, effects and every line this does not recognise, in the game's order.
-    local drawn, pendingGap = false, false
-    for _, line in ipairs(model.body) do
-        if line.gap then
-            pendingGap = drawn
-        else
-            if pendingGap then y = y + u(6) end
-            pendingGap, drawn = false, true
-            y = row(line, y)
-        end
-    end
+    y = bodyRows(model.body, y, row, u)
 
     if model.bot then
         y = drawDivider(tip, art.botDivider, pad, y, content, u)
@@ -689,52 +760,33 @@ local function style(tip, st)
         end
     end
 
-    local total = content + 2 * pad
-    local full = y + u(12)
-    tip:SetWidth(total)
-    tip:SetHeight(full)
+    tip:SetWidth(content + 2 * pad)
+    tip:SetHeight(y + u(12))
 
-    -- Background, quality header, metal frame and, for uncommon and better or quest items, a glow.
-    local tinted = (quality or 0) >= 2 or itemType == "Quest"
+    -- Uncommon and better items and quest items glow.
+    local glow
     if itemType == "Quest" then
         r, g, b = 1, .82, 0
+        glow = { r, g, b }
+    elseif (quality or 0) >= 2 then
+        glow = { r, g, b }
     end
-    local tr, tg, tb = 0, 0, 0
-    if tinted then tr, tg, tb = r, g, b end
-    local frameSize = u(6)
-
-    art.body:ClearAllPoints()
-    art.body:SetPoint("TOPLEFT", tip, "TOPLEFT", frameSize / 2, -frameSize / 2)
-    art.body:SetPoint("BOTTOMRIGHT", tip, "BOTTOMRIGHT", -frameSize / 2, frameSize / 2)
-    art.body:SetGradientAlpha("VERTICAL", .016 + tr * .02, .012 + tg * .02, .016 + tb * .02, .94,
-        .052 + tr * .06, .040 + tg * .06, .050 + tb * .06, .94)
-    art.body:Show()
-
-    art.header:ClearAllPoints()
-    art.header:SetPoint("TOPLEFT", tip, "TOPLEFT", frameSize / 2, -frameSize / 2)
-    art.header:SetPoint("BOTTOMRIGHT", tip, "TOPRIGHT", -frameSize / 2, -headerBottom)
-    art.header:SetGradientAlpha("VERTICAL", r * .12, g * .12, b * .12, .96, r * .38, g * .38, b * .38, .96)
-    art.header:Show()
-
-    placeSlice(tip, art.frame, frameSize, 0)
-    sliceShown(art.frame, true)
-    if tinted then
-        placeSlice(tip, art.glow, u(16), 1)
-        for _, piece in pairs(art.glow) do piece:SetVertexColor(r, g, b, .55) end
-        sliceShown(art.glow, true)
-    end
+    decorate(tip, art, u, headerBottom, { r, g, b }, glow)
     return true
 end
+
+kinds.item = { option = "tooltip.pretty", style = style }
 
 local function layout(tip)
     local st = states[tip]
     if st.busy then return end
-    if not (st.item and S:IsReady() and S:Get("tooltip.pretty")) then
+    local kind = st.kind and kinds[st.kind]
+    if not (kind and S:IsReady() and S:Get(kind.option)) then
         restore(tip)
         return
     end
     st.busy = true
-    local ok, result = pcall(style, tip, st)
+    local ok, result = pcall(kind.style, tip, st)
     st.busy = nil
     if not (ok and result) then
         restore(tip)
@@ -748,7 +800,7 @@ end
 
 refreshAll = function()
     for tip, st in pairs(states) do
-        if st.active or st.item then
+        if st.active or st.kind then
             -- Hidden tooltips are rebuilt in the chosen style the next time they show.
             restore(tip)
             tip:Hide()
@@ -761,10 +813,10 @@ for _, name in ipairs(TOOLTIPS) do
     if tip and tip.HasScript and tip:HasScript("OnTooltipLayout") then
         states[tip] = {}
         tip:HookScript("OnTooltipCleared", function(self)
-            states[self].item = nil
+            states[self].kind, states[self].info = nil, nil
             restore(self)
         end)
-        tip:HookScript("OnTooltipSetItem", function(self) states[self].item = true end)
+        tip:HookScript("OnTooltipSetItem", function(self) states[self].kind = "item" end)
         tip:HookScript("OnTooltipLayout", layout)
         -- Other modules set tooltip fonts when it appears; measure again with those.
         tip:HookScript("OnShow", layout)
@@ -780,4 +832,15 @@ events:SetScript("OnEvent", function(_, _, key)
     end
 end)
 
-addon.PrettyTooltip = { Layout = layout }
+addon.PrettyTooltip = {
+    Layout = layout,
+    Refresh = refreshAll,
+    states = states,
+    kinds = kinds,
+    kit = {
+        WHITE = WHITE, SEPARATOR = SEPARATOR, plain = plain, toPattern = toPattern, metrics = metrics, texture = texture,
+        fontString = fontString, newOutline = newOutline, placeOutline = placeOutline, sliceShown = sliceShown,
+        newDivider = newDivider, hideDivider = hideDivider, drawDivider = drawDivider, boldTitle = boldTitle,
+        height = height, lineIcons = lineIcons, prepare = prepare, lineTools = lineTools, bodyRows = bodyRows, decorate = decorate,
+    },
+}
