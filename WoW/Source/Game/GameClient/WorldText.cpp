@@ -17,7 +17,6 @@
 #include "Engine/Source/Gxu/GxuFont.h"
 #include "Engine/Source/Gxu/Types.h"
 #include "Engine/Source/Os/TimeManager.h"
-#include "Engine/Source/Services/TextBlock.h"
 #include "Engine/Source/Services/Texture.h"
 #include "Engine/Source/Storm/H/stpl.h"
 #include "Engine/Source/Storm/H/storm.h"
@@ -54,8 +53,42 @@ static WORLDTEXTTYPE s_worldTextTypes[NUM_WORLDTEXTTYPES] = {
     { 2.0f, 150, 760, 1500, 0.018333333f, 0.018333333f, CImVector(0x00, 0x99, 0xFF, 0xFF) },
 };
 
-// STATIC: 0x00AF487C
-static C2Vector s_shadowOffset = C2Vector(0.002f, 0.002f);
+// Height of normal floating text (DDC), matching s_worldTextTypes.
+static constexpr float kBaseTextHeight = 0.018333333f;
+
+// Drop shadow: distance as a fraction of screen height, and its opacity
+// while the text is fully opaque.
+static constexpr float kShadowDistance = 0.0015f;
+static constexpr float kShadowOpacity = 192.0f;
+
+// FIX (2026-11-27): the original offset (0.002, 0.002) was a fraction of
+// screen width and of screen height, upwards. On a 3432x1362 screen that put
+// a second copy of the number about 7px to the side and 3px above it. The
+// shadow is now the same number of pixels right and down on any aspect ratio.
+// Returns that offset as screen fractions (both positive).
+static C2Vector WorldTextShadowSize() {
+    CRect window;
+    window.minY = 0.0f;
+    window.minX = 0.0f;
+    window.maxY = 0.0f;
+    window.maxX = 0.0f;
+    g_theGxDevicePtr->CapsWindowSize(window);
+
+    float width = window.maxX - window.minX;
+    float height = window.maxY - window.minY;
+
+    if (width <= 0.0f || height <= 0.0f) {
+        return C2Vector(0.0f, 0.0f);
+    }
+
+    float pixels = floor(height * kShadowDistance + 0.5f);
+
+    if (pixels < 1.0f) {
+        pixels = 1.0f;
+    }
+
+    return C2Vector(pixels / width, pixels / height);
+}
 
 // STATIC: 0x00AF4884
 static C3Vector s_iconPositions[4] = {
@@ -77,7 +110,7 @@ static C2Vector s_iconTexCoords[4] = {
 static CGxStringBatch* s_worldTextBatch;
 
 // STATIC: 0x00D380CC
-static HTEXTFONT s_worldTextFont;
+static CGxFont* s_worldTextFont;
 
 // STATIC: 0x00D380D0
 static CTexture* s_pvpRankTextures[15];
@@ -137,13 +170,14 @@ void WORLDTEXTSTRING::RecreateString() {
 
     this->m_string = nullptr;
 
-    CGxFont* font = TextBlockGetFontPtr(s_worldTextFont);
+    CGxFont* font = s_worldTextFont;
     float fontHeight = DDCToNDCHeight(this->m_fontHeight);
 
-    C2Vector shadow;
-    shadow.x = 0.0f;
-    shadow.y = 0.0f;
-    DDCToNDC(s_shadowOffset.x, s_shadowOffset.y, &shadow.x, &shadow.y);
+    // Keep the glyphs rasterized at the size normal text is drawn, which
+    // depends on the aspect ratio and screen height at this moment.
+    GxuFontSetFontHeight(font, DDCToNDCHeight(kBaseTextHeight));
+
+    C2Vector shadow = WorldTextShadowSize();
 
     float extent;
     GxuFontGetTextExtent(font, this->m_text, SStrLen(this->m_text), fontHeight, &extent, shadow.x, 1.0f, 0.0f, 0);
@@ -164,7 +198,6 @@ void WORLDTEXTSTRING::CalculateNewColor(uint32_t elapsed) {
     uint32_t duration = type.m_duration;
     float progress = static_cast<float>(elapsed) / static_cast<float>(duration);
     uint8_t alpha = 0xFF;
-    uint8_t shadowAlpha = 0x7F;
 
     if (elapsed < type.m_fadeInTime) {
         alpha = 0xFF;
@@ -174,9 +207,6 @@ void WORLDTEXTSTRING::CalculateNewColor(uint32_t elapsed) {
         if (fadeAlpha <= 0xFF) {
             alpha = fadeAlpha;
         }
-
-        uint32_t fadeShadow = static_cast<int32_t>(progress * 127.0f);
-        shadowAlpha = fadeShadow > 0x7F ? 0x7F : fadeShadow;
     } else if (elapsed >= type.m_fadeOutStart) {
         uint32_t range = duration - type.m_fadeOutStart;
         float fade = range ? static_cast<float>(elapsed - type.m_fadeOutStart) / static_cast<float>(range) : 0.0f;
@@ -190,17 +220,13 @@ void WORLDTEXTSTRING::CalculateNewColor(uint32_t elapsed) {
         }
 
         alpha = static_cast<int32_t>(255.0f - fadeAlpha);
-
-        float fadeShadow = fade * 127.0f;
-
-        if (fadeShadow > 127.0f) {
-            fadeShadow = 127.0f;
-        } else if (fadeShadow < 0.0f) {
-            fadeShadow = 0.0f;
-        }
-
-        shadowAlpha = static_cast<int32_t>(255.0f - fadeShadow);
     }
+
+    // FIX (2026-11-27): the shadow is drawn under the text, so it shows
+    // through while the text is translucent. Fade it with the square of the
+    // text's opacity so it disappears first.
+    float opacity = alpha / 255.0f;
+    uint8_t shadowAlpha = static_cast<uint8_t>(kShadowOpacity * opacity * opacity);
 
     CImVector shadowColor;
     shadowColor.b = 0;
@@ -209,14 +235,17 @@ void WORLDTEXTSTRING::CalculateNewColor(uint32_t elapsed) {
     this->m_color.a = alpha;
     shadowColor.a = shadowAlpha;
     GxuFontSetStringColor(this->m_string, this->m_color);
-    GxuFontAddShadow(this->m_string, shadowColor, s_shadowOffset);
+
+    C2Vector shadow = WorldTextShadowSize();
+    shadow.y = -shadow.y;
+    GxuFontAddShadow(this->m_string, shadowColor, shadow);
 }
 
 // VERIFY: 9b0c9bfd auto
 // OFFSET: 0x007E6A30
 void WorldTextShutdown() {
     if (s_worldTextFont) {
-        HandleClose(reinterpret_cast<HOBJECT>(s_worldTextFont));
+        GxuFontDestroyFont(s_worldTextFont);
     }
 
     s_freeStrings.Clear(RAW_TYPE_NAME(WORLDTEXTSTRING), SLOG_OBJECT, 1);
@@ -571,7 +600,12 @@ void WorldTextRenderBatch() {
 // OFFSET: 0x007E7BB0
 void WorldTextInitialize() {
     const char* fontName = FrameScript_GetText("DAMAGE_TEXT_FONT", -1, GENDER_NOT_APPLICABLE);
-    s_worldTextFont = TextBlockGenerateFont(fontName, 0, DDCToNDCHeight(0.018333333f));
+    // FIX (2026-11-27): created directly, not through TextBlockGenerateFont, so
+    // the font can be smooth and resized without affecting UI text. The old call
+    // also converted the height to NDC twice.
+    if (fontName && *fontName) {
+        GxuFontCreateFont(fontName, DDCToNDCHeight(kBaseTextHeight), s_worldTextFont, kGxFontFlagSmooth);
+    }
     s_worldTextBatch = GxuFontCreateBatch(false, false);
 
     CStatus status;

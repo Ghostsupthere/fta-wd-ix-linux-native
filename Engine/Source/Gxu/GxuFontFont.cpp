@@ -79,8 +79,11 @@ int32_t CGxFont::UpdateDimensions() {
     // text reported at 3440x1440. Raised to kMaxFontPixelSize (see its
     // declaration in GxuFontFont.h -- GxuFontTextureCache.cpp's per-glyph
     // scratch buffers are sized to match this exact value, keep them in sync).
-    if (pixelSize > kMaxFontPixelSize) {
-        pixelSize = kMaxFontPixelSize;
+    bool smoothPlain = (this->m_fontFlags & kGxFontFlagSmooth) && !(this->m_fontFlags & (1 | 8));
+    uint32_t maxPixelSize = smoothPlain ? kMaxSmoothFontPixelSize : kMaxFontPixelSize;
+
+    if (pixelSize > maxPixelSize) {
+        pixelSize = maxPixelSize;
     } else if (pixelSize == 0) {
         DebugLog("Error, font %s being created with height %g at screen res of %dx%d which is %d pixels!", this->m_fontName, height, g_widthPixels, g_heightPixels, pixelSize);
     }
@@ -122,6 +125,9 @@ bool CGxFont::GetGlyphData(GLYPHBITMAPDATA* data, uint32_t code) {
     if (this->m_fontFlags & 8) {
         padding = 4;
     } else if (this->m_fontFlags & 1) {
+        padding = 2;
+    } else if (this->m_fontFlags & kGxFontFlagSmooth) {
+        // Transparent columns, so filtering cannot pick up the next glyph.
         padding = 2;
     }
 
@@ -366,7 +372,7 @@ CHARCODEDESC* CGxFont::NewCodeDesc(uint32_t code) {
 
         if (!current->m_texture || !TextureGetGxTex(current->m_texture, 1, nullptr)) {
             cache = current;
-            cache->CreateTexture(this->m_fontFlags & 4);
+            cache->CreateTexture(this->m_fontFlags & kGxFontFlagSmooth);
             cache->Initialize(this, this->m_cellHeight);
             desc = cache->AllocateNewGlyph(&data);
             break;

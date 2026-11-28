@@ -15,6 +15,11 @@ class CImVector;
 struct CGxFont;
 struct CGxStringBatch;
 
+// GxuFontCreateFont flag for text that is drawn at changing sizes: the glyph
+// atlas is sampled with linear filtering and keeps transparent gaps around
+// glyphs. Bit 2 is the filter argument of TEXTURECACHE::CreateTexture().
+constexpr uint32_t kGxFontFlagSmooth = 0x4;
+
 extern FT_Library g_FTLibrary;
 extern CGxShader* g_fontPixelShader;
 extern uint8_t g_fontStatsEnabled;
@@ -50,6 +55,7 @@ void GxuFontInitialize();
 void GxuFontRemoveShadow(CGxString* string);
 void GxuFontRenderBatch(CGxStringBatch* batch);
 int32_t GxuFontSetStringColor(CGxString* string, const CImVector& color);
+void GxuFontSetFontHeight(CGxFont* face, float fontHeight);
 void GxuFontSetStringPosition(CGxString* string, const C3Vector& position);
 void GxuFontShutdown();
 uint32_t GxuFontStringEmbeddedTextureInfo(CGxString* string, const GXUEMBEDDEDTEXTUREINFO*& info);

@@ -4,6 +4,7 @@
 #include "Engine/Source/Base/Handle.h"
 #include "Engine/Source/Gx/CGxTexFlags.h"
 #include "Engine/Source/Gx/Gx.h"
+#include "Engine/Source/Gxu/GxuFont.h"
 #include "Engine/Source/Gxu/GxuFontFont.h"
 #include "Engine/Source/Gxu/GxuFontMiscClasses.h"
 #include "Engine/Source/Gxu/GxuFontUtil.h"
@@ -338,6 +339,25 @@ void TEXTURECACHE::PasteGlyphNonOutlinedAA(const GLYPHBITMAPDATA& data, uint16_t
     }
 }
 
+// Writes only the glyph's own texels onto the cleared page, leaving the first
+// and last row of each cell empty as a gap between atlas rows.
+void TEXTURECACHE::PasteGlyphSmooth(const GLYPHBITMAPDATA& data, uint16_t* dest) {
+    const uint8_t* source = static_cast<const uint8_t*>(data.m_data);
+    uint32_t cellHeight = this->m_theFace->m_cellHeight;
+
+    for (uint32_t y = 0; y < data.m_glyphHeight; y++, source += data.m_glyphPitch) {
+        uint32_t row = data.m_yStart + y;
+
+        if (row == 0 || row + 1 >= cellHeight) {
+            continue;
+        }
+
+        for (uint32_t x = 0; x < data.m_glyphWidth; x++) {
+            dest[row * 256 + x] = (source[x] << 8) | 0x0FFF;
+        }
+    }
+}
+
 // VERIFY: d9c18e4c auto
 // OFFSET: 0x006C9D50
 void TEXTURECACHE::UpdateDirty() {
@@ -372,6 +392,15 @@ void TEXTURECACHE::TextureCallback(EGxTexCommand command, uint32_t width, uint32
     }
 
     TEXTURECACHE* cache = static_cast<TEXTURECACHE*>(userArg);
+    bool smooth = cache->m_theFace && (cache->m_theFace->m_fontFlags & kGxFontFlagSmooth) && !(cache->m_theFace->m_fontFlags & (1 | 2));
+
+    // s_textureData is shared by every font page. Filtering also reads texels
+    // between glyphs, so clear it to transparent white (black would fringe).
+    if (smooth) {
+        for (uint32_t i = 0; i < 256 * 256; i++) {
+            s_textureData[i] = 0x0FFF;
+        }
+    }
 
     for (uint32_t row = cache->m_textureRows.m_count; row > 0; row--) {
         TEXTURECACHEROW& cacheRow = cache->m_textureRows.m_data[row - 1];
@@ -384,7 +413,9 @@ void TEXTURECACHE::TextureCallback(EGxTexCommand command, uint32_t width, uint32
             CGxFont* font = cache->m_theFace;
             uint16_t* dest = &s_textureData[glyph->m_glyphStartPixel + ((glyph->m_rowNumber * font->m_cellHeight) << 8)];
 
-            if (font->m_fontFlags & 1) {
+            if (smooth) {
+                cache->PasteGlyphSmooth(glyph->m_bitmapData, dest);
+            } else if (font->m_fontFlags & 1) {
                 if (font->m_fontFlags & 2) {
                     cache->PasteGlyphOutlinedMonochrome(glyph->m_bitmapData, dest);
                 } else {

@@ -21,6 +21,10 @@
 constexpr uint32_t kMaxFontPixelSize = 64;
 constexpr uint32_t kMaxFontCellHeight = kMaxFontPixelSize + 4;
 
+// Non-outlined fonts created with kGxFontFlagSmooth (GxuFont.h) may rasterize
+// larger: only the outline paste functions use the scratch buffers above.
+constexpr uint32_t kMaxSmoothFontPixelSize = 128;
+
 struct KERNINGHASHKEY {
     /* 0000 */ uint32_t m_code;
 

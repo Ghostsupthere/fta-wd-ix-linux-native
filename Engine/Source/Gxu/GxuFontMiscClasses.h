@@ -112,6 +112,7 @@ struct TEXTURECACHE {
     ~TEXTURECACHE();
     CHARCODEDESC* AllocateNewGlyph(GLYPHBITMAPDATA* data);
     void CreateTexture(int32_t filter);
+    void PasteGlyphSmooth(const GLYPHBITMAPDATA& data, uint16_t* dest);
     void Destroy();
     void Initialize(CGxFont* face, uint32_t cellHeight);
     void PasteGlyphNonOutlinedAA(const GLYPHBITMAPDATA& data, uint16_t* dest);

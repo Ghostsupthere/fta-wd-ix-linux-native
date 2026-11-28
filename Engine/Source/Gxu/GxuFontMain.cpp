@@ -896,6 +896,16 @@ int32_t GxuFontCreateFont(const char* name, float fontHeight, CGxFont*& face, ui
     return result;
 }
 
+// Re-rasterizes a font at a new screen-fraction height; no-op when unchanged.
+void GxuFontSetFontHeight(CGxFont* face, float fontHeight) {
+    if (!face || !(fontHeight <= 1.0f && fontHeight > 0.0f) || face->m_fontHeight == fontHeight) {
+        return;
+    }
+
+    face->m_fontHeight = fontHeight;
+    face->HandleScreenSizeChange();
+}
+
 // VERIFY: 96f05107 auto
 // OFFSET: 0x006BDF90
 void GxuFontDestroyFont(CGxFont*& face) {
