@@ -242,6 +242,24 @@ DrakeishUI_SocialNE = {
     chrome = { Apply = function(frame) frame.CloseButton = CreateFrame("Button", nil, frame) end },
 }
 
+-- Questie as it behaves on 3.3.5: the icon's parent is the game plate itself.
+Questie = { db = { profile = { nameplateX = -17, nameplateY = -7 } } }
+local questieIcons = {}
+local questie = { private = {} }
+function questie.private.GetFrame(parent)
+    if not questieIcons[parent] then
+        local icon = CreateFrame("Frame")
+        icon:SetParent(parent)
+        icon:SetPoint("LEFT", Questie.db.profile.nameplateX, Questie.db.profile.nameplateY)
+        questieIcons[parent] = icon
+    end
+    return questieIcons[parent]
+end
+function questie:RedrawIcons()
+    for _, icon in pairs(questieIcons) do icon:SetPoint("LEFT", Questie.db.profile.nameplateX, Questie.db.profile.nameplateY) end
+end
+QuestieLoader = { ImportModule = function(_, module) if module == "QuestieNameplate" then return questie end end }
+
 local function event(name, ...)
     local list = {}
     for _, f in ipairs(frames) do if f.events[name] or f.allEvents then list[#list + 1] = f end end
@@ -276,6 +294,10 @@ local health = new("StatusBar", nil, plate); health:SetMinMaxValues(0, 100); hea
 health._barColor = { 1, 0, 0, 1 }
 local cast = new("StatusBar", nil, plate); cast:Hide()
 
+-- Questie can mark a plate before Kui has seen it.
+local questIcon = questie.private.GetFrame(plate)
+assert(#questIcon._points == 1 and questIcon._points[1][1] == "LEFT", "an unclaimed plate keeps Questie's position")
+
 Kui:OnUpdate(); noErrors("scan")
 assert(plate.kui, "the client's plate layout was not recognised")
 local function tick()
@@ -297,6 +319,44 @@ assert(S:Set("nameplates.mode", "all")); tick(); noErrors("all")
 
 assert(S:Set("nameplates.height", 40)); noErrors("height")
 assert(S:Get("nameplates.height") == 40 and Kui.db.profile.general.offsety == 40)
+
+-- The Questie icon sits beside Kui's bar, or beside the name without one.
+do
+    local f = plate.kui
+    local function at()
+        assert(#questIcon._points == 1, "the icon needs exactly one anchor, found " .. #questIcon._points)
+        return unpack(questIcon._points[1])
+    end
+    local function beside(x, y, stage)
+        local point, relative, relativePoint, px, py = at()
+        assert(point == "RIGHT" and relative == f.health and relativePoint == "LEFT", stage)
+        assert(px == x and py == y, stage .. ": " .. tostring(px) .. ", " .. tostring(py))
+    end
+    beside(-3, 0, "after Kui took the plate")
+    assert(questie.private.GetFrame(plate) == questIcon); beside(-3, 0, "Questie refresh")
+    -- Questie's own X and Y sliders still move the icon.
+    Questie.db.profile.nameplateX, Questie.db.profile.nameplateY = -20, -2
+    questie:RedrawIcons(); noErrors("questie sliders"); beside(-6, 5, "Questie sliders")
+    assert(S:Set("nameplates.mode", "blizzard")); tick(); noErrors("questie blizzard")
+    local point, x, y = at()
+    assert(point == "LEFT" and x == -20 and y == -2, "the game's plate uses Questie's position")
+    assert(S:Set("nameplates.mode", "all")); tick(); noErrors("questie all"); beside(-6, 5, "back to Kui")
+    Questie.db.profile.nameplateX, Questie.db.profile.nameplateY = -17, -7
+    questie:RedrawIcons()
+    -- Name-only plates have no bar: the icon goes left of the text.
+    f.health:Hide(); noErrors("questie name only")
+    local side, relative, relativePoint, px = at()
+    assert(side == "RIGHT" and relative == f.name and relativePoint == "CENTER")
+    assert(px == -3 - f.name:GetStringWidth() / 2 * f:GetEffectiveScale() / questIcon:GetEffectiveScale())
+    f.health:Show(); beside(-3, 0, "bar back")
+    -- A frame Questie has moved to another plate is left alone.
+    local elsewhere = CreateFrame("Frame")
+    questIcon:SetParent(elsewhere); questIcon:ClearAllPoints(); questIcon:SetPoint("LEFT", 1, 2)
+    questie:RedrawIcons(); questIcon:ClearAllPoints(); questIcon:SetPoint("LEFT", 1, 2)
+    f.health:Hide(); f.health:Show()
+    assert(select(1, at()) == "LEFT" and select(2, at()) == 1, "moved a frame belonging to another plate")
+    questIcon:SetParent(plate); questie.private.GetFrame(plate); beside(-3, 0, "reused on this plate")
+end
 
 -- Opening and closing the game's Combat options must not error.
 InterfaceOptionsCombatPanel:Hide(); InterfaceOptionsCombatPanel:Show()

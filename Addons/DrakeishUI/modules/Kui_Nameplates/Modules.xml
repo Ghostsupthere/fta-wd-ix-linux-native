@@ -12,4 +12,5 @@
 <Script file="Modules\Drakeish.lua" />
 <Script file="Modules\TextFonts.lua" />
 <Script file="Modules\Debuffs.lua" />
+<Script file="Modules\QuestieIcons.lua" />
 </Ui>

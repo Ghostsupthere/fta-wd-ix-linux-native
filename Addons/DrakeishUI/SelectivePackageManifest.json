@@ -7106,6 +7106,12 @@
       "source": "fta"
     },
     {
+      "path": "modules/Kui_Nameplates/Modules/QuestieIcons.lua",
+      "size": 3853,
+      "sha256": "b4a684ef7615110b391b80c949203b5739eec36a91ba063b713f3f53c1783b39",
+      "source": "fta"
+    },
+    {
       "path": "shipped_defaults.lua",
       "size": 6592,
       "sha256": "aae86836034a0728a280e98fc331d7ac246ee214cad86b20e266a480f76f799e",
@@ -7647,8 +7653,8 @@
     },
     {
       "path": "modules/Kui_Nameplates/Modules.xml",
-      "size": 656,
-      "sha256": "73135c4f7138f052b06e8ad81f6ef3ca0b689e58ed856ca298c8103c3d4643fb",
+      "size": 699,
+      "sha256": "ae423b6559453baeb77fb10d547e25cb6797b6cf1ac5bbea9e9682de9dfdbc87",
       "source": "kui-nameplates"
     },
     {
