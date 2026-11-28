@@ -185,6 +185,10 @@ class CGTooltip : public CSimpleFrame {
     /* 0514 */ FrameScript_Object::ScriptIx m_onTooltipSetEquipmentSet;
     /* 051C */ FrameScript_Object::ScriptIx m_onTooltipSetFrameStack;
     /* 0524 */ uint32_t unused_0524;
+    // FTA addition: runs after every CalculateSize(), so an addon can arrange
+    // the finished lines (client refreshes never go through Lua setters).
+    FrameScript_Object::ScriptIx m_onTooltipLayout;
+    int32_t m_runningLayoutScript;
 
     ~CGTooltip() override;
     int32_t GetScriptMetaTable() override;

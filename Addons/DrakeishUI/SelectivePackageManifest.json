@@ -3,8 +3,8 @@
   "files": [
     {
       "path": "DrakeishUI.toc",
-      "size": 2048,
-      "sha256": "5cb60ff7fc6a9e0ac88330967112d21fed0a5e99c0b71856e7ec9a9857ffb9c4",
+      "size": 2067,
+      "sha256": "3f7a732b31cec52e954dfccf9d2e9f0bd200238edaf44d024490bdd93f684c86",
       "source": "windows"
     },
     {
@@ -7115,6 +7115,30 @@
       "path": "shipped_defaults.lua",
       "size": 6592,
       "sha256": "aae86836034a0728a280e98fc331d7ac246ee214cad86b20e266a480f76f799e",
+      "source": "fta"
+    },
+    {
+      "path": "pretty_tooltip.lua",
+      "size": 32590,
+      "sha256": "31a6aef9a8f9cd9fc565dc2b13c2cdb4acaa161a20aae3c9752b120f43f9b78b",
+      "source": "fta"
+    },
+    {
+      "path": "assets/Tooltip/frame.tga",
+      "size": 16428,
+      "sha256": "7a2a501b7e1ac532a4094db89ccc1940daa506ee513464ab98af93d7557d27ff",
+      "source": "fta"
+    },
+    {
+      "path": "assets/Tooltip/glow.tga",
+      "size": 16428,
+      "sha256": "2110633e203cdf7d88cfa42ea536e61a78396cc73a13a692753cf9625fc558e8",
+      "source": "fta"
+    },
+    {
+      "path": "assets/Tooltip/star.tga",
+      "size": 16428,
+      "sha256": "23454506fbd703b7e7c27f1140c28a05a3d796f12d97b9455dac8f2ad4a9c4e2",
       "source": "fta"
     },
     {

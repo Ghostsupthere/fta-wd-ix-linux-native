@@ -723,6 +723,10 @@ FrameScript_Object::ScriptIx* CGTooltip::GetScriptByName(const char* name, Frame
         return &this->m_onTooltipCleared;
     }
 
+    if (!SStrCmpI(name, "OnTooltipLayout", STORM_MAX_STR)) {
+        return &this->m_onTooltipLayout;
+    }
+
     if (!SStrCmpI(name, "OnTooltipAddMoney", STORM_MAX_STR)) {
         data.m_wrapper = "return function(self,cost,maxcost) %s end";
         return &this->m_onTooltipAddMoney;
@@ -772,6 +776,7 @@ void CGTooltip::GetScriptTime(lua_State* L, double* time, uint32_t* count, int32
     FrameScript_Object::GetScriptTime(L, this->m_onTooltipSetAchievement, time, count);
     FrameScript_Object::GetScriptTime(L, this->m_onTooltipSetEquipmentSet, time, count);
     FrameScript_Object::GetScriptTime(L, this->m_onTooltipSetFrameStack, time, count);
+    FrameScript_Object::GetScriptTime(L, this->m_onTooltipLayout, time, count);
     CSimpleFrame::GetScriptTime(L, time, count, recurse);
 }
 
@@ -1090,6 +1095,13 @@ void CGTooltip::CalculateSize() {
     }
 
     this->Resize(1);
+
+    // The script may show the tooltip again, which calls back into here.
+    if (this->m_onTooltipLayout.m_luaRef && !this->m_runningLayoutScript) {
+        this->m_runningLayoutScript = 1;
+        this->RunScript(this->m_onTooltipLayout, 0, nullptr);
+        this->m_runningLayoutScript = 0;
+    }
 }
 
 // VERIFY: 49557c47 auto
@@ -1141,6 +1153,7 @@ CGTooltip::CGTooltip(CSimpleFrame* parent) : CSimpleFrame(parent) {
     this->m_itemDisplayedLevel = 0;
     this->m_itemSkipSellPrice = 0;
     this->m_statusBar = nullptr;
+    this->m_runningLayoutScript = 0;
 }
 
 // VERIFY: c7c9afc0 auto
