@@ -190,7 +190,8 @@ static int32_t Script_UnitRace(lua_State* L) {
         CGUnit_C* unit = static_cast<CGUnit_C*>(ClntObjMgrObjectPtr(guid, TYPE_UNIT, __FILE__, __LINE__));
 
         if (unit) {
-            rec = g_chrRacesDB.GetRecord(unit->m_unit->m_unitFieldBytes0[0]);
+            const NameCache* bot = CGUnit_C::GetNpcBotRecord(unit);
+            rec = g_chrRacesDB.GetRecord(bot ? bot->m_race : unit->m_unit->m_unitFieldBytes0[0]);
             name = CGUnit_C::GetDisplayRaceName(unit, nullptr);
         } else {
             NameCache* nameCache = g_nameDBCache.GetRecord(guid.m_guid, WOWGUID(), nullptr, nullptr, false);
@@ -238,7 +239,8 @@ static int32_t Script_UnitClass(lua_State* L) {
         CGUnit_C* unit = static_cast<CGUnit_C*>(ClntObjMgrObjectPtr(guid, TYPE_UNIT, __FILE__, __LINE__));
 
         if (unit) {
-            rec = g_chrClassesDB.GetRecord(unit->m_unit->m_unitFieldBytes0[1]);
+            const NameCache* bot = CGUnit_C::GetNpcBotRecord(unit);
+            rec = g_chrClassesDB.GetRecord(bot ? bot->m_class : unit->m_unit->m_unitFieldBytes0[1]);
             name = CGUnit_C::GetDisplayClassName(unit, nullptr);
         } else {
             NameCache* nameCache = g_nameDBCache.GetRecord(guid.m_guid, WOWGUID(), nullptr, nullptr, false);
@@ -3724,7 +3726,8 @@ static int32_t Script_UnitClassBase(lua_State* L) {
         CGUnit_C* unit = static_cast<CGUnit_C*>(ClntObjMgrObjectPtr(guid, TYPE_UNIT, __FILE__, __LINE__));
 
         if (unit) {
-            rec = g_chrClassesDB.GetRecord(unit->m_unit->m_unitFieldBytes0[1]);
+            const NameCache* bot = CGUnit_C::GetNpcBotRecord(unit);
+            rec = g_chrClassesDB.GetRecord(bot ? bot->m_class : unit->m_unit->m_unitFieldBytes0[1]);
         } else {
             WOWGUID none = WOWGUID();
             NameCache* record = g_nameDBCache.GetRecord(guid.m_guid, none, nullptr, nullptr, false);

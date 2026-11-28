@@ -215,6 +215,8 @@ class CGUnit_C : public CGObject_C, public CGUnit {
 
     static const char* GetDisplayClassNameFromRecord(const ChrClassesRec* rec, int32_t sex, int32_t* displaySex);
     static const char* GetDisplayRaceNameFromRecord(const ChrRacesRec* rec, int32_t sex, int32_t* displaySex);
+    // FTA addition: the name record of an NPC bot, which has its real race and class. Null for anything else.
+    static const NameCache* GetNpcBotRecord(const CGUnit_C* unit);
     static const char* GetDisplayClassName(const CGUnit_C* unit, const NameCache* name);
     static const char* GetDisplayRaceName(const CGUnit_C* unit, const NameCache* name);
     static const char* GetDisplayRaceName(const CGUnit_C* unit, const NameCache* name, int32_t* displaySex);

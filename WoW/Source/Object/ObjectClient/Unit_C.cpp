@@ -15688,11 +15688,35 @@ void CGUnit_C::PlayEmotes(const QUESTGIVEREMOTEQUEUE& emotes) {
     this->SetEmoteQueue(emotes.m_nodes, emotes.m_count);
 }
 
+// FTA addition: NPC bots are creatures, but the server answers a name query for one with its race and
+// class, and for no other creature. A bot's own unit fields are not enough: the class there comes from the
+// creature template, which allows only four classes.
+const NameCache* CGUnit_C::GetNpcBotRecord(const CGUnit_C* unit) {
+    if (!unit || (unit->m_obj->m_type & TYPE_PLAYER)) {
+        return nullptr;
+    }
+
+    WOWGUID none = { 0 };
+    // Only what is already cached: the server never answers for other creatures.
+    const NameCache* record = g_nameDBCache.GetRecord(unit->m_obj->m_guid.m_guid, none, nullptr, nullptr, false);
+
+    if (!record || !g_chrRacesDB.GetRecord(record->m_race) || !g_chrClassesDB.GetRecord(record->m_class)) {
+        return nullptr;
+    }
+
+    return record;
+}
+
 // VERIFY: f8b415d2 manual
 // OFFSET: 0x0072AA70
 const char* CGUnit_C::GetDisplayRaceName(const CGUnit_C* unit, const NameCache* name) {
     if (unit) {
         if (!(unit->m_obj->m_type & TYPE_PLAYER)) {
+            if (const NameCache* bot = CGUnit_C::GetNpcBotRecord(unit)) {
+                return CGUnit_C::GetDisplayRaceName(nullptr, bot, nullptr);
+            }
+
+            // Other creatures give their name, as the game always has.
             return const_cast<CGUnit_C*>(unit)->GetUnitName(nullptr, 1);
         }
     } else if (!name) {
@@ -15707,6 +15731,10 @@ const char* CGUnit_C::GetDisplayRaceName(const CGUnit_C* unit, const NameCache* 
 const char* CGUnit_C::GetDisplayClassName(const CGUnit_C* unit, const NameCache* name) {
     if (unit) {
         if (!(unit->m_obj->m_type & TYPE_PLAYER)) {
+            if (const NameCache* bot = CGUnit_C::GetNpcBotRecord(unit)) {
+                return CGUnit_C::GetDisplayClassName(nullptr, bot, nullptr);
+            }
+
             return const_cast<CGUnit_C*>(unit)->GetUnitName(nullptr, 1);
         }
     } else if (!name) {
