@@ -264,7 +264,12 @@ end
 if tip.FadeOut then
     hooksecurefunc(tip, "FadeOut", function() if instant() then tip:Hide() end end)
 end
--- The client fades world tooltips natively, without calling the Lua method.
+-- The client fades world tooltips natively, without calling the Lua method. Newer clients say when that
+-- starts, so world objects can go as fast as creatures.
+if tip.HasScript and tip:HasScript("OnTooltipFadeOut") then
+    tip:HookScript("OnTooltipFadeOut", function(self) if instant() then self:Hide() end end)
+end
+-- Without that script:
 tip:HookScript("OnTooltipSetUnit", function()
     worldUnit = GetMouseFocus() == WorldFrame and UnitExists("mouseover") and true or nil
     lastAlpha = nil

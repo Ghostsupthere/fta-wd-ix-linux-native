@@ -1,6 +1,6 @@
 -- FTA addition: the "pretty" tooltips. A DrakeishUI metal frame, a shaded header, and sections split by a
 -- metal bar with a gold star. This file holds the shared drawing and the item layout; pretty_unit_tooltip.lua
--- adds NPCs and players. The design follows PrettyTooltip (MIT, Copyright (c) FallenShard) for the quality
+-- adds NPCs and players, and pretty_object_tooltip.lua world objects and corpses. The design follows PrettyTooltip (MIT, Copyright (c) FallenShard) for the quality
 -- header, glow and body colours.
 --
 -- The game's own lines stay where other addons expect them: this only moves, hides and decorates them after
@@ -239,6 +239,7 @@ local function build(tip)
     art.subtitle = fontString(tip)
     art.more = fontString(tip)
     art.durabilityBack = texture(tip, "ARTWORK", WHITE)
+    art.healthBack = texture(tip, "ARTWORK", WHITE)
     art.durabilityFill = texture(tip, "OVERLAY", WHITE)
     art.durability = fontString(tip)
     art.itemID = fontString(tip)
@@ -249,7 +250,7 @@ local function build(tip)
 end
 
 local TEXTS = { "badge", "subtitle", "more", "durability", "itemID", "displayID" }
-local REGIONS = { "body", "header", "icon", "badgeFill", "durabilityBack", "durabilityFill" }
+local REGIONS = { "body", "header", "icon", "badgeFill", "durabilityBack", "durabilityFill", "healthBack" }
 
 local function hideArt(art)
     sliceShown(art.glow, false)
@@ -502,6 +503,9 @@ local function bodyRows(lines, y, row, u)
 end
 
 local OPACITY = { body = .94, header = .96 }
+-- NPCs, players and world objects are much more see-through than items: over dim ground, anything above
+-- about .8 looks solid.
+local WORLD_OPACITY = { body = .68, header = .74, split = true }
 
 -- Background, shaded header, metal frame and an optional glow, once the size is known.
 local function decorate(tip, art, u, headerBottom, header, glow, opacity)
@@ -536,6 +540,43 @@ local function decorate(tip, art, u, headerBottom, header, glow, opacity)
         for _, piece in pairs(art.glow) do piece:SetVertexColor(tr, tg, tb, .55) end
         sliceShown(art.glow, true)
     end
+end
+
+-- The game's health bar can sit inside the frame; it goes back where it was afterwards.
+local function restoreHealth(st)
+    local saved = st.health
+    if not saved then return end
+    st.health = nil
+    st.art.healthBack:Hide()
+    local bar = saved.bar
+    bar:ClearAllPoints()
+    for _, point in ipairs(saved.points) do bar:SetPoint(unpack(point, 1, 5)) end
+    bar:SetHeight(saved.height)
+end
+
+-- The game's own health bar, moved to the bottom of the frame. Returns the y below it.
+local function placeHealth(frame, st, x, y, width, u)
+    local art = st.art
+    local bar = GameTooltipStatusBar
+    if not (bar and bar:IsShown()) then return y end
+    if not st.health then
+        local points = {}
+        for index = 1, bar:GetNumPoints() do points[index] = { bar:GetPoint(index) } end
+        st.health = { bar = bar, points = points, height = bar:GetHeight() }
+    end
+    y = y + u(5)
+    local barHeight, edge = u(7), u(1)
+    art.healthBack:SetVertexColor(0, 0, 0, .9)
+    art.healthBack:ClearAllPoints()
+    art.healthBack:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -y)
+    art.healthBack:SetWidth(width)
+    art.healthBack:SetHeight(barHeight + 2 * edge)
+    art.healthBack:Show()
+    bar:ClearAllPoints()
+    bar:SetPoint("TOPLEFT", frame, "TOPLEFT", x + edge, -(y + edge))
+    bar:SetWidth(width - 2 * edge)
+    bar:SetHeight(barHeight)
+    return y + barHeight + 2 * edge
 end
 
 local function style(tip, st)
@@ -841,6 +882,8 @@ addon.PrettyTooltip = {
         WHITE = WHITE, SEPARATOR = SEPARATOR, plain = plain, toPattern = toPattern, metrics = metrics, texture = texture,
         fontString = fontString, newOutline = newOutline, placeOutline = placeOutline, sliceShown = sliceShown,
         newDivider = newDivider, hideDivider = hideDivider, drawDivider = drawDivider, boldTitle = boldTitle,
-        height = height, lineIcons = lineIcons, prepare = prepare, lineTools = lineTools, bodyRows = bodyRows, decorate = decorate,
+        height = height, WORLD_OPACITY = WORLD_OPACITY, placeHealth = placeHealth,
+        restoreHealth = restoreHealth, lineIcons = lineIcons, prepare = prepare, lineTools = lineTools,
+        bodyRows = bodyRows, decorate = decorate,
     },
 }

@@ -49,7 +49,7 @@ function methods:SetVertexColor(...) self.vertex = { ... } end
 function methods:SetGradientAlpha(...) self.gradient = { ... } end
 
 -- Globals the module reads.
-local alt, hookScripts = false, true
+local alt, hookScripts, objectScript = false, true, true
 function IsAltKeyDown() return alt end
 function GetCVar(name) if name == "gxResolution" then return "1024x768" end end
 function geterrorhandler() return function(message) error(message, 0) end end
@@ -107,7 +107,10 @@ local function makeTip(name)
         self.count, self.item, self.shownMoneyFrames = 0, nil, nil
         if had then self:Run("OnTooltipCleared") end
     end
-    function tip:HasScript(script) return hookScripts or script ~= "OnTooltipLayout" end
+    function tip:HasScript(script)
+        if script == "OnTooltipSetObject" then return objectScript end
+        return hookScripts or script ~= "OnTooltipLayout"
+    end
     function tip:HookScript(script, fn) self.hooks[script] = self.hooks[script] or {}; table.insert(self.hooks[script], fn) end
     function tip:GetItem() if self.item then return "Item", self.item end end
     function tip:GetName() return name end
@@ -134,16 +137,22 @@ local function load()
     local addon = { Settings = S }
     assert(loadfile(root .. "/pretty_tooltip.lua"))("DrakeishUI", addon)
     assert(loadfile(root .. "/pretty_unit_tooltip.lua"))("DrakeishUI", addon)
+    assert(loadfile(root .. "/pretty_object_tooltip.lua"))("DrakeishUI", addon)
     return addon
 end
 
 -- A client without OnTooltipLayout keeps the stock tooltips and gets no option.
-hookScripts = false
+hookScripts, objectScript = false, false
 makeTip("GameTooltip")
 load()
 assert(not options["tooltip.pretty"], "an older client must not offer the option")
 assert(not options["tooltip.prettyUnits"], "an older client must not offer the unit option")
 hookScripts = true
+-- A client with the layout script but not the object script styles everything except world objects.
+makeTip("GameTooltip")
+load()
+assert(options["tooltip.prettyUnits"] and not options["tooltip.prettyObjects"], "no object option without its script")
+objectScript = true
 
 local tip = makeTip("GameTooltip")
 local compare = makeTip("ShoppingTooltip1")
@@ -627,3 +636,114 @@ tip:Run("OnTooltipLayout")
 assert(tip.backdrop == nil, "items keep their own option")
 
 print("Pretty unit tooltips: NPC and player headers, add-on lines, Alt, target, fading, health bar and option passed")
+
+------------------------------------------------------------------------------------- world objects and corpses --
+values["tooltip.prettyUnits"], values["tooltip.prettyObjects"] = true, true
+assert(options["tooltip.prettyObjects"])
+unitToken = nil
+-- The client's order: it adds the object's own lines and quest lines, says how many were the object's, then
+-- shows the tooltip. Questie adds more lines later and shows it again.
+local function showObject(fill, statusLines, corpse, health)
+    tip:Clear()
+    if health then bar:Show() else bar:Hide() end
+    local rows = {}
+    fill(rows)
+    for _, fn in ipairs(tip.hooks.OnTooltipSetObject) do fn(tip, statusLines, corpse) end
+    tip:Run("OnTooltipLayout")
+    return rows
+end
+local function shownTexture(pattern)
+    for _, t in ipairs(tip.created) do
+        if t.kind == "Texture" and t.shown and tostring(t.texture):match(pattern) then return t end
+    end
+end
+local function bodyShown()
+    for _, t in ipairs(tip.created) do
+        if t.kind == "Texture" and t.shown and t.gradient and t.points.BOTTOMRIGHT[3] == "BOTTOMRIGHT" then
+            return true
+        end
+    end
+    return false
+end
+
+rows = showObject(function(r)
+    line(r, "name", "Briarthorn", nil, { 1, .82, 0 })
+    line(r, "skill", "Requires Herbalism", nil, { 1, .5, .25 })
+end, 2)
+assert(tip.backdrop == nil and x(rows.name) == 16 and x(rows.skill) == 16, "name and need form the header")
+assert(colored(rows.skill.left, 1, .5, .25), "the skill keeps the game's color")
+assert(depth(rows.skill) > depth(rows.name) and depth(rows.skill) < tip.height)
+assert(tip.height < depth(rows.skill) + 30, "a header-only tooltip ends with its header: " .. tip.height)
+assert(not shownTexture("divider") and not bodyShown() and not shownTexture("glow$"))
+assert(rows.name.left:GetFont():match("expressway%-bold"), "bold name")
+-- As wide as its longest line (18 letters, 6 units each) plus the margins.
+assert(tip.width == 18 * 6 + 32, "no spare width: " .. tip.width)
+local small = tip.height
+showObject(function(r) line(r, "name", "Forge", nil, { 1, .82, 0 }) end, 1)
+assert(tip.width == 96 + 32, "a very short name keeps a small minimum: " .. tip.width)
+rows = showObject(function(r)
+    line(r, "name", "Briarthorn", nil, { 1, .82, 0 })
+    line(r, "skill", "Requires Herbalism", nil, { 1, .5, .25 })
+end, 2)
+
+-- Quest lines go below a divider, wherever their colors come from.
+local function chest(r)
+    line(r, "name", "Battered Footlocker", nil, { 1, .82, 0 })
+    line(r, "lock", "Locked", nil, { 1, .13, .13 })
+    line(r, "quest", "The Lost Supplies", nil, { 1, .82, 0 })
+    line(r, "objective", " - Missing Supplies: 2/5")
+end
+rows = showObject(chest, 2)
+assert(x(rows.lock) == 16 and depth(rows.quest) > depth(rows.lock) + 20, "quest lines after a divider")
+assert(depth(rows.objective) > depth(rows.quest) and depth(rows.objective) < tip.height and tip.height > small)
+assert(shownTexture("divider") and bodyShown() and backgrounds() == "0.68 0.74" and seam() == 0)
+assert(tip.width >= 176 + 32, "the quest section needs room for its divider")
+
+-- Questie adds its lines after the first layout.
+local before = tip.height
+line(rows, "late", "|cffffff00[12] Another quest|r")
+line(rows, "idrow", "Object ID", "|cffffffff2844")
+tip:Run("OnTooltipLayout")
+assert(visible(rows.late) and depth(rows.late) > depth(rows.objective) and tip.height > before)
+assert(not visible(rows.idrow) and x(rows.idrow) < -10000 and not ownText("Object ID 2844"))
+alt = true
+modifierFrame.handler(modifierFrame, "MODIFIER_STATE_CHANGED", "LALT")
+assert(ownText("Object ID 2844"), "the ID shows with Alt")
+alt = false
+modifierFrame.handler(modifierFrame, "MODIFIER_STATE_CHANGED", "LALT")
+assert(not ownText("Object ID 2844"))
+
+-- A destructible building keeps its health bar, inside the frame; clearing puts it back.
+showObject(function(r) line(r, "name", "Siege Wall", nil, { 1, .82, 0 }) end, 1, nil, true)
+barInside()
+assert(bodyShown())
+tip:Clear()
+stock()
+assert(bar:GetNumPoints() == 2 and bar.height == 8)
+
+-- A corpse gets a grey header.
+rows = showObject(function(r) line(r, "name", "Corpse of Thalia") end, 1, 1)
+assert(tip.backdrop == nil and colored(rows.name.left, .86, .88, .92) and not bodyShown())
+
+-- A unit and an item after an object are themselves again.
+units.mouseover = mouseover
+show(elite)
+assert(ownText("Lvl 43"))
+rows = showObject(chest, 2)
+assert(not ownText("Lvl 43") and bar:GetNumPoints() == 2)
+fillGear()
+tip:Run("OnTooltipLayout")
+assert(ownText("iLvl 47"))
+
+-- Its own option restores the game's look and leaves the others alone.
+showObject(chest, 2)
+values["tooltip.prettyObjects"] = false
+options["tooltip.prettyObjects"].apply(false)
+stock()
+tip.shown = true
+showObject(chest, 2)
+assert(tip.backdrop and tip.backdrop.edgeFile == "stock")
+show(elite)
+assert(tip.backdrop == nil, "units keep their own option")
+
+print("Pretty object tooltips: header, quest section, late lines, IDs, health bar, corpses and option passed")

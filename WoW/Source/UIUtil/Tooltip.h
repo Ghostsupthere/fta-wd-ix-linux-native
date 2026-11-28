@@ -189,6 +189,12 @@ class CGTooltip : public CSimpleFrame {
     // the finished lines (client refreshes never go through Lua setters).
     FrameScript_Object::ScriptIx m_onTooltipLayout;
     int32_t m_runningLayoutScript;
+    // FTA addition: runs for world object and corpse tooltips, which have no other script.
+    // Arguments: how many lines describe the object itself (quest lines follow), and 1 for a corpse.
+    FrameScript_Object::ScriptIx m_onTooltipSetObject;
+    // FTA addition: runs when a tooltip starts to fade, which for world tooltips happens only in the
+    // client, so that an addon can hide it at once.
+    FrameScript_Object::ScriptIx m_onTooltipFadeOut;
 
     ~CGTooltip() override;
     int32_t GetScriptMetaTable() override;
@@ -217,6 +223,7 @@ class CGTooltip : public CSimpleFrame {
     void SetDefaultAnchor();
     int32_t SetUnit(const WOWGUID& guid, int32_t showHealth, const WOWGUID& healthGuid, int32_t a4);
     void SetObject(const WOWGUID& guid);
+    void RunObjectScript(uint32_t objectLines, bool corpse);
     void SetCorpse(const WOWGUID& guid);
     void AddFontStrings(CSimpleFontString* left, CSimpleFontString* right);
     void AddLine(const char* left, const char* right, const CImVector& leftColor, const CImVector& rightColor, int32_t wrap);

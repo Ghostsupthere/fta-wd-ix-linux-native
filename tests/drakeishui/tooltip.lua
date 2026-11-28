@@ -32,6 +32,7 @@ local function makeTip(name)
     function frame:GetSpell() return self.spell and "Spell", nil, self.spell end
     function frame:GetUnit() return self.unit and "Unit", self.unit end
     function frame:FadeOut() self.fading = true end
+    function frame:HasScript(script) return script == "OnTooltipFadeOut" end
     frame:Hide()
     return frame
 end
@@ -178,6 +179,15 @@ assert(not tip:IsShown())
 world(nil)
 tip:FadeOut()
 assert(not tip:IsShown())
+-- Newer clients report the native fade as it starts; a world object then goes at once, before any alpha falls.
+world(nil)
+tip.scripts.OnTooltipFadeOut(tip)
+assert(not tip:IsShown(), "instant must act as soon as the client starts the fade")
+assert(S:Set("tooltip.instant", false))
+world(nil)
+tip.scripts.OnTooltipFadeOut(tip)
+assert(tip:IsShown(), "without the option the client's fade runs")
+assert(S:Set("tooltip.instant", true))
 -- A unit tooltip raised by a frame is left to that frame.
 tip:SetOwner(action, "ANCHOR_RIGHT")
 M.focus, M.units = action, {}

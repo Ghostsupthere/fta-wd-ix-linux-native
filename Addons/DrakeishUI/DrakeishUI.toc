@@ -35,6 +35,7 @@ settings_interface.lua
 tooltip_options.lua
 pretty_tooltip.lua
 pretty_unit_tooltip.lua
+pretty_object_tooltip.lua
 nameplate_options.lua
 unit_bar_sizes.lua
 stock_unit_bar_sizes.lua

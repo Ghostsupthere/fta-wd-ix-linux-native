@@ -8,9 +8,7 @@ if not (pretty and pretty.states[tip]) then return end
 local kit = pretty.kit
 local WHITE, SEPARATOR, plain = kit.WHITE, kit.SEPARATOR, kit.plain
 local height, texture, setSlice = kit.height, kit.texture, kit.sliceShown
-
--- Much more see-through than items: over dim ground, anything above about .8 looks solid.
-local OPACITY = { body = .68, header = .74, split = true }
+local placeHealth, restoreHealth = kit.placeHealth, kit.restoreHealth
 
 local ORANGE, SOFT, GREY = { 1, .5, .25 }, { .71, .68, .62 }, { .6, .62, .66 }
 local RED, GOLD, WHITE_TEXT = { 1, .23, .19 }, { 1, .82, 0 }, { 1, 1, 1 }
@@ -221,51 +219,16 @@ local function build(frame, st)
     art.portraitOutline = kit.newOutline(frame)
     art.badgeFill = texture(frame, "ARTWORK", WHITE)
     art.badgeOutline = kit.newOutline(frame)
-    art.healthBack = texture(frame, "ARTWORK", WHITE)
     art.dividers = { kit.newDivider(frame), kit.newDivider(frame) }
     return art
 end
 
 local function hideArt(art)
     for _, key in ipairs(TEXTS) do art[key]:Hide() end
-    for _, key in ipairs({ "portraitBack", "portrait", "badgeFill", "healthBack" }) do art[key]:Hide() end
+    for _, key in ipairs({ "portraitBack", "portrait", "badgeFill" }) do art[key]:Hide() end
     setSlice(art.portraitOutline, false)
     setSlice(art.badgeOutline, false)
     for _, divider in ipairs(art.dividers) do kit.hideDivider(divider) end
-end
-
-local function restoreHealth(st)
-    local saved = st.health
-    if not saved then return end
-    st.health = nil
-    local bar = saved.bar
-    bar:ClearAllPoints()
-    for _, point in ipairs(saved.points) do bar:SetPoint(unpack(point, 1, 5)) end
-    bar:SetHeight(saved.height)
-end
-
--- The game's own health bar, moved to the bottom of the frame. Returns the y below it.
-local function placeHealth(frame, st, art, x, y, width, u)
-    local bar = GameTooltipStatusBar
-    if not (bar and bar:IsShown()) then return y end
-    if not st.health then
-        local points = {}
-        for index = 1, bar:GetNumPoints() do points[index] = { bar:GetPoint(index) } end
-        st.health = { bar = bar, points = points, height = bar:GetHeight() }
-    end
-    y = y + u(5)
-    local barHeight, edge = u(7), u(1)
-    art.healthBack:SetVertexColor(0, 0, 0, .9)
-    art.healthBack:ClearAllPoints()
-    art.healthBack:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -y)
-    art.healthBack:SetWidth(width)
-    art.healthBack:SetHeight(barHeight + 2 * edge)
-    art.healthBack:Show()
-    bar:ClearAllPoints()
-    bar:SetPoint("TOPLEFT", frame, "TOPLEFT", x + edge, -(y + edge))
-    bar:SetWidth(width - 2 * edge)
-    bar:SetHeight(barHeight)
-    return y + barHeight + 2 * edge
 end
 
 local function style(frame, st)
@@ -519,12 +482,12 @@ local function style(frame, st)
     end
 
     local drawn = y > start
-    y = placeHealth(frame, st, art, pad, y, content, u)
+    y = placeHealth(frame, st, pad, y, content, u)
     drawn = drawn or y > start
 
     frame:SetWidth(content + 2 * pad)
     frame:SetHeight(drawn and y + u(12) or headerBottom + u(3))
-    kit.decorate(frame, frameArt, u, headerBottom, color, info.glow, OPACITY)
+    kit.decorate(frame, frameArt, u, headerBottom, color, info.glow, kit.WORLD_OPACITY)
     return true
 end
 

@@ -727,6 +727,15 @@ FrameScript_Object::ScriptIx* CGTooltip::GetScriptByName(const char* name, Frame
         return &this->m_onTooltipLayout;
     }
 
+    if (!SStrCmpI(name, "OnTooltipFadeOut", STORM_MAX_STR)) {
+        return &this->m_onTooltipFadeOut;
+    }
+
+    if (!SStrCmpI(name, "OnTooltipSetObject", STORM_MAX_STR)) {
+        data.m_wrapper = "return function(self,lines,corpse) %s end";
+        return &this->m_onTooltipSetObject;
+    }
+
     if (!SStrCmpI(name, "OnTooltipAddMoney", STORM_MAX_STR)) {
         data.m_wrapper = "return function(self,cost,maxcost) %s end";
         return &this->m_onTooltipAddMoney;
@@ -777,6 +786,8 @@ void CGTooltip::GetScriptTime(lua_State* L, double* time, uint32_t* count, int32
     FrameScript_Object::GetScriptTime(L, this->m_onTooltipSetEquipmentSet, time, count);
     FrameScript_Object::GetScriptTime(L, this->m_onTooltipSetFrameStack, time, count);
     FrameScript_Object::GetScriptTime(L, this->m_onTooltipLayout, time, count);
+    FrameScript_Object::GetScriptTime(L, this->m_onTooltipSetObject, time, count);
+    FrameScript_Object::GetScriptTime(L, this->m_onTooltipFadeOut, time, count);
     CSimpleFrame::GetScriptTime(L, time, count, recurse);
 }
 
@@ -858,6 +869,10 @@ void CGTooltip::FadeOut() {
     } else {
         this->m_fading = 1;
         this->m_fadeTime = TOOLTIP_FADE_TIME;
+
+        if (this->m_onTooltipFadeOut.m_luaRef) {
+            this->RunScript(this->m_onTooltipFadeOut, 0, nullptr);
+        }
     }
 }
 
@@ -1112,8 +1127,14 @@ int32_t CGTooltip::ShowThis() {
         return 0;
     }
 
-    this->SetFrameAlpha(255);
-    this->m_fading = 0;
+    // FTA fix: Show() on a tooltip that is still visible and fading must not bring it back, because nothing
+    // would fade it again. Addons call Show() after adding lines; Questie does so shortly after a world object
+    // tooltip opens. New content comes through SetOwner(), which ends the fade itself.
+    if (!this->m_isVisible || !this->m_fading) {
+        this->SetFrameAlpha(255);
+        this->m_fading = 0;
+    }
+
     this->CalculateSize();
     return CSimpleFrame::ShowThis();
 }
@@ -2238,6 +2259,7 @@ void CGTooltip::SetCorpse(const WOWGUID& guid) {
         char line[1024];
         SStrPrintf(line, sizeof(line), FrameScript_GetText("CORPSE_TOOLTIP", -1, GENDER_NOT_APPLICABLE), name->m_name);
         this->AddLine(line, nullptr, textColor, textColor, 0);
+        this->RunObjectScript(this->m_numLines, true);
         this->Show();
     }
 }
@@ -7822,6 +7844,21 @@ void CGTooltip::SetBuff(int32_t spellId, int32_t a2, int32_t a3, int32_t a4, int
     }
 }
 
+void CGTooltip::RunObjectScript(uint32_t objectLines, bool corpse) {
+    if (this->m_onTooltipSetObject.m_luaRef) {
+        lua_State* L = FrameScript_GetContext();
+        lua_pushnumber(L, objectLines);
+
+        if (corpse) {
+            lua_pushnumber(L, 1);
+        } else {
+            lua_pushnil(L);
+        }
+
+        this->RunScript(this->m_onTooltipSetObject, 2, nullptr);
+    }
+}
+
 // VERIFY: 96f1d53f manual
 // OFFSET: 0x00626720
 void CGTooltip::SetObject(const WOWGUID& guid) {
@@ -7922,6 +7959,8 @@ void CGTooltip::SetObject(const WOWGUID& guid) {
             }
         }
     }
+
+    uint32_t objectLines = this->m_numLines;
     CVar* questTracking = CVar::Lookup("showQuestTrackingTooltips");
 
     if (questTracking && questTracking->m_intValue) {
@@ -7999,6 +8038,9 @@ void CGTooltip::SetObject(const WOWGUID& guid) {
             }
         }
     }
+
+    // Before Show(), so that its layout already knows this is an object.
+    this->RunObjectScript(objectLines, false);
 
     if (this->m_statusBar && object->m_gameObject->m_typeID == 33) {
         this->m_healthGuid = this->m_objectGuid;

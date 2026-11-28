@@ -3,8 +3,8 @@
   "files": [
     {
       "path": "DrakeishUI.toc",
-      "size": 2091,
-      "sha256": "a1ef5f380b168aef82e75f3407227d26f88d48e4c11545724aea07827c10e807",
+      "size": 2117,
+      "sha256": "9bfc06e37389ccbf490107cd646cc1aa3c9ca2d5f085ad502975de6e2d9d93ec",
       "source": "windows"
     },
     {
@@ -7118,15 +7118,21 @@
       "source": "fta"
     },
     {
+      "path": "pretty_object_tooltip.lua",
+      "size": 6279,
+      "sha256": "132cc6831a6642f8f3893779a1e515f38d4dbfb46d7065712d7642d15d036364",
+      "source": "fta"
+    },
+    {
       "path": "pretty_unit_tooltip.lua",
-      "size": 23256,
-      "sha256": "21ee23f480da1e4e3aa755ebaa5c274b430c93afcc97c2e3f561b0af6ca64f42",
+      "size": 21851,
+      "sha256": "6e8a05e491b2079a2bb6259248287e21234c7e9bf7e0217433f03649d9afb0be",
       "source": "fta"
     },
     {
       "path": "pretty_tooltip.lua",
-      "size": 35302,
-      "sha256": "fff8adf396136d1e11c5278aa4b4ad07872c0248304d6fdf7c4c8471ec9ab26e",
+      "size": 37122,
+      "sha256": "098da77db368c2b7494edf2e1136d1ae6ab6a8ddaee98a1efda2089995f3a9cb",
       "source": "fta"
     },
     {
@@ -9309,8 +9315,8 @@
     },
     {
       "path": "tooltip_options.lua",
-      "size": 13145,
-      "sha256": "b5e1fa93f9799973994ff1ed72f7eaeb6e1a467b33850260ddcd78586e0fa34e",
+      "size": 13411,
+      "sha256": "73b3f22e7ef430acee76e63d21a61aea5921cae12440864b0e01db19a13fc145",
       "source": "fta-tweaks"
     },
     {
