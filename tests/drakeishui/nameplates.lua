@@ -602,5 +602,55 @@ for _, option in ipairs(S.options) do
 end
 assert(#drawn == 114, #drawn .. " rows drawn")
 
+-- A shared profile carries every nameplate setting: change them all, then go back and forth.
+do
+    local layout = {}
+    addon.Layout = { DB = function() return layout end }
+    local ids = {}
+    for _, option in ipairs(S.options) do
+        if option.category == "Nameplates" and option.localGet then ids[#ids + 1] = option.id end
+    end
+    local function show(value)
+        if type(value) == "table" then return table.concat(value, ",") end
+        return tostring(value)
+    end
+    local function snapshot()
+        local result = {}
+        for _, id in ipairs(ids) do result[id] = show(S:Get(id)) end
+        return result
+    end
+    local function matches(expected, stage)
+        tick(); noErrors(stage)
+        for _, id in ipairs(ids) do
+            assert(show(S:Get(id)) == expected[id], stage .. ": " .. id .. " " .. show(S:Get(id)) .. " ~= " .. expected[id])
+        end
+    end
+    local original = snapshot()
+    assert(S:CreateShared("Plates") == nil); noErrors("create")
+    matches(original, "creating changes nothing")
+    for _, id in ipairs(ids) do
+        local option, value, other = S.byID[id], S:Get(id)
+        if option.type == "toggle" then other = not value
+        elseif option.type == "slider" then other = value ~= option.min and option.min or option.max
+        elseif option.type == "colour" then other = { .25, .5, .75 }
+        else
+            local choices = option.choices
+            if type(choices) == "function" then choices = choices() end
+            for _, choice in ipairs(choices) do
+                if choice.value ~= value then other = choice.value; break end
+            end
+        end
+        if other ~= nil then S:Set(id, other); noErrors("set " .. id) end
+    end
+    tick()
+    local changed, differing = snapshot(), 0
+    for _, id in ipairs(ids) do if changed[id] ~= original[id] then differing = differing + 1 end end
+    assert(differing > #ids * .8, "too few settings changed: " .. differing .. " of " .. #ids)
+    assert(S:Select(false) == nil); matches(original, "back to This Character")
+    assert(S:Select("Plates") == nil); matches(changed, "the shared profile again")
+    assert(S:Select(false) == nil); matches(original, "and back")
+    print("Nameplate settings carried by shared profiles: " .. differing .. " of " .. #ids .. " changed and restored")
+end
+
 print("Nameplates: load, client plate layout, styles, height, /knp and " .. count .. " Kui settings passed ("
     .. table.concat(summary, ", ") .. ")")

@@ -20,19 +20,19 @@ local function updateFrames()
 end
 register("frames.compactRaid", {
     name = "Compact raid frames", type = "toggle", default = false, category = "Unit Frames", group = "Frames",
-    keywords = "party raid drakeish darken", protected = true,
+    keywords = "party raid drakeish darken", protected = true, carry = true,
     localGet = function() return not not (DrakeishUI_GetRaidFramesState and DrakeishUI_GetRaidFramesState() == 1) end,
     localSet = function(on) DrakeishUI_SetRaidFramesState(on); updateFrames() end,
 })
 register("frames.thinRaid", {
     name = "Thin raid frame layout", type = "toggle", default = false, category = "Unit Frames", group = "Frames",
-    keywords = "party raid slim", protected = true,
+    keywords = "party raid slim", protected = true, carry = true,
     localGet = function() return not not (DrakeishUI_GetRaidFrameStyle and DrakeishUI_GetRaidFrameStyle() == 2) end,
     localSet = function(on) DrakeishUI_SetRaidFrameStyle(on and 2 or 1); updateFrames() end,
 })
 register("frames.hidePet", {
     name = "Hide the pet frame", type = "toggle", default = false, category = "Unit Frames", group = "Frames",
-    keywords = "pet", protected = true,
+    keywords = "pet", protected = true, carry = true,
     localGet = function() return hide_pet_frame_state == 1 end,
     localSet = function(on) hide_pet_frame_state = on and 1 or 0; updateFrames() end,
 })
@@ -137,14 +137,14 @@ end
 for index, bar in ipairs({ "bottomLeft", "bottomRight", "right", "left" }) do
     register("layout." .. bar .. ".shown", {
         name = "Show this bar", type = "toggle", default = false, category = "Action Bars", group = "Button geometry",
-        keywords = "enable disable extra additional multi bar visible", protected = true,
+        keywords = "enable disable extra additional multi bar visible", protected = true, carry = true,
         localGet = function() return toggleState(index) end,
         localSet = function(on) setToggle(index, on) end,
     })
 end
 register("actionbars.alwaysShow", {
     name = "Always show empty action slots", type = "toggle", default = false, category = "Action Bars", group = "Optional bars",
-    keywords = "always show action bars grid empty", protected = true,
+    keywords = "always show action bars grid empty", protected = true, carry = true,
     localGet = function() return toggleState(5) end,
     localSet = function(on) setToggle(5, on) end,
 })

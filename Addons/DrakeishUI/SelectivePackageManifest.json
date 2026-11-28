@@ -7731,8 +7731,8 @@
     },
     {
       "path": "modules/Kui_Nameplates/Modules/NameOnly.lua",
-      "size": 8727,
-      "sha256": "1a1f59218e75971093820fc9996194acb6cfd88798a119e764d46ba71961cf15",
+      "size": 8903,
+      "sha256": "3ddc50000a59e7034f8570da235eb90d7e6154d325aaa3ad29492374d0cf2de9",
       "source": "kui-nameplates"
     },
     {
@@ -9291,20 +9291,20 @@
     },
     {
       "path": "settings_interface.lua",
-      "size": 14702,
-      "sha256": "ff7fecfaef948e7c2d153d6371b89d0df366ba43d77ed9f676ddc12d0671f713",
+      "size": 14772,
+      "sha256": "613fb2ee6a690ef37ba51bc4118ad2600fecdd92675bb6ea1d83a0587b4f34af",
       "source": "fta-tweaks"
     },
     {
       "path": "settings_profiles.lua",
-      "size": 9614,
-      "sha256": "dbd497b22ebe180101a4ed6ede1fafdb8727ceeec8e3d080371658e5bd606d1d",
+      "size": 17546,
+      "sha256": "352fd57ea172eea9757bcd0964b3c1f26f86aa08bc832316ceb6f09cde85f7ad",
       "source": "fta-tweaks"
     },
     {
       "path": "settings_window.lua",
-      "size": 39907,
-      "sha256": "1d627a5ed15eb3e35160998dfb32e4a204f4246b577e1691ca251f9c1823fe5f",
+      "size": 41095,
+      "sha256": "231d6fc0e80dac5d348a04b5829fb94adc18bfbe80f80f1d07b96242574e9e48",
       "source": "fta-tweaks"
     },
     {

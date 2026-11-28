@@ -193,7 +193,13 @@ mod:AddConfigChanged({"display", "ondamaged"}, nil, function(f)
 	if not mod.db.profile.enabled then
 		return
 	end
-	mod.configChangedFuncs.enabled.pf(f, true)
+	-- FTA fix: this called a per-plate "enabled" handler that does not exist.
+	if mod.db.profile.display.ondamaged and f.SetName ~= nameonly_SetName then
+		HookSetName(f)
+	end
+	if f:IsShown() then
+		UpdateNameOnly(f)
+	end
 end)
 mod:AddConfigChanged(
 	{

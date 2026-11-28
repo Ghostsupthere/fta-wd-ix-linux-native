@@ -4,6 +4,7 @@ addon.Settings = S
 
 local db, character
 local localPending = {}
+local loginSetup -- defined with the rest of the setup code below
 local function copy(value)
     if type(value) ~= "table" then return value end
     local result = {}
@@ -109,6 +110,7 @@ function S:Ready()
     if type(private.migrated) ~= "table" then private.migrated = {} end
     if type(private.shared) ~= "string" or type(db.shared[private.shared]) ~= "table" then private.shared = nil end
     migrate()
+    loginSetup()
     applyProfile()
     return true
 end
@@ -138,6 +140,176 @@ local function setLocal(option,value)
         option.localSet(value)
         S.pending[id]=nil
     end
+end
+
+-- FTA addition: a "setup" is everything a profile holds besides its own settings: the layout (frame positions
+-- and scales, bar sizes, bags, screen messages, chat size) and the settings that are saved elsewhere
+-- (nameplates, raid and pet frames, optional action bars). A shared profile's setup is db.setups[name].
+-- While a character uses one, private.using holds that name, the character's own storage holds a working
+-- copy, and private.setup keeps the character's own setup for going back to "This Character".
+local LAYOUT_SKIP = { excludeSort = true, settingsPage = true, chatClassColors = true } -- stay with the character
+local loginOptions -- setup options still to be applied after logging in
+
+local function deep(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for key, entry in pairs(value) do result[key] = deep(entry) end
+    return result
+end
+
+local function same(a, b)
+    if type(a) ~= "table" or type(b) ~= "table" then return a == b end
+    for key, entry in pairs(a) do if not same(entry, b[key]) then return false end end
+    for key in pairs(b) do if a[key] == nil then return false end end
+    return true
+end
+
+local function carried(option)
+    return option.localGet ~= nil and (option.carry or option.category == "Nameplates")
+end
+
+local function captureLayout()
+    local layout = addon.Layout
+    if not layout then return nil end
+    local result = {}
+    for key, value in pairs(layout:DB()) do
+        if not LAYOUT_SKIP[key] then result[key] = deep(value) end
+    end
+    return result
+end
+
+local function loadLayout(source)
+    local layout = addon.Layout
+    if not layout or type(source) ~= "table" then return end
+    local target, stale = layout:DB(), {}
+    for key in pairs(target) do
+        if not LAYOUT_SKIP[key] then stale[#stale + 1] = key end
+    end
+    for _, key in ipairs(stale) do target[key] = nil end
+    for key, value in pairs(source) do
+        if not LAYOUT_SKIP[key] then target[key] = deep(value) end
+    end
+    layout:DB() -- restores anything the source lacks
+end
+
+-- A value that cannot be read (its module did not load) keeps what the setup already holds.
+local function captureOptions(previous)
+    local result = deep(previous or {})
+    for _, option in ipairs(S.options) do
+        if carried(option) then
+            local value = S:Get(option.id)
+            local queued = localPending[option.id]
+            if queued and queued.value ~= nil then value = queued.value end
+            if value ~= nil then result[option.id] = deep(value) end
+        end
+    end
+    return result
+end
+
+local function loadOptions(values)
+    if type(values) ~= "table" then return end
+    for _, option in ipairs(S.options) do
+        local value = values[option.id]
+        if value ~= nil and carried(option) then
+            value = validate(option, value)
+            if value ~= nil and not same(value, S:Get(option.id)) then
+                -- One setting that fails must not leave the rest of the profile unapplied.
+                local ok, err = pcall(setLocal, option, deep(value))
+                if not ok and geterrorhandler then geterrorhandler()(err) end
+            end
+        end
+    end
+end
+
+local function capture(previous)
+    local layout = captureLayout()
+    if not layout then return nil end
+    -- Until the login values are applied, the character's current ones are not the profile's.
+    local options = previous and previous.options
+    if not loginOptions then options = captureOptions(options) end
+    return { layout = layout, options = deep(options or {}) }
+end
+
+-- Writes the working copy back to the shared profile it came from.
+local function sync(layoutOnly)
+    local name = privateProfile().using
+    local setup = name and db.setups[name]
+    if not setup then return end
+    if layoutOnly then setup.layout = captureLayout() or setup.layout
+    else db.setups[name] = capture(setup) or setup end
+end
+
+local function startUsing(name)
+    local private = privateProfile()
+    if not private.using then private.setup = capture() end
+    private.using = name
+end
+
+-- Loads a setup into the character's storage. Positions only move after the interface reloads.
+local function loadSetup(setup)
+    if not setup then return end
+    local before = captureLayout()
+    loadLayout(setup.layout)
+    loadOptions(setup.options)
+    if not same(before, captureLayout()) then S.reloadNeeded = true end
+end
+
+-- Puts the setup that goes with `name` (false: This Character) in place.
+local function useSetup(name)
+    local private = privateProfile()
+    sync() -- first: it replaces the stored setup of the profile in use, which may be the one picked
+    local target = name and db.setups[name]
+    if target then
+        startUsing(name)
+        loadSetup(target)
+    elseif private.using then
+        local own = private.setup
+        private.using, private.setup = nil, nil
+        loadSetup(own)
+    end
+end
+
+-- True for a shared profile saved before profiles held a setup.
+function S:NeedsLayout()
+    local name = character and self:Active()
+    return not not (name and not db.setups[name] and addon.Layout)
+end
+
+function S:SaveLayout()
+    if not self:NeedsLayout() then return end
+    local name = privateProfile().shared
+    local setup = capture()
+    startUsing(name)
+    db.setups[name] = setup
+    self:Refresh()
+end
+
+function loginSetup()
+    local private = privateProfile()
+    local target = private.shared and db.setups[private.shared]
+    if target then
+        if not private.using then
+            -- The other settings are added once they can be read, before the profile's replace them.
+            private.setup = { layout = captureLayout() }
+            private.using = private.shared
+        end
+    elseif private.using then
+        target = private.setup
+        private.using, private.setup = nil, nil
+    end
+    if not target then return end
+    loadLayout(target.layout)
+    loginOptions = target.options or {}
+end
+
+local function finishLogin()
+    local values = loginOptions
+    if not values then return end
+    local own = privateProfile().using and privateProfile().setup
+    if own and not own.options then own.options = captureOptions() end
+    loginOptions = nil
+    loadOptions(values)
+    S:Refresh()
 end
 
 function S:Set(id, value)
@@ -189,6 +361,10 @@ end
 
 function S:Select(name)
     if name ~= false and type(db.shared[name]) ~= "table" then return end
+    if InCombatLockdown() and (db.setups[name] or privateProfile().using) then
+        return "Leave combat before switching profiles."
+    end
+    useSetup(name)
     privateProfile().shared = name or nil
     applyProfile()
 end
@@ -215,9 +391,12 @@ end
 function S:CreateShared(name)
     local key, err=sharedName(name)
     if not key then return err end
+    if InCombatLockdown() then return "Leave combat before creating a profile." end
     local profile={}
     copyOptions(activeProfile(), profile)
     db.shared[key]=profile
+    sync()
+    db.setups[key]=capture()
     self:Select(key)
 end
 
@@ -240,6 +419,7 @@ end
 function S:InstallImportedProfile(name,values)
     local key,err=sharedName(name)
     if not key then return err end
+    if InCombatLockdown() and privateProfile().using then return "Leave combat before importing a profile." end
     db.shared[key]=values
     self:Select(key)
 end
@@ -250,7 +430,21 @@ function S:CopyFrom(name)
     else source = db.shared[name] end
     local target = activeProfile()
     if type(source) ~= "table" or source == target then return end
+    local private, setup = privateProfile(), nil
+    if name then setup = db.setups[name]
+    elseif private.using then setup = private.setup
+    elseif private.shared then setup = capture() end -- the character's own setup is the one in place
+    if setup and InCombatLockdown() then return "Leave combat before copying a profile." end
     copyOptions(source, target)
+    if setup then
+        if private.shared then
+            startUsing(private.shared)
+            loadSetup(setup)
+            db.setups[private.shared] = capture(setup)
+        else
+            loadSetup(setup)
+        end
+    end
     applyProfile()
 end
 
@@ -274,6 +468,7 @@ events:SetScript("OnEvent", function(self, event, name)
         if saved.version == 1 then
             if type(saved.characters) ~= "table" then saved.characters = {} end
             if type(saved.shared) ~= "table" then saved.shared = {} end
+            if type(saved.setups) ~= "table" then saved.setups = {} end
             db = saved
             S:Ready()
         end
@@ -294,4 +489,16 @@ events:SetScript("OnEvent", function(self, event, name)
         end
         finish(callbacks)
     end
+end)
+
+local setupEvents = CreateFrame("Frame")
+setupEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
+setupEvents:RegisterEvent("PLAYER_LEAVING_WORLD")
+setupEvents:RegisterEvent("PLAYER_LOGOUT")
+setupEvents:SetScript("OnEvent", function(_, event)
+    if not character then return end
+    if event == "PLAYER_ENTERING_WORLD" then finishLogin()
+    -- Comes before every logout and reload. At PLAYER_LOGOUT the nameplate library has already cleared its
+    -- values, so only the layout is read there.
+    else sync(event == "PLAYER_LOGOUT") end
 end)

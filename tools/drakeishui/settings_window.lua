@@ -351,12 +351,32 @@ local function profileChoices()
     return available
 end
 
+-- Frame positions only move once the interface has reloaded.
+local function offerReload()
+    if not S.reloadNeeded then return end
+    S.reloadNeeded = nil
+    StaticPopup_Show("DRAKEISHUI_SETTINGS_RELOAD")
+end
+local NO_LAYOUT = "This profile has no layout yet. On the character whose layout you want, click Save layout to profile."
+
 local profileRows = {
     { type = "dropdown", name = "Active profile", choices = function() return S:Profiles() end,
       get = function() return S:Active() end,
-      set = function(value) profileMessage, copyFrom = "", nil; S:Select(value) end },
+      set = function(value)
+          copyFrom = nil
+          profileMessage = S:Select(value) or (S:NeedsLayout() and NO_LAYOUT) or ""
+          S:Refresh()
+          offerReload()
+      end },
+    { type = "button", buttonText = "Save layout to profile",
+      disabled = function() return not S:NeedsLayout() end,
+      action = function()
+          S:SaveLayout()
+          profileMessage = "Layout saved to the profile."
+          S:Refresh()
+      end },
     { type = "header", name = "Shared profiles" },
-    { type = "description", name = "Changes to a shared profile apply to every character using it." },
+    { type = "description", name = "A shared profile holds settings, layout and nameplates. Changes apply to every character using it." },
     { type = "text", name = "New profile name", maxLength = 32, live = true, get = function() return profileName end,
       set = function(value)
           profileName, profileMessage = value, ""
@@ -374,13 +394,14 @@ local profileRows = {
     { type = "button", buttonText = "Copy into active profile",
       disabled = function() return copyFrom == nil or copyFrom == S:Active() end,
       action = function()
-          S:CopyFrom(copyFrom)
-          profileMessage = "Settings copied to the active profile."
+          profileMessage = S:CopyFrom(copyFrom) or "Settings copied to the active profile."
           S:Refresh()
+          offerReload()
       end },
     { type = "button", buttonText = "Reset active profile",
       action = function() StaticPopup_Show("DRAKEISHUI_SETTINGS_RESET_PROFILE", nil, nil, { active = S:Active() }) end },
     { type = "header", name = "Export and import" },
+    { type = "description", name = "Profile text covers settings only, not the layout or nameplates." },
     { type = "text", name = "Profile text", maxLength = 16384, live = true,
       get = function() return profileText end,
       set = function(value) profileText = value end },
@@ -397,7 +418,15 @@ local profileRows = {
           if not message then profileName, copyFrom, profileText = "", nil, "" end
           profileMessage = message or "Imported and selected the new shared profile."
           S:Refresh()
+          offerReload()
       end },
+}
+
+StaticPopupDialogs.DRAKEISHUI_SETTINGS_RELOAD = {
+    text = "Reload the interface to finish applying this profile's layout?",
+    button1 = "Reload now", button2 = "Later",
+    OnAccept = function() ReloadUI() end,
+    timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
 }
 
 StaticPopupDialogs.DRAKEISHUI_SETTINGS_RESET_PROFILE = {

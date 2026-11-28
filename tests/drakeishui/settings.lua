@@ -69,6 +69,36 @@ search.scripts.OnEnterPressed(search)
 assert(layoutState.settingsPage.tab == "Totem")
 search:SetText("no such colour or numbers option")
 assert(M.find("FontString", "No matching settings.", true))
+-- The Profiles page: an older profile gets a layout from the button, and a switch that moves things offers a reload.
+local popups = {}
+function StaticPopup_Show(which) popups[#popups + 1] = which end
+local reloaded
+function ReloadUI() reloaded = true end
+search:SetText("")
+DrakeishUI_Config.shared.Legacy = {}
+assert(S:Select("Legacy") == nil and S:NeedsLayout())
+layoutState.columns = 12
+S:Open("Profiles")
+local save = assert(M.find("Button", "Save layout to profile", true))
+assert(save:IsEnabled())
+M.click("Save layout to profile")
+assert(not S:NeedsLayout() and not save:IsEnabled() and DrakeishUI_Config.setups.Legacy.layout.columns == 12)
+assert(DrakeishUI_Config.setups.Legacy.layout.settingsPage == nil)
+local active
+for _, option in ipairs({ "Preset", false }) do active = option end
+S.reloadNeeded = nil
+S:Select(active)
+layoutState.columns = 20
+S.reloadNeeded = nil
+local dropdownRow
+for _, frame in ipairs(M.frames) do
+    if frame.option and frame.option.name == "Active profile" and frame:IsVisible() then dropdownRow = frame end
+end
+assert(dropdownRow)
+dropdownRow.option.set("Legacy")
+assert(layoutState.columns == 12 and popups[#popups] == "DRAKEISHUI_SETTINGS_RELOAD" and not S.reloadNeeded)
+StaticPopupDialogs.DRAKEISHUI_SETTINGS_RELOAD.OnAccept()
+assert(reloaded)
 S:Close()
 assert(not DrakeishUISettingsWindow:IsVisible())
 print("Settings lazy window, profiles, combat queue, pooled sliders, navigation and search passed")
