@@ -15,7 +15,7 @@ local bars = {
     { id = "vehicle", name = "Vehicle bar", prefixes = { "VehicleMenuBarActionButton", "PossessButton" },
       count = math.max(VEHICLE_MAX_ACTIONBUTTONS or 6, NUM_POSSESS_SLOTS or 2) },
     { id = "bags", name = "Bags and micro menu",
-      patterns = { "^ContainerFrame%d+Item%d+$", "^BankFrameItem%d+$", "^CharacterBag%d+Slot$",
+      patterns = { "^ContainerFrame%d+Item%d+$", "^BankFrameItem%d+$", "^CharacterBag%d+Slot$", "^DrakeishUI_BagsterItem%d+$",
                    "^MainMenuBarBackpackButton$", "MicroButton$" } },
 }
 

@@ -558,7 +558,7 @@ local function route(option)
     if category=="Tooltips" and id:match("^tooltip%.") then return category,"Tooltips",nil,group end
     if category=="Bags" then
         local name=id:match("^bagQuality%.level") and "Item Level" or
-            (id:match("^layout%.") and "Layout" or id:match("^appearance%.") and "Text" or "Quality")
+            ((id:match("^bagster%.") and not id:match("^bagster%.glow%.")) and "Layout" or "Quality")
         return category,name,nil,group
     end
     return category,group or "General",nil,group

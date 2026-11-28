@@ -38,7 +38,7 @@ register("accentColor","Settings accent color","colour",{1,.82,0})
 register("class","Class-colored unit names","toggle",false)
 local groups={
     {"units","Unit frame text","Unit Frames"}, {"actions","Action bar text","Action Bars"},
-    {"bags","Bag text","Bags"}, {"chat","Chat text","Chat"}, {"tooltips","Tooltip text","Tooltips"},
+    {"chat","Chat text","Chat"}, {"tooltips","Tooltip text","Tooltips"},
     {"layout","Layout editor text","Layout"},
 }
 for _, group in ipairs(groups) do
@@ -204,8 +204,6 @@ local function owners()
     statusBar(CastingBarFrame)
     statusBar(TargetFrameSpellBar)
     statusBar(FocusFrameSpellBar)
-    local bagHeader=DrakeishUICombinedBags
-    if bagHeader then stylize(bagHeader.summary,"bags") end
 end
 reapply=function()
     for key in pairs(cfg) do cfg[key]=S:Get("appearance."..key) end

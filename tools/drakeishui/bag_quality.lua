@@ -7,7 +7,9 @@ local refresh
 local function option(key, name, kind, default, range)
     local o = range or {}
     o.id, o.name, o.type, o.default = "bagQuality."..key, name, kind, default
-    o.category, o.group, o.keywords = "Bags", "Item quality", "item slot rarity "..name
+    local group = key:match("^level") and "Bag item levels"
+        or (key=="enabled" or key=="nameColor") and "Item quality" or "Vendor and equipment outlines"
+    o.category, o.group, o.keywords = "Bags", group, "item slot rarity quality "..name
     o.apply = function() refresh() end
     if o.choices then
         local valid = {}
@@ -28,9 +30,6 @@ option("thickness","Outline thickness","slider",1,{min=1,max=4,step=1})
 option("strength","Outline opacity","slider",.8,{min=0,max=1,step=.01})
 option("hidePoor","Hide poor quality border","toggle",true)
 option("hideCommon","Hide common quality border","toggle",true)
-option("quest","Highlight quest items","toggle",true)
-option("unusable","Mark red tooltip requirements","toggle",false)
-option("soulbound","Mark soulbound items","toggle",false)
 option("vendor","Apply to vendors","toggle",false)
 option("equipment","Apply to equipment","toggle",false)
 option("levels","Bag slot item levels","dropdown","legacy",{choices=choices("legacy","Existing behavior","on","On","off","Off")})
@@ -95,74 +94,18 @@ local function draw(button, r,g,b)
     frame:Show()
 end
 
-local scanner
-local function status(bag,slot)
-    if not config.soulbound and not config.unusable then return end
-    if not scanner then scanner=CreateFrame("GameTooltip","DrakeishUIQualityScanner",nil,"GameTooltipTemplate") end
-    scanner:SetOwner(UIParent,"ANCHOR_NONE")
-    scanner:SetBagItem(bag,slot)
-    local soulbound, unmet
-    for i=2,scanner:NumLines() do
-        local font = _G["DrakeishUIQualityScannerTextLeft"..i]
-        if font then
-            local line = font:GetText()
-            local red,g,b = font:GetTextColor()
-            if ITEM_SOULBOUND and line==ITEM_SOULBOUND then soulbound=true end
-            if line and red>.85 and g<.3 and b<.3 then unmet=true end
-        end
-    end
-    scanner:Hide()
-    if config.unusable and unmet then return 1,.22,.22 end
-    if config.soulbound and soulbound then return .45,.75,1 end
-end
-
-local function paint(button,link,quality,quest,bag,slot)
+local function paint(button,link)
     if not button then return end
     if not config.enabled or config.mode=="off" or config.strength==0 or not link then hide(button); return end
-    if quest and config.quest then draw(button,1,.83,.22); return end
-    local r,g,b
-    if bag then r,g,b=status(bag,slot) end
-    if not r then
-        if type(quality)~="number" or quality<0 then
-            quality=select(3,GetItemInfo(link))
-            if quality==nil then retry[link]=true end
-        end
-        if quality==0 and config.hidePoor or quality==1 and config.hideCommon then hide(button); return end
-        r,g,b=colorFor(quality)
-    end
+    local quality=select(3,GetItemInfo(link))
+    if quality==nil then retry[link]=true end
+    if quality==0 and config.hidePoor or quality==1 and config.hideCommon then hide(button); return end
+    local r,g,b=colorFor(quality)
     if r then draw(button,r,g,b) else hide(button) end
 end
 
-local function bags(frame)
-    if not frame or not frame:IsVisible() then return end
-    local bag = frame:GetID()
-    for i=1,frame.size or GetContainerNumSlots(bag) do
-        local button = _G[frame:GetName().."Item"..i]
-        if button then
-            local slot=button:GetID()
-            local _,_,_,quality,_,_,link=GetContainerItemInfo(bag,slot)
-            local quest, questID
-            if GetContainerItemQuestInfo then quest,questID=GetContainerItemQuestInfo(bag,slot) end
-            paint(button,link or GetContainerItemLink(bag,slot),quality,quest or questID,bag,slot)
-        end
-    end
-end
 local function scan()
     wipe(retry)
-    for i=1,NUM_CONTAINER_FRAMES or 13 do bags(_G["ContainerFrame"..i]) end
-    if BankFrame and BankFrame:IsVisible() then
-        for i=1,28 do
-            local button=_G["BankFrameItem"..i]
-            if button then paint(button,GetContainerItemLink(-1,button:GetID())) end
-        end
-    end
-    if GuildBankFrame and GuildBankFrame:IsVisible() and GetGuildBankItemLink then
-        local tab=GetCurrentGuildBankTab()
-        for i=1,98 do
-            local button=_G["GuildBankColumn"..math.ceil(i/14).."Button"..((i-1)%14+1)]
-            if button then paint(button,GetGuildBankItemLink(tab,i)) end
-        end
-    end
     if MerchantFrame and MerchantFrame:IsVisible() then
         local buyback=MerchantFrame.selectedTab==2
         local per=buyback and (BUYBACK_ITEMS_PER_PAGE or 12) or (MERCHANT_ITEMS_PER_PAGE or 10)
@@ -190,7 +133,7 @@ end
 
 local function bagSlot(button)
     local name=button:GetName() or ""
-    return name:match("^ContainerFrame%d+Item%d+$") or name:match("^BankFrameItem%d+$") or name:match("^GuildBankColumn%d+Button%d+$")
+    return name:match("^DrakeishUI_BagsterItem%d+$") or name:match("^DrakeishUI_BagsterGuildItem%d+$")
 end
 
 function B:LevelContext(context)
@@ -239,11 +182,9 @@ refresh=function()
     if addon.RefreshItemLevelFont then addon:RefreshItemLevelFont() end
     if config.enabled then queue() else worker:Hide() end
 end
-for _, event in ipairs({"PLAYER_ENTERING_WORLD","BAG_UPDATE","BANKFRAME_OPENED","PLAYERBANKSLOTS_CHANGED",
-    "GUILDBANKFRAME_OPENED","GUILDBANKBAGSLOTS_CHANGED","MERCHANT_SHOW","MERCHANT_UPDATE",
+for _, event in ipairs({"PLAYER_ENTERING_WORLD","MERCHANT_SHOW","MERCHANT_UPDATE",
     "PLAYER_EQUIPMENT_CHANGED","GET_ITEM_INFO_RECEIVED"}) do pcall(worker.RegisterEvent,worker,event) end
 worker:SetScript("OnEvent",queue)
-if ContainerFrame_Update then hooksecurefunc("ContainerFrame_Update",queue) end
 if PaperDollFrame then PaperDollFrame:HookScript("OnShow",queue) end
 if GameTooltip and GameTooltip.SetBagItem then
     hooksecurefunc(GameTooltip,"SetBagItem",function(tip,bag,slot)

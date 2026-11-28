@@ -54,10 +54,7 @@ D.nameplates = {
 }
 
 D.layout = {
-    combined = true,
-    columns = 10,
     actionSpacing = 10,
-    bagSlotSpacing = 1,
     chatSize = { width = 441, height = 162 },
     messages = { enabled = true, zone = 5, info = 18, raid = 38, boss = 46 },
     sizes = {
@@ -94,8 +91,6 @@ D.frames = {
     MinimalChatAnchor = { "BOTTOMLEFT", 166, 90, scale = 1 },
     Minimap = { scale = 1 },
 }
--- The combined bag window.
-D.bags = { "CENTER", 115, 207 }
 
 local points = {
     TOPLEFT = { 0, 1 }, TOP = { .5, 1 }, TOPRIGHT = { 1, 1 },
@@ -135,7 +130,6 @@ function D:SeedPositions(layout)
         local x, y = fraction(spec)
         layout.bars[name] = { x = x, y = y, scale = spec.scale }
     end
-    layout.bagX, layout.bagY = fraction(self.bags)
 end
 
 function D:SeedLayout(layout)

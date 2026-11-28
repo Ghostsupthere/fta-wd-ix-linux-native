@@ -10,7 +10,6 @@ local function register(id, option)
     S:Register(option)
 end
 local function db() return L:DB() end
-local function copyColor(color) return { color[1], color[2], color[3] } end
 
 -- Unit Frames > General -------------------------------------------------------------------------------------
 local function updateFrames()
@@ -82,15 +81,22 @@ end
 -- Action Bars ------------------------------------------------------------------------------------------------
 -- The four optional bars and the "always show empty slots" switch, handled the way the Blizzard Action Bars
 -- page does: SetActionBarToggles with the fifth value, the SHOW_MULTI_ACTIONBAR_n globals, then the updates.
--- The API reports a change a moment later, so a value just written is remembered until it shows up.
+-- The API reports a change only once the server has answered. Until then the last request counts, whoever
+-- made it: this window, a profile, or the game's own Interface options. Remembering only our own requests
+-- would keep reporting a bar as off after the player had switched it on elsewhere.
 local wanted = {}
+local function isOn(value) return value ~= nil and value ~= false and value ~= 0 and value ~= "0" end
+if SetActionBarToggles then
+    hooksecurefunc("SetActionBarToggles", function(...)
+        for index = 1, 4 do wanted[index] = isOn((select(index, ...))) end
+    end)
+end
 local function currentState(index)
     if index == 5 then
         if GetCVar then return GetCVar("alwaysShowActionBars") == "1" end
-        return ALWAYS_SHOW_MULTIBARS == 1 or ALWAYS_SHOW_MULTIBARS == "1"
+        return isOn(ALWAYS_SHOW_MULTIBARS)
     end
-    local value = select(index, GetActionBarToggles())
-    return value ~= nil and value ~= false and value ~= 0 and value ~= "0"
+    return isOn((select(index, GetActionBarToggles())))
 end
 local function toggleState(index)
     local api = currentState(index)
@@ -119,17 +125,29 @@ local function showEmptySlots(on)
         end
     end
 end
+-- The game's Interface options keep their own copy of each box, read once at login.
+local boxes = { "BottomLeft", "BottomRight", "Right", "RightTwo", "AlwaysShowActionBars" }
+local function syncGameOption(index, on)
+    local box = _G["InterfaceOptionsActionBarsPanel" .. boxes[index]]
+    if not box then return end
+    box.value = on and "1" or "0"
+    if box.SetChecked then box:SetChecked(on) end
+end
 local function setToggle(index, on)
-    wanted[index] = on
-    local always = index == 5 and on or (index ~= 5 and currentState(5))
-    local state = { GetActionBarToggles() }
-    state[index] = on and 1 or nil
+    local always
+    if index == 5 then always = on else always = currentState(5) end
+    -- One request carries all four bars, so it starts from the latest requests: the server may not have
+    -- answered the previous one yet, and its old values would switch that bar back.
+    local state = {}
+    for bar = 1, 4 do state[bar] = toggleState(bar) and 1 or nil end
+    if index <= 4 then state[index] = on and 1 or nil end
     SetActionBarToggles(state[1], state[2], state[3], state[4], always and 1 or nil)
     if index <= 4 then _G["SHOW_MULTI_ACTIONBAR_" .. index] = on and 1 or nil
     else
         ALWAYS_SHOW_MULTIBARS = on and 1 or nil
         if SetCVar then SetCVar("alwaysShowActionBars", on and "1" or "0") end
     end
+    syncGameOption(index, on)
     if MultiActionBar_Update then MultiActionBar_Update() end
     if index == 5 or (always and index <= 4) then showEmptySlots(always) end
     if UIParent_ManageFramePositions then UIParent_ManageFramePositions() end
@@ -159,62 +177,47 @@ register("actionbars.spacing", {
     end,
 })
 
--- Bags > Layout ----------------------------------------------------------------------------------------------
-local function refreshBags() if L.RefreshBags then L:RefreshBags() end end
-local function bagOption(key, name, kind, default, extra, after)
+-- Bags: the Bagster windows ----------------------------------------------------------------------------------
+-- bagster_native.lua hands these to Bagster; a change only has to repaint its windows.
+local function refreshBagster()
+    local module = addon.BagsterModule
+    if module and module.BagsterModule and module.BagsterModule.applied and addon.RefreshBagsterFrames then
+        addon.RefreshBagsterFrames()
+    end
+end
+local function bagsterOption(id, name, kind, default, group, extra)
     local option = extra or {}
     option.name, option.type, option.default = name, kind, default
-    option.category, option.protected = "Bags", true
-    option.group = option.group or "Combined bags"
-    option.localGet = function() return db()[key] end
-    option.localSet = function(value) db()[key] = value; if after then after() end; refreshBags() end
-    register("layout." .. key, option)
+    option.category, option.group = "Bags", group
+    option.keywords = "bagster bag bank guild vault " .. (option.keywords or "")
+    option.apply = option.apply or refreshBagster
+    if option.choices then
+        local valid = {}
+        for _, choice in ipairs(option.choices) do valid[choice.value] = true end
+        option.validate = function(value) if valid[value] then return value end end
+    end
+    register("bagster." .. id, option)
 end
-bagOption("combined", "Combine carried bags into one window", "toggle", false, { keywords = "backpack single window" })
-bagOption("bagScale", "Bag scale", "slider", 1, { min = .5, max = 1.5, step = .05 })
-bagOption("bagSpacing", "Space between separate bags", "slider", 14, { min = 4, max = 40, step = 1, group = "Separate bags",
-    keywords = "gap distance windows only when bags are not combined" })
-bagOption("columns", "Combined bag columns", "slider", 20, { min = 8, max = 28, step = 1 })
-bagOption("bagSlotSpacing", "Combined bag item spacing", "slider", 4, { min = 0, max = 16, step = 1 })
-bagOption("sortMode", "Sort and group by", "dropdown", "Type", {
-    choices = { { value = "Type", name = "Type" }, { value = "Name", name = "Name" }, { value = "Quality", name = "Quality" } },
-    keywords = "sort order",
-})
-bagOption("bagAutoSort", "Auto-sort when bags open", "toggle", false, { keywords = "sort" })
-bagOption("bagGroupSpacing", "Space between item groups", "toggle", true, { keywords = "group gap" },
-    function() if addon.Inventory and addon.Inventory.InvalidateLayout then addon.Inventory:InvalidateLayout() end end)
-
--- Bags > Quality: item glow outlines -------------------------------------------------------------------------
-local function refreshItems() if addon.Inventory and addon.Inventory.FilterItems then addon.Inventory:FilterItems() end end
-local function glowOption(id, option)
-    option.category, option.group, option.protected = "Bags", "Item glow outlines", true
-    option.keywords = (option.keywords or "") .. " outline border category"
-    register(id, option)
-end
-glowOption("bagGlow.enabled", {
-    name = "Show category glow outlines", type = "toggle", default = false,
-    localGet = function() return db().bagGlow end,
-    localSet = function(on) db().bagGlow = on; refreshItems() end,
-})
-for _, category in ipairs(L.outlineTypes or {}) do
-    local key = category[1]
-    local slug = key:lower():gsub("%s+", "_")
-    glowOption("bagGlow.type." .. slug, {
-        name = key, type = "toggle", default = true,
-        localGet = function() return db().bagGlowTypes[key] end,
-        localSet = function(on) db().bagGlowTypes[key] = on; refreshItems() end,
-    })
-    glowOption("bagGlow.color." .. slug, {
-        name = key .. " color", type = "colour", default = { category[2], category[3], category[4] },
-        localGet = function() return copyColor(db().bagGlowColors[key]) end,
-        localSet = function(color) db().bagGlowColors[key] = copyColor(color); refreshItems() end,
-    })
-end
-glowOption("bagGlow.alpha", {
-    name = "Outline brightness", type = "slider", default = .65, min = .1, max = 1, step = .05,
-    localGet = function() return db().bagGlowAlpha end,
-    localSet = function(value) db().bagGlowAlpha = value; refreshItems() end,
-})
+bagsterOption("itemScale", "Largest item size", "slider", 1, "Window layout",
+    { min = .5, max = 1.5, step = .05, keywords = "scale", desc = "Items shrink below this to fit the window." })
+bagsterOption("itemSpacing", "Space between items", "slider", 2, "Window layout", { min = 0, max = 12, step = 1, keywords = "gap" })
+bagsterOption("bagBreak", "Start a new row", "dropdown", "type", "Window layout", { keywords = "separate group split",
+    choices = { { value = "none", name = "Never" }, { value = "type", name = "For special bags" },
+        { value = "bag", name = "For every bag" } } })
+bagsterOption("money", "Money display", "dropdown", "icons", "Window layout", { keywords = "gold coins",
+    choices = { { value = "icons", name = "Coin icons" }, { value = "text", name = "Text" } } })
+bagsterOption("qualityFilter", "Show the quality filter buttons", "toggle", true, "Window layout", { keywords = "color rarity" })
+bagsterOption("sort.fillBank", "Sorting the bank adds to its stacks from your bags", "toggle", true, "Sorting",
+    { keywords = "deposit merge", desc = "When on, sorting the bank moves items out of your bags to fill matching bank stacks." })
+bagsterOption("sort.reverse", "Sort items toward the end of the bags", "toggle", false, "Sorting",
+    { keywords = "reverse order empty slots" })
+bagsterOption("glow.quality", "Outline items by quality", "toggle", true, "Bag slot outlines", { keywords = "border rarity" })
+bagsterOption("glow.quest", "Highlight quest items", "toggle", true, "Bag slot outlines", { keywords = "border" })
+bagsterOption("glow.alpha", "Outline strength", "slider", 1, "Bag slot outlines",
+    { min = .1, max = 1, step = .05, keywords = "opacity brightness" })
+bagsterOption("glow.unusable", "Tint items you cannot use red", "toggle", false, "Bag slot outlines",
+    { keywords = "unusable requirement armor weapon level",
+      apply = function() if addon.RefreshUnusableItemTints then addon:RefreshUnusableItemTints() end end })
 
 -- General > Screen messages -----------------------------------------------------------------------------------
 if M then
@@ -240,7 +243,7 @@ end
 
 -- The old Interface Options pages open the new window instead. -------------------------------------------------
 local function open(section) return function() if addon.Settings then addon.Settings:Open(section) end end end
-L.OpenOptions, L.OpenBagOptions, L.OpenOutlineOptions = open("Action Bars"), open("Bags"), open("Bags")
+L.OpenOptions = open("Action Bars")
 if M then M.OpenOptions = open("General") end
 
 -- One pointer page remains under Interface > AddOns so players who look there find the window.

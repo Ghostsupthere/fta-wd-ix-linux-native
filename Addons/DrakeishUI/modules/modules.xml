@@ -27,9 +27,11 @@
 	<Include file="collections\collections.xml"/>
 	<Script file="micromenu.lua"/>
 	<Include file="social\social.xml"/>
-	<Script file="native_bags.lua"/>
-	<Script file="native_inventory.lua"/>
-	<Script file="native_inventory_sort.lua"/>
+	<!-- Bagster: the bag, bank and guild bank windows. -->
+	<Script file="bags_usability.lua"/>
+	<Script file="bagster_native.lua"/>
+	<Include file="bagster\bagster.xml"/>
+	<Script file="bagsort.lua"/>
 	<!-- War-Within spellbook. Loads after social so DrakeishUI_SocialNE chrome exists. -->
 	<Include file="spellbook\spellbook.xml"/>
 	<Script file="native_professions.lua"/>

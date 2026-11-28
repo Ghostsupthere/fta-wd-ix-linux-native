@@ -100,59 +100,21 @@ local function showPanel()
     return panel
 end
 
--- Put the bag controls directly on the same native Interface style page as the
+-- Put the layout buttons directly on the same native Interface style page as the
 -- master style switch. That page is created after LoadAddOn returns, so attach
 -- at login/world entry instead of assuming it already exists at module load.
 local function attachStyleSettings()
     local host, style = WaystoneInterfaceStylePanel, WaystoneUseModernInterface
     if not (host and style and addon.Layout) then return false end
-    if host._drakeishBagSettings then return true end
+    if host._drakeishLayoutSettings then return true end
 
     local L = addon.Layout
-    local section = CreateFrame("Frame", "DrakeishUIIntegratedBagSettings", host)
+    local section = CreateFrame("Frame", "DrakeishUIIntegratedLayoutSettings", host)
     section:SetPoint("TOPLEFT", style, "BOTTOMLEFT", 4, -58)
-    section:SetSize(480, 294)
-    host._drakeishBagSettings = section
+    section:SetSize(480, 60)
+    host._drakeishLayoutSettings = section
     local title = section:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    title:SetPoint("TOPLEFT", 0, 0); title:SetText("Bag settings")
-    local combine = CreateFrame("CheckButton", "DrakeishUIIntegratedCombineBags", section, "UICheckButtonTemplate")
-    combine:SetPoint("TOPLEFT", title, "BOTTOMLEFT", -6, -5)
-    local combineText = combine:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    combineText:SetPoint("LEFT", combine, "RIGHT", 4, 0); combineText:SetText("Combine carried bags into one window")
-    local syncing = false
-    local refreshers = {}
-    combine:SetScript("OnClick", function(self)
-        if InCombatLockdown() then self:SetChecked(L:DB().combined); return end
-        L:DB().combined = self:GetChecked() and true or false; L:RefreshBags()
-    end)
-    refreshers[#refreshers + 1] = function() combine:SetChecked(L:DB().combined) end
-
-    local function slider(key, label, x, y, low, high, step, format)
-        local s = CreateFrame("Slider", "DrakeishUIIntegrated" .. key, section, "OptionsSliderTemplate")
-        s:SetSize(200, 18); s:SetPoint("TOPLEFT", section, "TOPLEFT", x, y)
-        s:SetMinMaxValues(low, high); s:SetValueStep(step)
-        _G[s:GetName() .. "Low"]:SetText(tostring(low)); _G[s:GetName() .. "High"]:SetText(tostring(high))
-        local function setTitle(value)
-            _G[s:GetName() .. "Text"]:SetText(label .. " (" .. string.format(format, value) .. ")")
-        end
-        s:SetScript("OnValueChanged", function(self, value)
-            value = math.floor(value / step + .5) * step
-            if syncing then setTitle(value); return end
-            if InCombatLockdown() then
-                syncing = true; self:SetValue(L:DB()[key]); setTitle(L:DB()[key]); syncing = false
-                return
-            end
-            L:DB()[key] = value; setTitle(value); L:RefreshBags()
-        end)
-        refreshers[#refreshers + 1] = function()
-            local value = L:DB()[key]; s:SetValue(value); setTitle(value)
-        end
-        return s
-    end
-    slider("bagScale", "Bag scale", 12, -91, .5, 1.5, .05, "%.2f")
-    slider("bagSpacing", "Space between bags", 250, -91, 4, 40, 1, "%d")
-    slider("columns", "Combined bag columns", 12, -147, 8, 28, 1, "%d")
-    slider("bagSlotSpacing", "Combined item spacing", 250, -147, 0, 16, 1, "%d")
+    title:SetPoint("TOPLEFT", 0, 0); title:SetText("Layout")
 
     local function button(name, text, x, y, width, action)
         local b = CreateFrame("Button", name, section, "UIPanelButtonTemplate")
@@ -160,35 +122,11 @@ local function attachStyleSettings()
         b:SetText(text); b:SetScript("OnClick", action)
         return b
     end
-    local mode = button("DrakeishUIIntegratedSortMode", "", 0, -183, 145, function(self)
-        if addon.Inventory and addon.Inventory.sorting then return end
-        local text = "Sort by: " .. L:CycleBagSortMode()
-        self:SetText(text)
-        if DrakeishUIBagTools and DrakeishUIBagTools.order then
-            DrakeishUIBagTools.order:SetText(text)
-        end
-    end)
-    refreshers[#refreshers + 1] = function() mode:SetText("Sort by: " .. L:DB().sortMode) end
-    button("DrakeishUIIntegratedSortBags", "Sort bags", 152, -183, 100, function()
-        if addon.Inventory then HideUIPanel(InterfaceOptionsFrame); addon.Inventory:StartSort() end
-    end)
-    button("DrakeishUIIntegratedBagTools", "Search / filter", 259, -183, 140, function()
-        if addon.Inventory then HideUIPanel(InterfaceOptionsFrame); addon.Inventory:ShowTools() end
-    end)
-    button("DrakeishUIIntegratedMoveUI", "Move UI", 0, -222, 110, function()
+    button("DrakeishUIIntegratedMoveUI", "Move UI", 0, -22, 110, function()
         if not InCombatLockdown() then L:SetEditing(true); HideUIPanel(InterfaceOptionsFrame) end
     end)
-    button("DrakeishUIIntegratedLockUI", "Lock UI", 117, -222, 110, function() L:SetEditing(false) end)
-    button("DrakeishUIIntegratedMoreLayout", "More layout settings", 234, -222, 165, function() L:OpenOptions() end)
-    button("DrakeishUIIntegratedItemOutlines", "Item glow outlines", 0, -258, 180, function() L:OpenOutlineOptions() end)
-
-    local function refresh()
-        syncing = true
-        for _, update in ipairs(refreshers) do update() end
-        syncing = false
-    end
-    host:HookScript("OnShow", refresh)
-    refresh()
+    button("DrakeishUIIntegratedLockUI", "Lock UI", 117, -22, 110, function() L:SetEditing(false) end)
+    button("DrakeishUIIntegratedMoreLayout", "More layout settings", 234, -22, 165, function() L:OpenOptions() end)
     return true
 end
 
@@ -221,7 +159,7 @@ SlashCmdList.DRAKEISHUINATIVE = function(message)
     elseif addon.Layout and message=="lock" then addon.Layout:SetEditing(false)
     elseif addon.Layout and message=="layout" then addon.Layout:OpenOptions()
     elseif addon.Messages and (message=="text" or message=="messages") then addon.Messages:OpenOptions()
-    elseif addon.Inventory and message=="bags" then addon.Inventory:ShowTools()
+    elseif addon.Settings and message=="bags" then addon.Settings:Open("Bags")
     elseif addon.Settings then addon.Settings:Open()
     elseif InterfaceOptionsFrame_OpenToCategory then InterfaceOptionsFrame_OpenToCategory(showPanel()) end
 end

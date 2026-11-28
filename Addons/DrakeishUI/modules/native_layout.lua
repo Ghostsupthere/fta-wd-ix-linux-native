@@ -1,12 +1,8 @@
--- Per-character layout on the retained secure bars and native bag frames.
+-- Per-character layout on the retained secure bars.
 local addon=select(2,...)
 local L={entries={},editing=false}
 addon.Layout=L
-local defaults={bagSpacing=14,bagScale=1,bagSlotSpacing=4,actionSpacing=7,combined=false,columns=20,sortMode="Type",
-    bagGlow=false,bagGlowAlpha=.65,bagAutoSort=false,bagGroupSpacing=true}
-local nextSortMode={Type="Name",Name="Quality",Quality="Type"}
-L.outlineTypes={{"Equipment",.25,.6,1},{"Consumables",.25,1,.35},{"Trade goods",1,.65,.2},
-    {"Quest items",1,.9,.15},{"Recipes",.8,.35,1},{"Gems",1,.3,.5},{"Junk",.55,.55,.55}}
+local defaults={actionSpacing=7}
 local function finite(n) return type(n)=="number" and n==n and math.abs(n)<100000 end
 function L:DB()
     if type(DrakeishUI_LayoutDB)~="table" then
@@ -17,33 +13,9 @@ function L:DB()
     for key,value in pairs(defaults) do
         if type(db[key])~=type(value) or (type(value)=="number" and not finite(db[key])) then db[key]=value end
     end
-    db.bagSpacing=math.max(4,math.min(40,db.bagSpacing))
-    db.bagScale=math.max(.5,math.min(1.5,db.bagScale))
-    db.bagSlotSpacing=math.max(0,math.min(16,math.floor(db.bagSlotSpacing+.5)))
     db.actionSpacing=math.max(0,math.min(16,math.floor(db.actionSpacing+.5)))
-    db.columns=math.max(8,math.min(28,math.floor(db.columns)))
     if type(db.bars)~="table" then db.bars={} end
-    if type(db.excludeSort)~="table" then db.excludeSort={} end
-    db.bagGlowAlpha=math.max(.1,math.min(1,db.bagGlowAlpha))
-    if type(db.bagGlowTypes)~="table" then db.bagGlowTypes={} end
-    if type(db.bagGlowColors)~="table" then db.bagGlowColors={} end
-    for _,category in ipairs(self.outlineTypes) do
-        local key=category[1]
-        if type(db.bagGlowTypes[key])~="boolean" then db.bagGlowTypes[key]=true end
-        if type(db.bagGlowColors[key])~="table" then db.bagGlowColors[key]={} end
-        for i=1,3 do
-            local v=db.bagGlowColors[key][i]
-            db.bagGlowColors[key][i]=finite(v) and math.max(0,math.min(1,v)) or category[i+1]
-        end
-    end
-    if db.sortMode~="Type" and db.sortMode~="Name" and db.sortMode~="Quality" then db.sortMode="Type" end
     return db
-end
-function L:CycleBagSortMode()
-    local db=self:DB()
-    db.sortMode=nextSortMode[db.sortMode]
-    if addon.Inventory then addon.Inventory:InvalidateLayout() end
-    return db.sortMode
 end
 local specs={{"pUiMainBar","Main action bar"},{"MultiBarBottomLeft","Bottom left bar"},
     {"MultiBarBottomRight","Bottom right bar"},{"MultiBarRight","Right bar"},{"MultiBarLeft","Left bar"},
@@ -53,7 +25,7 @@ local specs={{"pUiMainBar","Main action bar"},{"MultiBarBottomLeft","Bottom left
     {"CustomPartyFrame3","Party 3"},{"CustomPartyFrame4","Party 4"},
     {"Minimap","Minimap"},{"BuffFrame","Buffs",220,70},{"CastingBarFrame","Cast bar"},
     {"MinimalChatAnchor","Chat"}, {"ImprovedUICastBar","Player cast bar"}, {"WatchFrame","Objective tracker"},
-    {"DrakeishUICombinedBags","Combined bags"}, {"DrakeishUI_RaidFrames","Raid frames"},
+    {"DrakeishUI_RaidFrames","Raid frames"},
     {"pUiMicroMenu","Micro menu",96,24}}
 -- Frames that can be scaled but have no Move UI handle.
 local scaleOnly={"TargetFrameToT","FocusFrameToT","Boss1TargetFrame","Boss2TargetFrame","Boss3TargetFrame",
@@ -226,7 +198,6 @@ end
 function L:SetEditing(value)
     if value and InCombatLockdown() then return end
     self.editing=value and true or false;self:RefreshBars()
-    if addon.Inventory and addon.Inventory.SetEditing then addon.Inventory:SetEditing(self.editing) end
     if not self.editBar and self.editing then
         local bar=CreateFrame("Frame","DrakeishUILayoutEditBar",UIParent)
         self.editBar=bar
@@ -261,19 +232,7 @@ function L:ResetBars()
     self.applying=false
     if MultiActionBar_Update then MultiActionBar_Update() end
     self:RefreshBars()
-    if addon.Inventory then addon.Inventory:InvalidateLayout() end
     if self.selectionChanged then self.selectionChanged() end
-end
-function L:RefreshBags()
-    if InCombatLockdown() then self.pending=true;return end
-    local db=self:DB()
-    CONTAINER_SPACING=db.bagSpacing;VISIBLE_CONTAINER_SPACING=db.bagSpacing;CONTAINER_MAX_SCALE=db.bagScale
-    if addon.Inventory then addon.Inventory:InvalidateLayout() end
-    if updateContainerFrameAnchors then updateContainerFrameAnchors() end
-end
-function DrakeishUI_GetBagLayoutOptions()
-    local db=L:DB()
-    return db.bagScale,db.bagSpacing
 end
 
 local panel
@@ -344,7 +303,6 @@ function L:OptionsPanel()
         L:DB().actionSpacing=value
         if addon.RefreshSidebarPositions then addon.RefreshSidebarPositions() end
     end)
-    button(panel,"Bag layout and sorting",20,-290,220,function() L:OpenBagOptions() end)
     label(panel,"Move action bars, player, target, focus, pet and party frames.",20,-330)
     label(panel,"You can also move chat, the minimap, buffs, cast bar and combined bags.",20,-351)
     label(panel,"An element must be visible to drag it. Layout is locked during combat.",20,-372)
@@ -355,129 +313,12 @@ function L:OptionsPanel()
         panel.refreshing=false
     end)
     InterfaceOptions_AddCategory(panel)
-    self:BagOptionsPanel()
     return panel
-end
-function L:BagOptionsPanel()
-    if self.bagPanel then return self.bagPanel end
-    local p=CreateFrame("Frame","DrakeishUIBagOptions",UIParent);p:Hide();self.bagPanel=p
-    p.name="Modern UI bags";p.parent="DrakeishUI"
-    label(p,"Modern UI bags",16,-16,"GameFontNormalLarge")
-    label(p,"Customize carried bags and open the bag tools to search, filter or sort. Bank bags keep separate windows. Settings save per character.",16,-44)
-    local controls={}
-    local b=CreateFrame("CheckButton",nil,p,"UICheckButtonTemplate");b:SetPoint("TOPLEFT",14,-88)
-    local fs=b:CreateFontString(nil,"ARTWORK","GameFontHighlight");fs:SetPoint("LEFT",b,"RIGHT",4,0);fs:SetText("Combine carried bags into one window")
-    b:SetScript("OnClick",function(self)
-        if InCombatLockdown() then self:SetChecked(L:DB().combined);return end
-        L:DB().combined=self:GetChecked() and true or false;L:RefreshBags()
-    end)
-    controls[#controls+1]=function() b:SetChecked(L:DB().combined) end
-    local function slider(text,y,key,lo,hi,step)
-        local s=CreateFrame("Slider","DrakeishUIBagOptions"..key,p,"OptionsSliderTemplate")
-        s:SetSize(400,18);s:SetPoint("TOPLEFT",28,y);s:SetMinMaxValues(lo,hi);s:SetValueStep(step)
-        _G[s:GetName().."Low"]:SetText(tostring(lo));_G[s:GetName().."High"]:SetText(tostring(hi))
-        local function title(value) _G[s:GetName().."Text"]:SetText(text.." ("..string.format(key=="bagScale" and "%.2f" or "%d",value)..")") end
-        s:SetScript("OnValueChanged",function(_,value)
-            value=math.floor(value/step+.5)*step;title(value)
-            if p.refreshing or InCombatLockdown() then return end
-            L:DB()[key]=value;L:RefreshBags()
-        end)
-        controls[#controls+1]=function() local v=L:DB()[key];s:SetValue(v);title(v) end
-    end
-    slider("Space between separate bags",-141,"bagSpacing",4,40,1)
-    slider("Bag scale (reduced automatically to fit)",-194,"bagScale",.5,1.5,.05)
-    slider("Combined bag columns",-247,"columns",8,28,1)
-    slider("Combined bag item spacing",-300,"bagSlotSpacing",0,16,1)
-    button(p,"Search, filter and sort bags",20,-337,260,function() if addon.Inventory then addon.Inventory:ShowTools() end end)
-    button(p,"Item glow outlines",290,-337,150,function() L:OpenOutlineOptions() end)
-    label(p,"Shift-drag the combined bag title to move it. The spacing and scale controls also apply to separate bags.",20,-378)
-    label(p,"Bag menus can exclude individual bags from sorting. Search and filters dim nonmatching items.",20,-410)
-    p:SetScript("OnShow",function() p.refreshing=true;for _,refresh in ipairs(controls) do refresh() end;p.refreshing=false end)
-    InterfaceOptions_AddCategory(p)
-    self:OutlineOptionsPanel()
-    return p
-end
-function L:OutlineOptionsPanel()
-    if self.outlinePanel then return self.outlinePanel end
-    local p=CreateFrame("Frame","DrakeishUIBagOutlineOptions",UIParent);p:Hide();self.outlinePanel=p
-    p.name="Bag item outlines";p.parent="DrakeishUI"
-    label(p,"Bag item outlines",16,-16,"GameFontNormalLarge")
-    label(p,"Color item edges by category in separate bags, combined bags and open bank bags. Settings save per character.",16,-44)
-    local function refreshItems() if addon.Inventory then addon.Inventory:FilterItems() end end
-    local function check(name,text,x,y,read,write)
-        local b=CreateFrame("CheckButton",name,p,"UICheckButtonTemplate");b:SetPoint("TOPLEFT",x,y)
-        local t=b:CreateFontString(nil,"ARTWORK","GameFontHighlight");t:SetPoint("LEFT",b,"RIGHT",4,0);t:SetText(text)
-        b:SetScript("OnClick",function(self) write(self:GetChecked() and true or false);refreshItems() end)
-        return function() b:SetChecked(read()) end
-    end
-    local refreshers={check("DrakeishUIBagGlowEnabled","Show category glow outlines",14,-86,
-        function() return L:DB().bagGlow end,function(v) L:DB().bagGlow=v end)}
-    for i,category in ipairs(self.outlineTypes) do
-        local key=category[1]
-        local x=((i-1)%2)*235+14;local y=-136-math.floor((i-1)/2)*47
-        refreshers[#refreshers+1]=check("DrakeishUIBagGlowCategory"..i,key,x,y,
-            function() return L:DB().bagGlowTypes[key] end,function(v) L:DB().bagGlowTypes[key]=v end)
-        local swatch=CreateFrame("Button","DrakeishUIBagGlowColor"..i,p,"UIPanelButtonTemplate")
-        swatch:SetPoint("TOPLEFT",x+169,y-4);swatch:SetSize(48,24);swatch:SetText("Color")
-        swatch:SetScript("OnClick",function()
-            if not ColorPickerFrame then return end
-            ColorPickerFrame:Hide()
-            local color=L:DB().bagGlowColors[key];local original={color[1],color[2],color[3]}
-            local function apply(values)
-                if values then L:DB().bagGlowColors[key]={unpack(values)}
-                else L:DB().bagGlowColors[key]={ColorPickerFrame:GetColorRGB()} end
-                refreshItems()
-            end
-            ColorPickerFrame.hasOpacity=false;ColorPickerFrame.opacityFunc=nil
-            ColorPickerFrame:SetColorRGB(unpack(original))
-            ColorPickerFrame.previousValues=original;ColorPickerFrame.func=function() apply() end
-            ColorPickerFrame.cancelFunc=function() apply(original) end
-            ColorPickerFrame:Show()
-        end)
-    end
-    local intensity=CreateFrame("Slider","DrakeishUIBagGlowIntensity",p,"OptionsSliderTemplate")
-    intensity:SetPoint("TOPLEFT",28,-354);intensity:SetSize(400,18);intensity:SetMinMaxValues(.1,1);intensity:SetValueStep(.05)
-    _G[intensity:GetName().."Low"]:SetText("10%");_G[intensity:GetName().."High"]:SetText("100%")
-    intensity:SetScript("OnValueChanged",function(_,v)
-        v=math.floor(v/.05+.5)*.05
-        _G[intensity:GetName().."Text"]:SetText("Outline brightness ("..math.floor(v*100+.5).."%)")
-        if not p.refreshing then L:DB().bagGlowAlpha=v;refreshItems() end
-    end)
-    label(p,"Quest items take priority, followed by junk and then the item's ordinary category. Empty slots have no outline. Item quality and quest markers remain visible.",20,-395)
-    p:SetScript("OnShow",function()
-        p.refreshing=true;for _,refresh in ipairs(refreshers) do refresh() end
-        intensity:SetValue(L:DB().bagGlowAlpha)
-        _G[intensity:GetName().."Text"]:SetText("Outline brightness ("..math.floor(L:DB().bagGlowAlpha*100+.5).."%)")
-        p.refreshing=false
-    end)
-    InterfaceOptions_AddCategory(p)
-    return p
-end
-function L:OpenOutlineOptions()
-    self:OptionsPanel()
-    if InterfaceOptionsFrame_OpenToCategory then
-        local p=self:OutlineOptionsPanel();InterfaceOptionsFrame_OpenToCategory(p);InterfaceOptionsFrame_OpenToCategory(p)
-    end
 end
 function L:OpenOptions()
     local p=self:OptionsPanel()
     if InterfaceOptionsFrame_OpenToCategory then
         InterfaceOptionsFrame_OpenToCategory(p);InterfaceOptionsFrame_OpenToCategory(p)
-    end
-end
-function L:OpenBagOptions()
-    self:OptionsPanel()
-    if InterfaceOptionsFrame_OpenToCategory then
-        local p=self:BagOptionsPanel()
-        InterfaceOptionsFrame_OpenToCategory(p);InterfaceOptionsFrame_OpenToCategory(p)
-    end
-end
-function L:OpenBagSettings()
-    local p=WaystoneInterfaceStylePanel
-    if p and p._drakeishBagSettings and InterfaceOptionsFrame_OpenToCategory then
-        InterfaceOptionsFrame_OpenToCategory(p);InterfaceOptionsFrame_OpenToCategory(p)
-    else
-        self:OpenBagOptions()
     end
 end
 local boot=CreateFrame("Frame")
@@ -488,9 +329,8 @@ boot:SetScript("OnEvent",function(_,event)
         if L.moving then L.moving.frame:StopMovingOrSizing();L.moving=nil end
         for _,entry in pairs(L.entries) do entry.handle:Hide() end
         if L.editBar then L.editBar:Hide() end
-        if addon.Inventory and addon.Inventory.SetEditing then addon.Inventory:SetEditing(false) end
         return
     end
-    L:RefreshBars();L:RefreshBags()
+    L:RefreshBars()
 end)
 L:DB()

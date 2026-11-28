@@ -6,12 +6,10 @@ local state = {
     bagGlowTypes = { Equipment = true, Junk = true },
     bagGlowColors = { Equipment = { .25, .6, 1 }, Junk = { .55, .55, .55 } },
 }
-local bagRefreshes, itemRefreshes, layoutRefreshes = 0, 0, 0
 addon.Layout = {
     entries = {}, DB = function() return state end, outlineTypes = { { "Equipment", .25, .6, 1 }, { "Junk", .55, .55, .55 } },
-    RefreshBags = function() bagRefreshes = bagRefreshes + 1 end, RefreshBars = function() end, Select = function() end,
+    RefreshBars = function() end, Select = function() end,
 }
-addon.Inventory = { FilterItems = function() itemRefreshes = itemRefreshes + 1 end, InvalidateLayout = function() layoutRefreshes = layoutRefreshes + 1 end }
 local messages = { enabled = true, zone = 18, info = 28, raid = 38, boss = 46 }
 local applied, previewed = 0, 0
 addon.Messages = {
@@ -80,17 +78,13 @@ assert(S:Set("layout.left.shown", false) and not toggles[4])
 assert(toggles[5] == 1 and slot:IsShown())  -- changing a bar keeps the always-show choice
 assert(S:Set("actionbars.alwaysShow", false) and slot:GetAttribute("showgrid") == 0 and not slot:IsShown())
 
--- Bag layout and glow outlines write the layout database and refresh the bags.
-assert(S:Set("layout.combined", true) and state.combined == true and bagRefreshes == 1)
-assert(S:Set("layout.bagScale", .83) and math.abs(state.bagScale - .85) < 1e-9)
-assert(S:Set("layout.columns", 99) and state.columns == 28)
-assert(S:Set("layout.sortMode", "Name") and state.sortMode == "Name")
-assert(S:Set("layout.bagGroupSpacing", false) and state.bagGroupSpacing == false and layoutRefreshes == 1)
-assert(S:Set("bagGlow.enabled", true) and state.bagGlow and itemRefreshes == 1)
-assert(S:Set("bagGlow.type.junk", false) and state.bagGlowTypes.Junk == false)
-assert(S:Set("bagGlow.color.equipment", { 1, 0, .5 }) and state.bagGlowColors.Equipment[1] == 1 and state.bagGlowColors.Equipment[3] == .5)
-assert(S:Get("bagGlow.color.equipment")[2] == 0)
-assert(S:Set("bagGlow.alpha", .5) and state.bagGlowAlpha == .5)
+-- The old bag windows' settings are gone; Bagster's are here.
+for _, id in ipairs({ "bags.bagster", "layout.combined", "layout.bagScale", "layout.columns", "layout.sortMode",
+    "bagGlow.enabled" }) do assert(not S.byID[id], id .. " still exists") end
+assert(S:Set("bagster.itemSpacing", 99) and S:Get("bagster.itemSpacing") == 12)
+assert(S:Set("bagster.bagBreak", "bag") and S:Get("bagster.bagBreak") == "bag")
+S:Set("bagster.bagBreak", "sideways")
+assert(S:Get("bagster.bagBreak") == "bag", "an unknown choice was accepted")
 
 -- Raid and pet frames use the saved flags the old page used.
 assert(S:Set("frames.compactRaid", true) and raid_frames_state == 1 and frameUpdates == 1)
@@ -109,8 +103,39 @@ M.combat = false
 M.event("PLAYER_REGEN_ENABLED")
 assert(not S.pending["layout.right.shown"] and not toggles[3])
 
+-- Several bars changed before the server answers (loading a profile does this): the last message keeps them all.
+local sent
+hooksecurefunc("SetActionBarToggles", function(...) sent = { ... } end)
+toggles = {}
+S:Get("layout.bottomLeft.shown"); S:Get("layout.bottomRight.shown"); S:Get("layout.right.shown"); S:Get("layout.left.shown")
+applyNow = false
+assert(S:Set("layout.bottomLeft.shown", true))
+assert(S:Set("layout.bottomRight.shown", true))
+assert(S:Set("layout.right.shown", true))
+assert(sent[1] and sent[2] and sent[3] and not sent[4], "an earlier bar was switched off again")
+toggles, applyNow = { 1, 1, 1 }, true
+
+-- The player's own later change, made in the game's Interface options, is what counts.
+assert(S:Set("layout.right.shown", false))
+applyNow = false
+SetActionBarToggles(1, 1, 1, nil, nil)
+assert(S:Get("layout.right.shown") == true, "a bar switched on in the game's options still reads as off")
+toggles, applyNow = { 1, 1, 1 }, true
+assert(S:Get("layout.right.shown") == true)
+-- The game sends "0" for a bar that is off.
+SetActionBarToggles(1, "0", 1, "0", nil)
+toggles = { 1, nil, 1 }
+assert(S:Get("layout.bottomRight.shown") == false and S:Get("layout.bottomLeft.shown") == true)
+
+-- The game's own checkboxes follow what DrakeishUI changes.
+local box = { value = "1", checked = true, SetChecked = function(self, on) self.checked = not not on end }
+InterfaceOptionsActionBarsPanelRight = box
+assert(S:Set("layout.right.shown", false) and box.value == "0" and box.checked == false)
+assert(S:Set("layout.right.shown", true) and box.value == "1" and box.checked == true)
+InterfaceOptionsActionBarsPanelRight = nil
+
 -- Old openers now open the settings window; the Interface page is only a pointer.
-addon.Layout:OpenBagOptions()
+addon.Layout:OpenOptions()
 assert(DrakeishUISettingsWindow and DrakeishUISettingsWindow:IsShown())
 assert(opened and opened.name == "DrakeishUI" and M.find("Button", "Open DrakeishUI Settings"))
 print("Interface options moved into settings passed")

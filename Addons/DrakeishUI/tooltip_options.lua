@@ -72,7 +72,7 @@ local function context(frame)
         local name = frame.GetName and frame:GetName() or ""
         if frame.bagID and frame.slotID or name:match("^ContainerFrame%d+Item")
             or name:match("^BankFrameItem") or name:match("^GuildBankColumn%d+Button")
-            or frame == DrakeishUICombinedBags then
+            or name:match("^DrakeishUI_BagsterItem") or name:match("^DrakeishUI_BagsterGuildItem") then
             return "bags"
         end
         for _, prefix in ipairs(actionPrefixes) do

@@ -49,11 +49,9 @@ for name, position in pairs(expected) do
     local saved = assert(db.bars[name], name)
     assert(near(saved.x, position[1], .0006) and near(saved.y, position[2], .0008), name .. " matches the source screen")
 end
-assert(near(db.bagX, .54916, .0006) and near(db.bagY, .72359, .0008))
-assert(db.combined == true and db.columns == 10 and db.actionSpacing == 10 and db.bagSlotSpacing == 1)
+assert(db.actionSpacing == 10 and db.combined == nil and db.bagX == nil, "no settings for the old bag windows")
 assert(db.sizes.main.size == 50 and db.sizes.bottomLeft.size == 35 and db.sizes.minimap.size == 181)
 assert(db.chatSize.width == 441 and db.messages.zone == 5 and db.messages.info == 18)
-assert(db.bagSpacing == 14 and db.sortMode == "Type", "the module's own defaults still fill the rest")
 assert(db.bars.CustomPartyFrame2.scale == 1.6 and db.bars.CustomPartyFrame2.x == nil)
 db.sizes.main.size = 20
 assert(D.layout.sizes.main.size == 50, "characters get copies")
@@ -122,21 +120,21 @@ end
 local session, R, layout = login({})
 assert(session.ShippedDefaults.newPlayer and DrakeishUI_Config.newPlayer == true)
 assert(R:Desired("chat.size") == 14 and R:Desired("tooltip.y") == -26)
-assert(layout:DB().columns == 10 and layout:DB().sizes.main.size == 50 and layout:DB().bars.PlayerFrame.scale == 1.15)
+assert(layout:DB().actionSpacing == 10 and layout:DB().sizes.main.size == 50 and layout:DB().bars.PlayerFrame.scale == 1.15)
 R:Set("chat.size", 18)
 R:Reset()
 assert(R:Desired("chat.size") == 14, "Reset returns to the shipped value")
 R:Set("chat.size", 18)
-layout:DB().columns = 12
+layout:DB().actionSpacing = 12
 local config, bags, saved = DrakeishUI_Config, DrakeishUI_BagDB, layout:DB()
 
 -- Their next login keeps the look, their own choices and their saved layout.
 session, R, layout = login({ variables = { DrakeishUI_Config = config, DrakeishUI_BagDB = bags, DrakeishUI_LayoutDB = saved } })
 assert(session.ShippedDefaults.newPlayer and R:Desired("chat.size") == 18 and R:Desired("tooltip.y") == -26)
-assert(layout:DB() == saved and layout:DB().columns == 12)
+assert(layout:DB() == saved and layout:DB().actionSpacing == 12)
 -- Their second character, with no saved layout, starts with the shipped one.
 session, R, layout = login({ variables = { DrakeishUI_Config = config, DrakeishUI_BagDB = bags } })
-assert(layout:DB().columns == 10 and layout:DB().bars.TargetFrame)
+assert(layout:DB().actionSpacing == 10 and layout:DB().bars.TargetFrame)
 
 -- Returning players keep what they had: settings, layout, and what Reset gives them.
 local function unchanged(label, variables)
@@ -145,7 +143,7 @@ local function unchanged(label, variables)
     assert(R:Desired("chat.size") == 12 and R:Desired("tooltip.y") == 0, label)
     R:Reset()
     assert(R:Desired("chat.size") == 12, label)
-    assert(layout:DB().columns == 20 and not layout:DB().bars.TargetFrame, label)
+    assert(layout:DB().actionSpacing == 7 and not layout:DB().bars.TargetFrame, label)
     layout:RefreshBars()
     layout:ResetBars()
     assert(not layout:DB().bars.TargetFrame and not layout:DB().bagX, label .. ": Reset Positions stays stock")

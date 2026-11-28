@@ -9,6 +9,8 @@
 
 The other 1,119 textures and fonts are byte-identical to the bundle's copy, so they are not stored here. **This folder is not a complete addon on its own.** Copy it over a DrakeishUI folder from the bundle.
 
+The old bag files `linux_compat_bags.lua`, `modules/native_bags.lua`, `modules/native_inventory.lua` and `modules/native_inventory_sort.lua` were removed when Bagster replaced them. The TOC and XML files no longer load them, so any copies left in your folder can be deleted.
+
 The bundle also has `modules/bottombarstoggle.lua` and `modules/sidebars.lua`. No XML or TOC file loads either one, so they are not stored here. Copying this folder over yours leaves them alone.
 
 ## Seeing what changed
@@ -37,7 +39,8 @@ If `--3way` cannot find the base files in your checkout, use `git apply -p3 --re
 - **Settings window** with profiles, export and import, and a command for each option (`/drakeish`).
 - **Action bars and layout:** cooldown numbers, end cap fit, keybind mode, element sizes and scale sliders.
 - **Unit frames:** health and power text, bar sizes, portrait choices.
-- **Bags, chat, footer, fonts and tooltips** options.
+- **Bags:** Bagster's bag, bank and guild bank windows (`modules/bagster`, `modules/bagsort.lua`) replace the game's own. `modules/bagster_native.lua` connects them to the settings window.
+- **Chat, footer, fonts and tooltips** options.
 - **Nameplates** (`modules/Kui_Nameplates`, options in `nameplate_options.lua`, opened with `/knp`): a "Drakeish" bar texture matching the cast bar, separate name and health fonts, full-length names, a height offset and a debuff row. The debuff row uses the Linux client's `C_NamePlate` API and `nameplate1` to `nameplate64` unit tokens. It does nothing if `C_NamePlate` is missing.
 - **Fixes:** the target aura `SetPoint` loop error, and the out-of-range overlay on resized action buttons.
 
@@ -51,7 +54,7 @@ Some features depend on the Linux client engine in this repo and may behave diff
 |---|---|
 | `nameplates` | Everyone. These replace Kui Nameplates' built-in defaults. |
 | `settings` | New players only. Replaces the default of a settings window option; resetting the option returns to this value. |
-| `layout` | New players only. Copied into a character with no saved layout: bag layout, chat size, message positions, bar and minimap sizes. |
+| `layout` | New players only. Copied into a character with no saved layout: chat size, message positions, bar and minimap sizes. |
 | `frames` | New players only. Frame positions and scales for those characters, and for **Reset Positions**. |
 
 **A new player** is an account with no saved DrakeishUI settings the first time this version runs. The result is remembered in `DrakeishUI_Config.newPlayer`. Everyone else keeps their own settings and the stock defaults, apart from the nameplates.
@@ -66,7 +69,7 @@ Then:
 
 - Options you have not changed use the starting values.
 - Characters with no saved layout start with the shipped layout.
-- On a character with a saved layout, **Reset Positions** applies the shipped frame positions and scales. It does not change bar sizes or the bag layout.
+- On a character with a saved layout, **Reset Positions** applies the shipped frame positions and scales. It does not change bar sizes.
 
 Setting the value to `false` and reloading restores the stock defaults. Layouts that were already saved stay saved.
 

@@ -3,8 +3,8 @@
   "files": [
     {
       "path": "DrakeishUI.toc",
-      "size": 2117,
-      "sha256": "9bfc06e37389ccbf490107cd646cc1aa3c9ca2d5f085ad502975de6e2d9d93ec",
+      "size": 2140,
+      "sha256": "f920b7d6c45c1c38b99ea4fbd12a53530ada70da90d55ac3a48331229a88d7a4",
       "source": "windows"
     },
     {
@@ -15,8 +15,8 @@
     },
     {
       "path": "action_cooldowns.lua",
-      "size": 14386,
-      "sha256": "0a5fa111c10ac4719fd6565fce0026e75217513a2454a4e45b93392ab5bf2f31",
+      "size": 14417,
+      "sha256": "c500ee021bc36d132a3e6bf8c6dd31629f661644bd3b0c0c5b48d9213ae197e5",
       "source": "fta-tweaks"
     },
     {
@@ -27,8 +27,8 @@
     },
     {
       "path": "appearance.lua",
-      "size": 10598,
-      "sha256": "a8a9373bff3da38657271739abeb123836ad15eeccc2629d362fa81b65f45897",
+      "size": 10467,
+      "sha256": "e1081209effc09d907a16a99d4930214545fee4d1ca8486209cdec8c02ed97fb",
       "source": "fta-tweaks"
     },
     {
@@ -5919,8 +5919,8 @@
     },
     {
       "path": "bag_quality.lua",
-      "size": 11465,
-      "sha256": "6e8dc0480cadbccf62c200b401be58a3a683d27c85ac93d045647902d391541c",
+      "size": 8868,
+      "sha256": "090e01be01be5e11bd4938012972154f47d984926c8f6895e84b36e76e739c2f",
       "source": "fta-tweaks"
     },
     {
@@ -6770,12 +6770,6 @@
       "source": "windows"
     },
     {
-      "path": "linux_compat_bags.lua",
-      "size": 2648,
-      "sha256": "b7dd4448bd3f1524ac6231a20cf0a53e43299b45cc1cf9abf8b72ab94e545ad5",
-      "source": "linux-compat"
-    },
-    {
       "path": "modules/Bindings.xml",
       "size": 245,
       "sha256": "9a7eeeef485a755195ab2010bfe39bd7f8e6ad83198d0b64db34ed684fabd5fa",
@@ -7113,8 +7107,8 @@
     },
     {
       "path": "shipped_defaults.lua",
-      "size": 6592,
-      "sha256": "aae86836034a0728a280e98fc331d7ac246ee214cad86b20e266a480f76f799e",
+      "size": 6418,
+      "sha256": "62b472e4364741bc360f20fa917f8f586db1334a48d5eea6978baad5203e6a8c",
       "source": "fta"
     },
     {
@@ -8751,8 +8745,8 @@
     },
     {
       "path": "modules/modules.xml",
-      "size": 3129,
-      "sha256": "ee5f8a519f3be143a27586c4cfd4d879240a399fcbf38b5ee0c174a6d92870d2",
+      "size": 3212,
+      "sha256": "36971d3b9d75f0b1e92bd05a9d77d0d5d00595a2b9b406e8b71f2d4953568d06",
       "source": "windows"
     },
     {
@@ -8768,12 +8762,6 @@
       "source": "windows"
     },
     {
-      "path": "modules/native_bags.lua",
-      "size": 6753,
-      "sha256": "b37a3ade4362d69e2e17f64f4b012707920da65c878f909d5c33a7de6df6b01e",
-      "source": "windows"
-    },
-    {
       "path": "modules/native_bridge.lua",
       "size": 4150,
       "sha256": "3a287642850e9ec9ee449cf31c4ac1ad14408f8aeb0ba0d0b9281022b11bc0b4",
@@ -8781,26 +8769,86 @@
     },
     {
       "path": "modules/native_controls.lua",
-      "size": 11789,
-      "sha256": "91f2c0af897bbabcacca0dba04edcbd74eb503ead9fb4e3dcb24e2c8f288e0af",
+      "size": 8421,
+      "sha256": "c51858b843fe87949fe11212a113d4c605c60e2669cc48c99281016b33f914ea",
       "source": "windows"
     },
     {
-      "path": "modules/native_inventory.lua",
-      "size": 26353,
-      "sha256": "a4dffca4a13e0073b194785c3123a0c51bcc9363aae3391434726d9f74125df6",
-      "source": "windows"
+      "path": "modules/bagster_native.lua",
+      "size": 3805,
+      "sha256": "e09e1176e449424e61118bdffc034ad2d61482197db8beb612c6456f4d9a94f3",
+      "source": "fta"
     },
     {
-      "path": "modules/native_inventory_sort.lua",
-      "size": 8854,
-      "sha256": "eec5f9e8ace7a23ad02663b0ed058acae3676ae05a1b9d053f4b4bbd2842d5b4",
-      "source": "windows"
+      "path": "modules/bags_usability.lua",
+      "size": 10620,
+      "sha256": "4b49acf43c2a1d64b8f38d2f0e71be1d827778654ef8c5e94947cfceb9f3f917",
+      "source": "upstream-bagster"
+    },
+    {
+      "path": "modules/bagsort.lua",
+      "size": 87909,
+      "sha256": "4c69cea5aed08f6a934a6edff5ca33aa4e9444e7d075594e38c9bd442d3ae994",
+      "source": "upstream-bagster"
+    },
+    {
+      "path": "libs/LibItemSearch-1.0/LibItemSearch-1.0.lua",
+      "size": 10295,
+      "sha256": "1f8eb7485802db8999022f6de048549112680fbb2218a74c6b416429c50f1de5",
+      "source": "upstream-bagster"
+    },
+    {
+      "path": "modules/bagster/bagster.xml",
+      "size": 321,
+      "sha256": "1ba705739d41958dbfce5e6353a80309d8e97393ef9b3a9d0a2762634cfd6aa7",
+      "source": "upstream-bagster"
+    },
+    {
+      "path": "modules/bagster/bagster.lua",
+      "size": 19157,
+      "sha256": "e7a51373290c1179a7bab503cc4a27508d966ee0f13243839e7ab9a10b9ac9fd",
+      "source": "upstream-bagster"
+    },
+    {
+      "path": "modules/bagster/bagster_data.lua",
+      "size": 24290,
+      "sha256": "5ebe6cd99aa622e6f1a89031c3ddbe6acc983f59420c9f3fcb5ab681900e1842",
+      "source": "upstream-bagster"
+    },
+    {
+      "path": "modules/bagster/bagster_sets.lua",
+      "size": 6643,
+      "sha256": "16fce70d31445bca468160aa284e13326cb08d0145be9d6fabe1ddcb4e069c12",
+      "source": "upstream-bagster"
+    },
+    {
+      "path": "modules/bagster/bagster_classes.lua",
+      "size": 72587,
+      "sha256": "5aeac00c17449ec2784a15e6951dcde554ea42c0f741c18b3a41681ef351c6e0",
+      "source": "upstream-bagster"
+    },
+    {
+      "path": "modules/bagster/bagster_frame.lua",
+      "size": 35661,
+      "sha256": "052bebd31f23efaaa3d7a0afce4f28778051fbe0fdf892d016c0a0743aa7c7c4",
+      "source": "upstream-bagster"
+    },
+    {
+      "path": "modules/bagster/bagster_guild.lua",
+      "size": 38981,
+      "sha256": "1ae2aad47c4cfd102d62a9c005f3d07544e47b2e8c1c023b6123ab4915877cd0",
+      "source": "upstream-bagster"
+    },
+    {
+      "path": "modules/bagster/bagster_system.lua",
+      "size": 15372,
+      "sha256": "49c9cc18fda9486b16a38b39cd73ec0ac0d243e7bfa9f522ae3085bac6db83f9",
+      "source": "upstream-bagster"
     },
     {
       "path": "modules/native_layout.lua",
-      "size": 26781,
-      "sha256": "efd95bab59181e40f9f180ca97fa49b72e52257e815fc20b0958ed18526d5c92",
+      "size": 17031,
+      "sha256": "b95981980ed537ad873f099834d260df635bca6b9856f2b492c02fbe077583d6",
       "source": "windows"
     },
     {
@@ -9273,8 +9321,8 @@
     },
     {
       "path": "profile_exchange.lua",
-      "size": 2703,
-      "sha256": "7cd57f47fbb8d072ef9c1e64f368ef1b8c2294c82cccf4963f249c68528f87c0",
+      "size": 3068,
+      "sha256": "783cf73706575569765a82de819a1da4681b3295903ff2caa62378d7eed7d4ac",
       "source": "fta-tweaks"
     },
     {
@@ -9291,8 +9339,8 @@
     },
     {
       "path": "settings_interface.lua",
-      "size": 14772,
-      "sha256": "613fb2ee6a690ef37ba51bc4118ad2600fecdd92675bb6ea1d83a0587b4f34af",
+      "size": 15251,
+      "sha256": "b29421320ae67259fb93cc50a10c8401020822b28389751151fd58d7f5ab3bff",
       "source": "fta-tweaks"
     },
     {
@@ -9304,7 +9352,7 @@
     {
       "path": "settings_window.lua",
       "size": 41095,
-      "sha256": "231d6fc0e80dac5d348a04b5829fb94adc18bfbe80f80f1d07b96242574e9e48",
+      "sha256": "27141f93f50bf2d7236a5119530b2b3e05e1313421afe6ddba9d632d21c2307e",
       "source": "fta-tweaks"
     },
     {
@@ -9315,8 +9363,8 @@
     },
     {
       "path": "tooltip_options.lua",
-      "size": 13411,
-      "sha256": "73b3f22e7ef430acee76e63d21a61aea5921cae12440864b0e01db19a13fc145",
+      "size": 13463,
+      "sha256": "a0bd3b9c7664e095dea1131dc37998249bfb5ef8e6fbb1c864a7c3c210959765",
       "source": "fta-tweaks"
     },
     {

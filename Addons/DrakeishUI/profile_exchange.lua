@@ -40,6 +40,12 @@ function S:ExportProfile()
     return text
 end
 
+-- Settings that no longer exist (the old bag windows). Profile text exported before then still carries them.
+local function retired(id)
+    return id=="bags.bagster" or id=="bagQuality.quest" or id=="bagQuality.unusable" or id=="bagQuality.soulbound"
+        or id:match("^appearance%.bags%.")~=nil
+end
+
 function S:ImportProfile(name,text)
     if not self:IsReady() then return "Profiles are unavailable." end
     if type(text)~="string" or #text>MAX_LENGTH then return "The profile text is too large or invalid." end
@@ -52,10 +58,12 @@ function S:ImportProfile(name,text)
         if not id or values[id]~=nil then return "Invalid or duplicate profile entry." end
         local value=decode(kind,raw)
         local validated=self:ValidateProfileValue(id,value)
-        if validated==nil or (type(value)~="table" and validated~=value) then
-            return "Invalid value for profile option "..id.."."
+        if not retired(id) then
+            if validated==nil or (type(value)~="table" and validated~=value) then
+                return "Invalid value for profile option "..id.."."
+            end
+            values[id]=validated
         end
-        values[id]=validated
         offset=finish+1
     end
     return self:InstallImportedProfile(name,values)
